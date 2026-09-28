@@ -1212,3 +1212,49 @@ Spec: [docs/specs/phase18-todos.md](docs/specs/phase18-todos.md)
    writer, and Claude Code's contract is proven at scale.
 3. The tail window keeps the in-progress item visible; a 50-item list
    is rejected rather than rendered.
+
+# Phase 19 — Reasoning display + write-as-diff (status: complete, live-verified)
+
+Spec: [docs/specs/phase19-reasoning-diff.md](docs/specs/phase19-reasoning-diff.md)
+
+## Built
+
+- **Reasoning on the wire**: the SSE delta struct carries both field
+  conventions in the wild — OpenRouter's `reasoning` and DeepSeek's
+  `reasoning_content` — and emits a `ReasoningEvent` before content.
+  A test pins both conventions against recorded delta JSON.
+- **Forwarded, not stored**: the orchestrator hands reasoning events
+  to the UI but keeps them out of history — thinking is for the UI;
+  the answer is what the conversation keeps. Resumed sessions show
+  answers, not thoughts.
+- **The render**: live, a `△ thinking…` head with a dim italic tail
+  windowed to the last 3 lines; at boundaries (first text, tool call,
+  completion, error) it collapses to one entry — `△ thought for Ns ·
+  M chars (ctrl+r to expand)` — and the existing ctrl+r toggle
+  expands it, windowed to 12 rows. One expand mechanism for results
+  and thinking, not two.
+- **write_file as a diff**: result entries parse the tool's
+  `{path, content}` args; collapsed reads `└ wrote path +N`,
+  expanded renders `+ `-prefixed lines with the same
+  `lexerFor(path)` syntax highlighting edit_file already uses,
+  windowed to 10 rows. Write and edit now read identically.
+
+## Verified for real
+
+- All eleven packages; new tests: both wire conventions, the render
+  lifecycle (5-step tail-windowing, collapse, expand), and the
+  write_file diff (collapsed count, `+` lines, window cap).
+- **PTY, live**: a scripted SSE fixture streamed reasoning, content,
+  a write_file call, and a final answer — the live frame showed
+  `△ thinking…` with the tail, the turn collapsed to `△ thought for
+  0s · 45 chars`, ctrl+r expanded the reasoning lines and the
+  `+ func main() {}` write diff (and re-collapsed), and
+  `/tmp/thinkproj/main.go` really existed on disk afterward.
+
+## Phase 19 assumptions
+
+1. Reasoning is UI-only state: no provider documents replaying it
+   back, and a resumed session showing stale thoughts would lie.
+2. write_file diffs against an empty before-state: writes are new or
+   whole-file replacements, so every line is an addition.
+3. `0s` durations render honestly — fast thoughts are normal.

@@ -359,3 +359,42 @@ func TestStreamChatSkipsNonJSONDataLines(t *testing.T) {
 		t.Errorf("text = %q", text)
 	}
 }
+
+func TestReasoningDeltasParsed(t *testing.T) {
+	// Both wire conventions — OpenRouter's "reasoning" and the
+	// DeepSeek-compatible "reasoning_content" — must surface as
+	// reasoning events ahead of the answer, not be dropped.
+	for _, field := range []string{"reasoning", "reasoning_content"} {
+		srv := sseServer(t, []string{
+			fmt.Sprintf(`{"choices": [{"delta": {%q: "hm "}}]}`, field),
+			fmt.Sprintf(`{"choices": [{"delta": {%q: "hmm"}}]}`, field),
+			textDelta("the answer"),
+			finish("stop"),
+		}, nil, 0)
+		p := NewOpenAICompat(srv.URL, "test-key")
+		events, err := p.StreamChat(context.Background(), ChatRequest{Model: "m"})
+		if err != nil {
+			t.Fatalf("StreamChat: %v", err)
+		}
+		got := collect(t, events)
+		srv.Close()
+		if len(got) < 3 {
+			t.Fatalf("%s: events = %v", field, got)
+		}
+		if got[0].Type != ReasoningEvent || got[1].Type != ReasoningEvent {
+			t.Errorf("%s: first events = %v, want reasoning", field, got[:2])
+		}
+		if got[2].Type != TextEvent || got[2].Text != "the answer" {
+			t.Errorf("%s: text event = %+v, want the answer", field, got[2])
+		}
+		var thought string
+		for _, ev := range got {
+			if ev.Type == ReasoningEvent {
+				thought += ev.Text
+			}
+		}
+		if thought != "hm hmm" {
+			t.Errorf("%s: reasoning = %q", field, thought)
+		}
+	}
+}

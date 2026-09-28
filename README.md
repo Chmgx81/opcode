@@ -71,7 +71,7 @@ dominates: read-only and plan deny shell outright.
 | **Alt+Enter** | queue a follow-up |
 | **Esc** | stop — the turn, or whatever is open |
 | **Tab** | cycle permission mode |
-| **Ctrl+R** | expand / collapse tool results |
+| **Ctrl+R** | expand / collapse tool results & thinking |
 | **?** | everything else |
 
 `/model` switches models at runtime. `/sessions` resumes one.
@@ -81,7 +81,9 @@ model round trip. Big pastes collapse to a token.
 
 ## Beyond the loop
 
-**Todos** — the model tracks its own multi-step work with
+**Thinking** — reasoning models' thoughts stream into a dim `△` tail
+while it works, then collapse to one line (`ctrl+r` to expand). Writes
+and edits render as syntax-highlighted diffs. **Todos** — the model tracks its own multi-step work with
 `todo_write`; a live panel shows `✓ done · ▸ in progress · · pending`
 with counts, windowed so long lists stay compact.
 

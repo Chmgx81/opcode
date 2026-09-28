@@ -125,6 +125,7 @@ const (
 	GlyphDeleted = "−" // diff: removed
 	GlyphAdded   = "+" // diff: added
 	GlyphDoing   = "▸" // todo: the item in progress
+	GlyphThought = "△" // reasoning: the model's thinking block
 )
 
 // Spacing scale — the rhythm between blocks.

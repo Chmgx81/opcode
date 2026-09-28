@@ -1435,3 +1435,59 @@ func TestTodosPanelRenders(t *testing.T) {
 		t.Error("window must cap the rendered rows")
 	}
 }
+
+func TestReasoningRenderLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// While thinking streams: a dim tail, not the full text dumped.
+	for i := 1; i <= 5; i++ {
+		m.handleEvent(orchestrator.Event{Kind: orchestrator.EventReasoning,
+			Text: fmt.Sprintf("step %d\n", i)})
+	}
+	live := stripANSI(strings.Join(m.timelineView(), "\n"))
+	if !strings.Contains(live, "thinking…") || !strings.Contains(live, "step 5") {
+		t.Errorf("live thinking missing:\n%s", live)
+	}
+	if strings.Contains(live, "step 1") || strings.Contains(live, "step 2") {
+		t.Errorf("live thinking must tail-window:\n%s", live)
+	}
+
+	// The answer starts: the thinking collapses to one line with the
+	// duration; ctrl+r expands it again.
+	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "the answer"})
+	if m.reasoning.Len() != 0 {
+		t.Error("reasoning builder must drain on finish")
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "thought for") || !strings.Contains(view, "ctrl+r to expand") {
+		t.Errorf("collapsed thinking line missing:\n%s", view)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	view = stripANSI(m.View())
+	if !strings.Contains(view, "step 1") {
+		t.Errorf("expanded thinking missing:\n%s", view)
+	}
+}
+
+func TestWriteFileRendersAsCodeDiff(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	m.Update(orchestratorMsg(orchestrator.Event{
+		Kind: orchestrator.EventToolResult,
+		ToolCall: llm.ToolCall{Name: "write_file",
+			Arguments: `{"path": "main.go", "content": "func main() {}\n"}`},
+		ToolResult: "wrote 17 bytes to main.go",
+	}))
+	tr := m.transcript()
+	if !strings.Contains(tr, "wrote main.go") || !strings.Contains(tr, "+1") {
+		t.Errorf("write collapsed line wrong:\n%s", tr)
+	}
+	// Expanded: the content renders as added, syntax-highlighted lines.
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	tr = m.transcript()
+	if !strings.Contains(tr, "func main() {}") {
+		t.Errorf("expanded write missing content:\n%s", tr)
+	}
+}
