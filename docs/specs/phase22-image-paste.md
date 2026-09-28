@@ -28,10 +28,13 @@ the plain string form (compat: every server accepts it, and tool
 messages must stay strings).
 
 **The clipboard.** `clipboardImage()` tries, in order: `wl-paste -t
-image/png` (Wayland), `xclip -selection clipboard -t image/png -o`
+image/png` then `-t image/jpeg` (Wayland), the same two for `xclip`
 (X11), `pngpaste -` (macOS). First one that returns bytes wins; none
 available → a toast says so, never a silent no-op. Byte cap (8 MiB)
-rejects absurd pastes loudly.
+rejects absurd pastes loudly. The format is **sniffed from the bytes'
+magic signature** (png/jpeg/gif/webp) — never assumed from the tool
+that produced them — and unrecognized bytes are refused with a toast
+instead of mislabeled as an image.
 
 **The composer.** Ctrl+V (only when the composer isn't in a special
 mode) stores the image, inserts `[Image #N]` at the cursor, and
