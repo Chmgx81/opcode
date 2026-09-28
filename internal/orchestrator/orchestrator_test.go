@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"tilde/internal/llm"
 	"tilde/internal/tools"
@@ -274,4 +276,164 @@ func TestLoopThroughRealSSEClient(t *testing.T) {
 	if text != "file written" {
 		t.Errorf("streamed text = %q", text)
 	}
+}
+
+func TestSteerFoldsIntoNextRound(t *testing.T) {
+	dir := t.TempDir()
+	// A provider whose scripted round blocks until the test steers, so
+	// the steering race is deterministic: round 1 is consumed, then the
+	// test steers while round 2 is pending.
+	steered := make(chan struct{})
+	p := &steerableProvider{steered: steered, rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "call-1", Name: "read_file", Arguments: `{"path": "x"}`}}},
+		{{Type: llm.TextEvent, Text: "done"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+
+	events := orch.Send(context.Background(), "go")
+
+	// Wait for round 1 to be requested, then steer mid-round.
+	p.waitForRequest(t)
+	orch.Steer("actually, use path y instead")
+	close(steered)
+
+	for ev := range events {
+		if ev.Kind == EventError {
+			t.Fatalf("unexpected error: %v", ev.Err)
+		}
+	}
+
+	// Round 2's request must carry the steering message, after the tool
+	// result — folded in at the round boundary, not mid-round.
+	if len(p.gotRequests) != 2 {
+		t.Fatalf("got %d requests, want 2", len(p.gotRequests))
+	}
+	round2 := p.gotRequests[1].Messages
+	if len(round2) != 4 {
+		t.Fatalf("round 2 has %d messages, want user+assistant+tool+steer", len(round2))
+	}
+	last := round2[len(round2)-1]
+	if last.Role != "user" || last.Content != "actually, use path y instead" {
+		t.Errorf("steering message not folded in: %+v", last)
+	}
+	if round2[2].Role != "tool" {
+		t.Errorf("steering must come after the tool result, got %+v", round2[2])
+	}
+}
+
+func TestSteerBeforeAnyTurnIsPending(t *testing.T) {
+	dir := t.TempDir()
+	p := &steerableProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "ok"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.Steer("early")
+	events := drain(t, orch.Send(context.Background(), "go"))
+
+	// The steer was queued with no turn running; it must still be
+	// delivered to the next round rather than lost or dropped silently.
+	if len(p.gotRequests) != 1 {
+		t.Fatalf("got %d requests, want 1", len(p.gotRequests))
+	}
+	msgs := p.gotRequests[0].Messages
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want user + pending steer", len(msgs))
+	}
+	if msgs[len(msgs)-1].Content != "early" {
+		t.Errorf("pending steer missing: %+v", msgs[len(msgs)-1])
+	}
+	var complete bool
+	for _, ev := range events {
+		if ev.Kind == EventTurnComplete {
+			complete = true
+		}
+	}
+	if !complete {
+		t.Error("turn did not complete")
+	}
+}
+
+func TestUsageEventsForwarded(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{
+		rounds: [][]llm.ChatEvent{
+			{{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 10, CompletionTokens: 5}},
+				{Type: llm.TextEvent, Text: "hi"}},
+		},
+	}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	events := drain(t, orch.Send(context.Background(), "go"))
+
+	var usage []llm.Usage
+	for _, ev := range events {
+		if ev.Kind == EventUsage {
+			usage = append(usage, ev.Usage)
+		}
+	}
+	if len(usage) != 1 || usage[0].PromptTokens != 10 || usage[0].CompletionTokens != 5 {
+		t.Errorf("usage events = %+v", usage)
+	}
+}
+
+func TestCancelledTurnReportsErrCancelled(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{
+		rounds: [][]llm.ChatEvent{
+			{{Type: llm.TextEvent, Text: "partial"}},
+		},
+	}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	events := orch.Send(ctx, "go")
+	cancel()
+
+	var got error
+	for ev := range events {
+		if ev.Kind == EventError {
+			got = ev.Err
+		}
+	}
+	if !errors.Is(got, ErrCancelled) {
+		t.Errorf("err = %v, want ErrCancelled", got)
+	}
+}
+
+// steerableProvider is a fakeProvider that can block between rounds so
+// tests can steer at a deterministic moment.
+type steerableProvider struct {
+	rounds      [][]llm.ChatEvent
+	gotRequests []llm.ChatRequest
+	steered     <-chan struct{}
+}
+
+func (f *steerableProvider) StreamChat(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+	f.gotRequests = append(f.gotRequests, req)
+	if len(f.rounds) == 0 {
+		return nil, fmt.Errorf("no scripted round left")
+	}
+	round := f.rounds[0]
+	f.rounds = f.rounds[1:]
+	if f.steered != nil {
+		<-f.steered
+	}
+	ch := make(chan llm.ChatEvent, len(round))
+	for _, ev := range round {
+		ch <- ev
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (f *steerableProvider) waitForRequest(t *testing.T) {
+	t.Helper()
+	// Poll briefly: Send runs in a goroutine, so the request may not be
+	// in gotRequests the instant Send returns.
+	for i := 0; i < 100; i++ {
+		if len(f.gotRequests) > 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("provider never received a request")
 }
