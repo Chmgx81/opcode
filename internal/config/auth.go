@@ -105,8 +105,8 @@ func RefusesToLoad(projectDir string) (string, bool) {
 }
 
 // APIKey resolves the credential for the named provider. hasKey reports
-// whether a key exists; for providers that need none (a local server with
-// no api_key_env), hasKey false is not an error.
+// whether a key exists; for providers that need none (a local server),
+// hasKey false is not an error.
 func (r *Resolver) APIKey(provider string) (key ResolvedKey, hasKey bool, err error) {
 	if v, ok := r.Auth[provider]; ok && v != "" {
 		if cached, ok := r.cache[provider]; ok {
@@ -125,12 +125,29 @@ func (r *Resolver) APIKey(provider string) (key ResolvedKey, hasKey bool, err er
 		r.cache[provider] = key
 		return key, true, nil
 	}
-	if r.EnvProvider.APIKeyEnv != "" {
-		if v := os.Getenv(r.EnvProvider.APIKeyEnv); v != "" {
-			return ResolvedKey{Value: v, Source: "environment"}, true, nil
-		}
+	// The explicit api_key_env wins; when the provider didn't name one,
+	// the conventional <PROVIDER>_API_KEY applies — one rule covers
+	// every OpenAI-compatible provider (deepseek → DEEPSEEK_API_KEY,
+	// groq → GROQ_API_KEY, ...) without a hardcoded table.
+	env := r.EnvProvider.APIKeyEnv
+	if env == "" {
+		env = DerivedAPIKeyEnv(provider)
+	}
+	if v := os.Getenv(env); v != "" {
+		return ResolvedKey{Value: v, Source: "environment"}, true, nil
 	}
 	return ResolvedKey{}, false, nil
+}
+
+// DerivedAPIKeyEnv maps a provider name to the conventional
+// environment variable: uppercased, dashes and dots to underscores,
+// plus _API_KEY. Empty names derive nothing.
+func DerivedAPIKeyEnv(provider string) string {
+	if provider == "" {
+		return ""
+	}
+	repl := strings.NewReplacer("-", "_", ".", "_", "/", "_")
+	return strings.ToUpper(repl.Replace(provider)) + "_API_KEY"
 }
 
 // runKeyCommand executes a secret-manager command and returns its trimmed

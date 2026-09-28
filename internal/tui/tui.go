@@ -325,8 +325,8 @@ var commands = []command{
 	{"/sessions", "browse and resume a saved session"},
 	{"/skills", "list available skills"},
 	{"/mcp", "list MCP servers and tools"},
-	{"/login", "store an API key (masked)"},
-	{"/logout", "remove the stored key"},
+	{"/login", "store an API key (masked, /login <provider> for another)"},
+	{"/logout", "remove the stored key (/logout <provider>)"},
 }
 
 func New(opt Options) *Model {

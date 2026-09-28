@@ -1497,3 +1497,47 @@ func TestWriteFileRendersAsCodeDiff(t *testing.T) {
 		t.Errorf("expanded write missing content:\n%s", tr)
 	}
 }
+
+// TestLoginLogoutNamedProvider covers /login <provider> and
+// /logout <provider>: a key for another provider stores under that
+// name without touching the active provider's live client.
+func TestLoginLogoutNamedProvider(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// /login groq captures groq's key, not the active provider's.
+	typeAndEnter(m, "/login groq")
+	if m.login == nil {
+		t.Fatal("/login groq did not start the flow")
+	}
+	if m.login.provider != "groq" {
+		t.Fatalf("login provider = %q, want groq", m.login.provider)
+	}
+	m.composer.SetValue("groq-key")
+	m.Update(enterKey())
+
+	data, err := os.ReadFile(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatalf("auth.json not written: %v", err)
+	}
+	if !strings.Contains(string(data), `"groq": "groq-key"`) {
+		t.Errorf("groq entry missing: %s", data)
+	}
+	// The transcript entry names the provider it acted on.
+	if tr := m.transcript(); !strings.Contains(tr, "key for groq stored") {
+		t.Errorf("named-provider entry missing: %s", tr)
+	}
+
+	// /logout groq removes exactly that entry.
+	typeAndEnter(m, "/logout groq")
+	data, err = os.ReadFile(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatalf("auth.json unreadable after logout: %v", err)
+	}
+	if strings.Contains(string(data), "groq-key") {
+		t.Errorf("groq key survived /logout groq: %s", data)
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "removed the stored key for groq") {
+		t.Errorf("named logout entry missing: %s", tr)
+	}
+}
