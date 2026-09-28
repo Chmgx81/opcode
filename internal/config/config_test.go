@@ -1,0 +1,92 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func writeFile(t *testing.T, path, content string, mode os.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadConfigMissingFileGivesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.PermissionMode != DefaultPermissionMode {
+		t.Errorf("PermissionMode = %q, want default %q", cfg.PermissionMode, DefaultPermissionMode)
+	}
+	if cfg.Model != "" {
+		t.Errorf("Model = %q, want empty", cfg.Model)
+	}
+}
+
+func TestLoadConfigReadsPreferences(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.json"),
+		`{"model": "anthropic/claude-sonnet-4.5", "permission_mode": "full-auto"}`, 0o600)
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Model != "anthropic/claude-sonnet-4.5" {
+		t.Errorf("Model = %q", cfg.Model)
+	}
+	if cfg.PermissionMode != "full-auto" {
+		t.Errorf("PermissionMode = %q", cfg.PermissionMode)
+	}
+}
+
+func TestLoadConfigMalformedFileIsError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.json"), `{not json`, 0o600)
+	if _, err := LoadConfig(dir); err == nil {
+		t.Fatal("expected error for malformed config.json, got nil")
+	}
+}
+
+func TestLoadModelsMissingFileGivesOpenRouterDefault(t *testing.T) {
+	mc, err := LoadModels(t.TempDir())
+	if err != nil {
+		t.Fatalf("LoadModels: %v", err)
+	}
+	if mc.DefaultProvider != DefaultProviderName {
+		t.Errorf("DefaultProvider = %q, want %q", mc.DefaultProvider, DefaultProviderName)
+	}
+	p := mc.Provider()
+	if p.BaseURL != DefaultBaseURL {
+		t.Errorf("BaseURL = %q, want %q", p.BaseURL, DefaultBaseURL)
+	}
+	if p.APIKeyEnv != DefaultAPIKeyEnv {
+		t.Errorf("APIKeyEnv = %q, want %q", p.APIKeyEnv, DefaultAPIKeyEnv)
+	}
+}
+
+func TestLoadModelsCustomLocalProvider(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "models.json"),
+		`{"default_provider": "local", "providers": {"local": {"base_url": "http://localhost:11434/v1", "models": ["llama3"]}}}`, 0o644)
+	mc, err := LoadModels(dir)
+	if err != nil {
+		t.Fatalf("LoadModels: %v", err)
+	}
+	if mc.DefaultProvider != "local" {
+		t.Fatalf("DefaultProvider = %q, want local", mc.DefaultProvider)
+	}
+	p := mc.Provider()
+	if p.BaseURL != "http://localhost:11434/v1" {
+		t.Errorf("BaseURL = %q", p.BaseURL)
+	}
+	if p.APIKeyEnv != "" {
+		t.Errorf("APIKeyEnv = %q, want empty (no key needed)", p.APIKeyEnv)
+	}
+}
