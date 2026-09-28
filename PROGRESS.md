@@ -1714,3 +1714,38 @@ built to the tui-ux-spec's Section 9.
   built — the dialog's hint line advertises only what works today.
 2. The prefix grant covers program + subcommand, one level deep —
   the same scoping the reference product shows.
+
+# Phase 28 — The Antigravity header + bare composer (status: complete, live-verified)
+
+The reference screenshot's layout, applied literally.
+
+## Built
+
+- **The header**: the banner block on the left, the identity block
+  beside it — `~ tilde v0.2.1`, model · mode, cwd — joined
+  horizontally (lipgloss.JoinHorizontal, top-aligned), then startup
+  notes below. Previously the logo and identity stacked vertically;
+  the reference puts them side by side.
+- **The composer, bare**: no rounded box — a plain `~ ` prompt line
+  (the brand glyph, matching the reference's own `~` composer), the
+  mode line under it unchanged. Shell mode keeps its up-front
+  signal: the prompt glyph becomes `!` in warning amber — without a
+  box, the glyph IS the chrome. boxStyle, now unused, is deleted.
+- Width accounting follows: the bare line is terminal − 2, not
+  terminal − 8 of box chrome.
+
+## Verified for real
+
+- All twelve packages; the pins moved to the new contract (bare
+  composer width, `!`/`~` prompt glyphs). **PTY, live**: the frame
+  shows the banner with model/mode/cwd beside it and a bare
+  `~ ask tilde anything…` line — zero box borders in the whole
+  frame.
+
+## Phase 28 assumptions
+
+1. The composer prompt is the brand `~` (the reference's literal
+   look); the spec's `❯` stays on user-message blocks and picker
+   selection, where it already lives.
+2. The header's first line can fall to frame-fitting trim on very
+   short terminals — everything scrolls anyway.

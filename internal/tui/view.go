@@ -398,21 +398,17 @@ func (m *Model) composerView() []string {
 	if m.login != nil {
 		// textarea has no echo mode: render the value masked here.
 		masked := strings.Repeat("\u2022", len(m.composer.Value()))
-		composer = accentStyle.Render(GlyphPrompt+" ") + masked
+		composer = accentStyle.Render(GlyphBrand+" ") + masked
 	}
-	// A leading "!" is a shell escape: the box goes amber so the mode
-	// is visible before Enter, not after.
-	box := boxStyle
-	if m.shellMode() {
-		box = promptBoxStyle
-	}
-	out = append(out, box.Width(m.termWidth()-4).Render(composer))
+	// The reference composer: a bare prompt line, no box — the prompt
+	// glyph (and its color, in shell mode) is the whole chrome.
+	out = append(out, composer)
 
 	// Mode line in the reference shape: "~ mode (tab to cycle)" then
 	// the minimal hints. Codex's footer fitting: candidates from
 	// fullest to bare mode, first one that fits the terminal wins — a
 	// shortcut never separates from its label on narrow screens.
-	mode := accent2Style.Render(GlyphPrompt + " " + m.opt.Mode)
+	mode := accent2Style.Render(GlyphBrand + " " + m.opt.Mode)
 	var hint string
 	if m.shellMode() {
 		hint = dimStyle.Render("shell — enter runs it directly, no model round trip")

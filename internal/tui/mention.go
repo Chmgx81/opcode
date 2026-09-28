@@ -149,10 +149,17 @@ func (m *Model) shellMode() bool {
 
 // syncComposerPrompt swaps the composer prompt glyph with the mode:
 // "!" amber for shell escapes, "~" otherwise.
+// syncComposerPrompt keeps the bare composer's prompt honest: the
+// brand glyph normally, "!" in shell mode — colored to match, since
+// without a box the glyph IS the mode signal.
 func (m *Model) syncComposerPrompt() {
 	if m.shellMode() {
-		m.composer.Prompt = GlyphWarn + " "
+		m.composer.Prompt = GlyphShell + " "
+		m.composer.FocusedStyle.Prompt = warnStyle
+		m.composer.BlurredStyle.Prompt = warnStyle
 	} else {
-		m.composer.Prompt = GlyphPrompt + " "
+		m.composer.Prompt = GlyphBrand + " "
+		m.composer.FocusedStyle.Prompt = accentStyle
+		m.composer.BlurredStyle.Prompt = accentStyle
 	}
 }

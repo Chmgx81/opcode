@@ -779,9 +779,10 @@ func TestComposerResizesWithTerminal(t *testing.T) {
 	// so the placeholder wrapped onto two lines on any terminal. The
 	// composer must size itself from WindowSizeMsg.
 	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
-	// SetWidth receives the box content width (70-8); the textarea
-	// reserves its 2-wide prompt from that, so Width() is 60.
-	if got := m.composer.Width(); got != 70-8-2 {
+	// The composer is a bare prompt line now: SetWidth receives the
+	// terminal minus the prompt (70-2); the textarea reserves its
+	// 2-wide prompt from that, so Width() is 66.
+	if got := m.composer.Width(); got != 70-2-2 {
 		t.Errorf("composer width = %d, want %d", got, 70-8-2)
 	}
 	// One line when empty: a short placeholder, not a hint crammed
@@ -1109,8 +1110,8 @@ func TestShellModeAmberIndication(t *testing.T) {
 	if !m.shellMode() {
 		t.Fatal("leading ! must be shell mode")
 	}
-	if m.composer.Prompt != GlyphWarn+" " {
-		t.Errorf("prompt = %q, want the amber ! glyph", m.composer.Prompt)
+	if m.composer.Prompt != GlyphShell+" " {
+		t.Errorf("prompt = %q, want the ! glyph", m.composer.Prompt)
 	}
 	view := m.View()
 	if !strings.Contains(stripANSI(view), "shell — enter runs it directly") {
@@ -1119,7 +1120,7 @@ func TestShellModeAmberIndication(t *testing.T) {
 	// Deleting the "!" returns the normal prompt.
 	m.composer.SetValue("echo hi")
 	m.syncComposerPrompt()
-	if m.composer.Prompt != GlyphPrompt+" " {
+	if m.composer.Prompt != GlyphBrand+" " {
 		t.Errorf("prompt = %q, want ~ restored", m.composer.Prompt)
 	}
 }
