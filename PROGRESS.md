@@ -1802,3 +1802,14 @@ TestBlockBreathingSpace (block opens get air, action → result is
 tight); PTY shows the blank lines between assistant text, the
 tool group, and the dialog. The spec's Behavior rules now state
 the rhythm.
+
+# Composer rules (status: complete, live-verified)
+
+The full-width horizontal rules from the spec's screen anatomy —
+never actually implemented (the composer had a rounded box until
+Phase 28 removed it for the bare look, which left the input with
+no frame at all). Now the composer sits between two full-width `─`
+rules: border-colored at rest, amber in shell mode, so the input
+is findable without a box. fit()'s composer reservation grows by
+the two rule rows so short terminals still trim the transcript,
+never the composer. The spec's §3.3 mockup shows the frame.

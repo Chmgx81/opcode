@@ -109,13 +109,16 @@ I'll add a token-bucket limiter on the route.               ← assistant prose 
 ### 3.3 Composer + footer
 
 ```
-~ ask tilde anything…
+──────────────────────────────────────────────────────────  ← rule, border color (amber in shell mode)
+~ ask tilde anything…                                        ← the input, brand ~ prompt
+──────────────────────────────────────────────────────────  ← rule
 ~ ask-every-time (tab to cycle)   ? for shortcuts · / commands
 ```
 
-Bare prompt line, no box. The brand `~` in accent; shell mode
-flips it to `!` in warning amber. The footer drops hint segments on
-narrow terminals, never the mode.
+Full-width rules frame the input — the findable frame without a
+box. The `~` sits in accent; shell mode flips it to `!` and the
+rules to amber. The footer drops hint segments on narrow
+terminals, never the mode.
 
 ### 3.4 Permission dialog (ask mode, Action-Allowed tools)
 

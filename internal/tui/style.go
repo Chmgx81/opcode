@@ -98,6 +98,7 @@ func refreshTokens() {
 	queuedStyle = dimStyle
 	toolNameStyle = lipgloss.NewStyle().Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
+	ruleStyle = lipgloss.NewStyle().Foreground(Deep)
 
 	promptBoxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -147,6 +148,6 @@ const (
 var (
 	accentStyle, accent2Style, dimStyle, subtleStyle, infoStyle, warnStyle,
 	dangerStyle, okStyle, resultStyle, promptStyle,
-	steerStyle, queuedStyle, toolNameStyle, boldStyle,
+	steerStyle, queuedStyle, toolNameStyle, boldStyle, ruleStyle,
 	promptBoxStyle, paletteStyle, helpStyle lipgloss.Style
 )
