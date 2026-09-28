@@ -17,6 +17,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/mcp"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/sandbox"
 	"github.com/Chmgx81/tilde/internal/session"
 	"github.com/Chmgx81/tilde/internal/skills"
 	"github.com/Chmgx81/tilde/internal/subagent"
@@ -26,6 +27,16 @@ import (
 )
 
 func main() {
+	// The __sandbox child comes first, before anything spawns threads:
+	// Landlock confines the calling thread, so the child must be
+	// single-threaded when it applies the ruleset (Phase 21 spec).
+	if len(os.Args) > 1 && os.Args[1] == "__sandbox" {
+		if err := sandbox.Child(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "tilde __sandbox: %v\n", err)
+			os.Exit(1)
+		}
+		return // Child replaced the process on success
+	}
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tilde: %v\n", err)
 		os.Exit(1)
@@ -271,6 +282,19 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		cfg.Animations = &off
 		startupNotes = append(startupNotes, "screen reader detected — animations off (set \"animations\": true to override)")
 	}
+
+	// Landlock sandbox (Phase 21): confine shell-command writes to the
+	// project dir, temp, and dev caches. Enabled by default where the
+	// kernel supports it; the note always states the real posture.
+	sandboxOn := cfg.Sandbox == nil || *cfg.Sandbox
+	runner, err := sandbox.New(sandboxOn)
+	if err != nil {
+		// Not fatal: run unsandboxed and say so.
+		startupNotes = append(startupNotes, "sandbox: unavailable ("+err.Error()+") — commands run unsandboxed")
+		runner = nil
+	}
+	sandbox.Install(runner)
+	startupNotes = append(startupNotes, runner.Status())
 
 	// If the project has an unapproved executable surface, the TUI asks
 	// first. Granting persists the decision and re-discovers skills into

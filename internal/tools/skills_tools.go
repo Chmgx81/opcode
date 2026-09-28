@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Chmgx81/tilde/internal/sandbox"
 	"github.com/Chmgx81/tilde/internal/skills"
 )
 
@@ -132,12 +133,13 @@ func (t RunSkillScript) Execute(ctx context.Context, args string) (string, error
 	defer cancel()
 	// Executable files run directly so shebangs work; the rest go
 	// through sh. Scripts from untrusted projects are already excluded
-	// by discovery.
+	// by discovery. Either way the sandbox runner wraps it, so a
+	// skill script writes like a shell command does.
 	var cmd *exec.Cmd
 	if info, err := os.Stat(scriptPath); err == nil && info.Mode()&0o111 != 0 {
-		cmd = exec.CommandContext(runCtx, scriptPath)
+		cmd = sandbox.Command(runCtx, scriptPath)
 	} else {
-		cmd = exec.CommandContext(runCtx, "sh", scriptPath)
+		cmd = sandbox.Command(runCtx, "sh", scriptPath)
 	}
 	cmd.Stdin = strings.NewReader(a.Input)
 	out, err := cmd.Output()
