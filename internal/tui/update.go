@@ -506,7 +506,7 @@ func (m *Model) listMcp() {
 func (m *Model) applyNewKey(provider, key string) {
 	m.opt.Orch.Provider = llm.NewOpenAICompat(m.opt.BaseURL, key)
 	m.opt.Orch.Gate = &tools.Gate{
-		Decide: tools.PolicyDecide(m.opt.Mode, m.Prompt()),
+		Decide: tools.ShellPolicyDecide(m.opt.Mode, m.Prompt(), m.opt.ShellAllow),
 		Audit:  tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),
 	}
 	_ = provider
@@ -585,7 +585,7 @@ func (m *Model) setMode(arg string) tea.Cmd {
 }
 
 func (m *Model) rebuildGate(mode string) {
-	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
+	m.opt.Orch.Gate.Decide = tools.ShellPolicyDecide(mode, m.Prompt(), m.opt.ShellAllow)
 }
 
 func (m *Model) answerTrust(trusted bool) {

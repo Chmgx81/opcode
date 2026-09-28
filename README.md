@@ -49,6 +49,18 @@ Cycle with **Tab**. Approving a plan (`y` implement, `a` implement with
 auto-accept) switches the session into a working mode mid-turn — the
 next request carries the action tools, no restart. `n` keeps planning.
 
+Safe shell commands can skip the prompt entirely — a token-prefix
+allowlist in `~/.tilde/config.json`:
+
+```json
+{"safe_commands": ["git status", "git diff", "ls", "go test", "echo"]}
+```
+
+`git status --short` matches; `git push` does not, and any shell
+metacharacter (`;` `|` `&` `$` backtick, redirections) fails closed —
+`git status ; rm -rf /` never auto-runs. The mode's posture still
+dominates: read-only and plan deny shell outright.
+
 ## In the TUI
 
 | Key | |
