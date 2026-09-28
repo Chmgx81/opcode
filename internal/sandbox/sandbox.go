@@ -43,6 +43,25 @@ func Command(ctx context.Context, name string, arg ...string) *exec.Cmd {
 	return installed.Command(ctx, name, arg...)
 }
 
+// PlainCommand builds a command that is never sandboxed — the
+// run_shell {"sandbox": false} escape. The permission gate treats
+// such calls as the approval-triggering escape; here it just means
+// the Landlock wrapper is skipped.
+func PlainCommand(ctx context.Context, name string, arg ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, arg...)
+	cmd.SysProcAttr = deathAttr()
+	return cmd
+}
+
+// Active reports whether subprocesses built through Command are
+// actually confined. The permission gate consults it before
+// crediting the sandbox: on a platform without Landlock a
+// "sandboxed" command runs free, and auto-running it would be a
+// lie.
+func Active() bool {
+	return installed != nil && installed.enabled
+}
+
 // Runner builds subprocess commands, optionally wrapped in the
 // Landlock sandbox. A nil *Runner or a disabled one builds plain
 // commands — every call site works unchanged.

@@ -1,3 +1,9 @@
+> Historical: the Phase 2 decision matrix below was superseded by
+> Phase 30 (phase30-sandbox-gate.md) — ask-every-time was renamed to
+> ask, sandboxed actions auto-run there, and read-only/plan prompt for
+> actions instead of hiding the tools. Kept as the record of what
+> Phase 2 shipped.
+
 # Phase 2 Spec — Permission Modes
 
 ## Goal

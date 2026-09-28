@@ -99,7 +99,7 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 		System:   system,
 		Registry: registry,
 		Gate:     gate,
-		Mode:     tools.ModeAskEveryTime,
+		Mode:     tools.ModeAsk,
 	}
 }
 

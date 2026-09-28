@@ -236,7 +236,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if v.auto {
 				mode = tools.ModeFullAuto
 			} else if mode == tools.ModeReadOnly || mode == tools.ModePlan {
-				mode = tools.ModeAskEveryTime
+				mode = tools.ModeAsk
 			}
 			if mode != m.opt.Mode {
 				return m, m.setMode(mode)
@@ -414,7 +414,7 @@ func (m *Model) cycleMode(dir int) tea.Cmd {
 			return m.setMode(next)
 		}
 	}
-	return m.setMode(tools.ModeAskEveryTime)
+	return m.setMode(tools.ModeAsk)
 }
 
 // submitInput handles Enter / Alt+Enter. Large pastes and @ mentions
@@ -745,7 +745,7 @@ func (m *Model) listMcp() {
 func (m *Model) applyNewKey(provider, key string) {
 	m.opt.Orch.Provider = llm.New(m.opt.API, m.opt.BaseURL, key)
 	m.opt.Orch.Gate = &tools.Gate{
-		Decide: tools.ShellPolicyDecide(m.opt.Mode, m.Prompt(), m.opt.ShellAllow),
+		Decide: tools.PolicyDecide(m.opt.Mode, m.Prompt()),
 		Audit:  tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),
 	}
 	_ = provider
@@ -845,7 +845,7 @@ func (m *Model) setMode(arg string) tea.Cmd {
 }
 
 func (m *Model) rebuildGate(mode string) {
-	m.opt.Orch.Gate.Decide = tools.ShellPolicyDecide(mode, m.Prompt(), m.opt.ShellAllow)
+	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
 }
 
 func (m *Model) answerTrust(trusted bool) {

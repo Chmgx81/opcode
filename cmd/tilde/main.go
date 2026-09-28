@@ -144,10 +144,6 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	gate := &tools.Gate{
 		Audit: tools.NewAuditLog(auditPath, tools.NewRedactor(key.Value)),
 	}
-	// Safe shell commands (config.json "safe_commands") run without
-	// prompting in ask mode; the mode's posture still dominates.
-	shellAllow := tools.NewShellAllowlist(cfg.SafeCommands)
-
 	// Project trust (Section 7): project-level skills only load once
 	// the project's executable surface is approved. --trust pre-approves
 	// for scripted use; otherwise the TUI asks, showing exactly what
@@ -387,7 +383,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// Headless (Section 3.9): one turn, no UI. Permissions fail closed
 	// with nobody to ask; use full-auto for unattended automation.
 	if *prompt != "" {
-		gate.Decide = tools.ShellPolicyDecide(cfg.PermissionMode, nil, shellAllow)
+		gate.Decide = tools.PolicyDecide(cfg.PermissionMode, nil)
 		if resumeNote != "" && !*jsonOut {
 			fmt.Fprintf(os.Stderr, "~ %s\n", resumeNote)
 		}
@@ -421,7 +417,6 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		API:          providerCfg.API,
 		AuditPath:    auditPath,
 		Animations:   cfg.Animations == nil || *cfg.Animations,
-		ShellAllow:   shellAllow,
 		Skills:       &skillManager,
 		MCPNames: func() []string {
 			var names []string
@@ -453,7 +448,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	})
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.
-	gate.Decide = tools.ShellPolicyDecide(cfg.PermissionMode, ui.Prompt(), shellAllow)
+	gate.Decide = tools.PolicyDecide(cfg.PermissionMode, ui.Prompt())
 	planTool.Approve = ui.PlanApprove()
 	todoList.OnChange = ui.TodosChanged()
 

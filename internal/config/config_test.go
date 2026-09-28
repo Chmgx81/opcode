@@ -101,8 +101,8 @@ func TestLoadConfigModeNormalizationAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("legacy \"ask\" must keep working: %v", err)
 	}
-	if cfg.PermissionMode != tools.ModeAskEveryTime {
-		t.Errorf("PermissionMode = %q, want ask-every-time", cfg.PermissionMode)
+	if cfg.PermissionMode != tools.ModeAsk {
+		t.Errorf("PermissionMode = %q, want ask", cfg.PermissionMode)
 	}
 
 	writeFile(t, filepath.Join(dir, "config.json"),

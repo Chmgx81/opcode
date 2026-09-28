@@ -19,14 +19,15 @@ type RunShell struct{}
 func (RunShell) Name() string { return "run_shell" }
 
 func (RunShell) Description() string {
-	return "Run a shell command (via sh -c) in the current working directory and return its combined stdout and stderr."
+	return "Run a shell command (via sh -c) in the current working directory and return its combined stdout and stderr. Sandboxed by default: writes are kernel-confined to the working directory, /tmp, and dev caches. Pass {\"sandbox\": false} only when confinement breaks the command — that escape asks the user for approval."
 }
 
 func (RunShell) Parameters() json.RawMessage {
 	return json.RawMessage(`{
 		"type": "object",
 		"properties": {
-			"command": {"type": "string", "description": "The shell command to run"}
+			"command": {"type": "string", "description": "The shell command to run"},
+			"sandbox": {"type": "boolean", "description": "Keep the kernel write-confinement (default true). false runs unsandboxed and requires approval in ask mode."}
 		},
 		"required": ["command"]
 	}`)
@@ -41,6 +42,7 @@ const runShellTimeout = 5 * time.Minute
 func (RunShell) Execute(ctx context.Context, args string) (string, error) {
 	var a struct {
 		Command string `json:"command"`
+		Sandbox *bool  `json:"sandbox"`
 	}
 	if err := parseArgs(args, &a); err != nil {
 		return "", err
@@ -53,7 +55,12 @@ func (RunShell) Execute(ctx context.Context, args string) (string, error) {
 		ctx, cancel = context.WithTimeout(ctx, runShellTimeout)
 		defer cancel()
 	}
-	cmd := sandbox.Command(ctx, "sh", "-c", a.Command)
+	var cmd *exec.Cmd
+	if a.Sandbox != nil && !*a.Sandbox {
+		cmd = sandbox.PlainCommand(ctx, "sh", "-c", a.Command)
+	} else {
+		cmd = sandbox.Command(ctx, "sh", "-c", a.Command)
+	}
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return string(out), fmt.Errorf("run_shell: timed out after %s", runShellTimeout)

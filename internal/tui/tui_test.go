@@ -63,11 +63,11 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 	reg.Register(tools.WriteFile{})
 	reg.Register(tools.RunShell{})
 	orch := orchestrator.New(fp, "test-model", "sys", &reg, &tools.Gate{})
-	orch.SetMode(tools.ModeAskEveryTime)
+	orch.SetMode(tools.ModeAsk)
 	m := New(Options{
 		Orch:         orch,
 		Model:        "test-model",
-		Mode:         tools.ModeAskEveryTime,
+		Mode:         tools.ModeAsk,
 		Cwd:          dir,
 		TildeHome:    dir,
 		ProviderName: "openrouter",
@@ -379,7 +379,7 @@ func TestSessionsPickerResumes(t *testing.T) {
 	m, fp := newText(t, dir, nil)
 
 	// One saved session in the sessions dir.
-	s := session.FromHistory("saved-model", tools.ModeAskEveryTime,
+	s := session.FromHistory("saved-model", tools.ModeAsk,
 		[]llm.Message{{Role: "user", Content: "hello from the past"}})
 	if err := os.MkdirAll(session.Dir(dir), 0o700); err != nil {
 		t.Fatal(err)
@@ -486,8 +486,8 @@ func TestTabCyclesModes(t *testing.T) {
 		t.Errorf("second shift+tab = %q, want full-auto", m.opt.Mode)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if m.opt.Mode != tools.ModeAskEveryTime {
-		t.Errorf("second shift+tab = %q, want ask-every-time", m.opt.Mode)
+	if m.opt.Mode != tools.ModeAsk {
+		t.Errorf("second shift+tab = %q, want ask", m.opt.Mode)
 	}
 	// Mode changes announce via the transient toast only — a line per
 	// keypress buried the conversation (user-reported).
@@ -1181,14 +1181,14 @@ func TestPlanApprovalLifecycle(t *testing.T) {
 		t.Errorf("approval prompt missing from the view")
 	}
 
-	// y: proceed — plan graduates to ask-every-time.
+	// y: proceed — plan graduates to ask.
 	m.Update(keyMsg("y"))
 	v := <-reply
 	if !v.proceed || v.auto {
 		t.Errorf("y verdict = %+v, want proceed without auto", v)
 	}
-	if m.opt.Mode != tools.ModeAskEveryTime {
-		t.Errorf("y must switch plan -> ask-every-time, got %q", m.opt.Mode)
+	if m.opt.Mode != tools.ModeAsk {
+		t.Errorf("y must switch plan -> ask, got %q", m.opt.Mode)
 	}
 	if tr := m.transcript(); !strings.Contains(tr, "plan approved") {
 		t.Errorf("approval note missing:\n%s", tr)
@@ -1374,7 +1374,7 @@ func TestFooterFitsNarrowTerminals(t *testing.T) {
 	if w := len([]rune(footer)); w > 24 {
 		t.Errorf("footer is %d cols on a 24-col terminal: %q", w, footer)
 	}
-	if !strings.Contains(footer, "ask-every-time") {
+	if !strings.Contains(footer, "ask") {
 		t.Errorf("the mode must survive degradation: %q", footer)
 	}
 }

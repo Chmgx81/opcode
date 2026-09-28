@@ -439,7 +439,7 @@ func (f *steerableProvider) waitForRequest(t *testing.T) {
 	t.Fatal("provider never received a request")
 }
 
-func TestReadOnlyModeHidesActionTools(t *testing.T) {
+func TestReadOnlyModeOffersAllTools(t *testing.T) {
 	dir := t.TempDir()
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.TextEvent, Text: "hi"}},
@@ -449,23 +449,27 @@ func TestReadOnlyModeHidesActionTools(t *testing.T) {
 	drain(t, orch.Send(context.Background(), "go"))
 
 	req := p.gotRequests[0]
-	// Only read_file is offered; write/edit/shell are hidden entirely.
-	if len(req.Tools) != 1 || req.Tools[0].Name != "read_file" {
-		names := []string{}
-		for _, tt := range req.Tools {
-			names = append(names, tt.Name)
+	// Phase 30: offering is not permission — every mode offers every
+	// tier and the gate is the single enforcement point, so a
+	// read-only session can still propose a write.
+	names := map[string]bool{}
+	for _, tt := range req.Tools {
+		names[tt.Name] = true
+	}
+	for _, want := range []string{"read_file", "write_file", "edit_file", "run_shell", "present_plan"} {
+		if !names[want] {
+			t.Errorf("read-only mode must still offer %s, got %v", want, names)
 		}
-		t.Errorf("read-only mode offered tools %v, want [read_file]", names)
 	}
 	// The system prompt carries the mode instruction.
-	if !strings.Contains(req.System, "read-only") {
+	if !strings.Contains(req.System, "mode is read-only") {
 		t.Errorf("mode instruction missing from system prompt: %q", req.System)
 	}
 }
 
 func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 	dir := t.TempDir()
-	for _, mode := range []string{tools.ModeAskEveryTime, tools.ModeFullAuto} {
+	for _, mode := range []string{tools.ModeAsk, tools.ModeFullAuto} {
 		p := &fakeProvider{rounds: [][]llm.ChatEvent{
 			{{Type: llm.TextEvent, Text: "hi"}},
 		}}
@@ -482,15 +486,15 @@ func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 	}
 
 	// The removed auto-accept-safe-ops mode survives as a legacy alias
-	// that must present the ask-every-time posture, never anything wider.
+	// that must present the ask posture, never anything wider.
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.TextEvent, Text: "hi"}},
 	}}
 	orch, _ := newTestOrchestrator(p, nil, dir)
 	orch.SetMode(tools.ModeAutoAcceptSafe)
 	drain(t, orch.Send(context.Background(), "go"))
-	if sys := p.gotRequests[0].System; !strings.Contains(sys, tools.ModeAskEveryTime) {
-		t.Errorf("legacy auto-accept-safe-ops must map to ask-every-time: %q", sys)
+	if sys := p.gotRequests[0].System; !strings.Contains(sys, tools.ModeAsk) {
+		t.Errorf("legacy auto-accept-safe-ops must map to ask: %q", sys)
 	}
 }
 
@@ -504,7 +508,7 @@ func TestSkillsIndexComposedIntoSystemPrompt(t *testing.T) {
 	drain(t, orch.Send(context.Background(), "go"))
 
 	sys := p.gotRequests[0].System
-	for _, want := range []string{"test system prompt", "- deploy: Deploys the app", "ask-every-time"} {
+	for _, want := range []string{"test system prompt", "- deploy: Deploys the app", "mode is ask"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system prompt missing %q: %q", want, sys)
 		}
@@ -686,9 +690,11 @@ func TestPlanModeAdvertisesResearchAndPlanTools(t *testing.T) {
 	if !names["read_file"] || !names["present_plan"] {
 		t.Errorf("plan mode must offer read_file and present_plan, got %v", names)
 	}
-	for _, banned := range []string{"write_file", "edit_file", "run_shell"} {
-		if names[banned] {
-			t.Errorf("plan mode must not offer %s", banned)
+	// Phase 30: action tools are offered too — proposing is not
+	// running; the gate prompts for each call.
+	for _, offered := range []string{"write_file", "edit_file", "run_shell"} {
+		if !names[offered] {
+			t.Errorf("plan mode must still offer %s (the gate prompts), got %v", offered, names)
 		}
 	}
 	if !strings.Contains(req.System, "mode is plan") || !strings.Contains(req.System, "present_plan") {

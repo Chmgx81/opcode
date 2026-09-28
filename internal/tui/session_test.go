@@ -59,14 +59,14 @@ func TestFullSessionOverTeaProgram(t *testing.T) {
 	m := New(Options{
 		Orch:         orch,
 		Model:        "m",
-		Mode:         tools.ModeAskEveryTime,
+		Mode:         tools.ModeAsk,
 		Cwd:          dir,
 		TildeHome:    dir,
 		ProviderName: "openrouter",
 		BaseURL:      srv.URL,
 		AuditPath:    filepath.Join(dir, "audit.jsonl"),
 	})
-	gate.Decide = tools.PolicyDecide(tools.ModeAskEveryTime, m.Prompt())
+	gate.Decide = tools.PolicyDecide(tools.ModeAsk, m.Prompt())
 
 	inR, inW := io.Pipe()
 	p := tea.NewProgram(m, tea.WithInput(inR), tea.WithOutput(io.Discard))
@@ -79,13 +79,13 @@ func TestFullSessionOverTeaProgram(t *testing.T) {
 		close(done)
 	}()
 
-	// Feed input on a schedule: submit the message, then answer the
-	// permission prompt once it is up.
+	// Feed input on a schedule: submit the message; the write's
+	// target is inside the sandbox's writable roots, so ask mode
+	// runs it without a permission prompt (Phase 30) and the turn
+	// completes on its own; then exit.
 	go func() {
 		io.WriteString(inW, "create the file\r")
-		time.Sleep(700 * time.Millisecond)
-		io.WriteString(inW, "y")
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(1400 * time.Millisecond)
 		io.WriteString(inW, "/exit\r")
 	}()
 

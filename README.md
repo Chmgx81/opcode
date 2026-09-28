@@ -71,14 +71,16 @@ manager at first use), then the environment — the provider's
 
 | Mode | What the model gets |
 |---|---|
-| `read-only` | read tools only (read_file, list_dir) — nothing else is offered |
-| `plan` | reads + `present_plan`: it researches, presents a plan, you approve |
-| `ask-every-time` | asks you first — the default |
+| `read-only` | reads run free; every write or command it proposes asks you first — nothing runs without your approval |
+| `plan` | reads free, `present_plan` free; writes and commands ask. It researches, presents a plan, you approve |
+| `ask` | the sandbox is the safety: sandboxed commands and in-tree writes run without prompting; sandbox escapes and out-of-tree writes ask — the default |
 | `full-auto` | runs without prompting, still logged |
 
 Cycle with **Tab**. Approving a plan (`y` implement, `a` implement with
 auto-accept) switches the session into a working mode mid-turn — the
 next request carries the action tools, no restart. `n` keeps planning.
+Old configs with `ask-every-time` (or the Phase 1 `ask` spelling) keep
+working — the mode was renamed because it no longer asks every time.
 
 Action-Allowed tools ask through a numbered dialog — the literal
 command, then `1. Yes`, `2. Yes, and don't ask again for: <command
@@ -86,18 +88,6 @@ prefix>:*`, `3. No`. Option 2 grants a session-scoped prefix rule
 (`npm init:*` covers `npm init --yes`, never `npm install`; any shell
 metacharacter fails closed). Arrows, number keys, and `y`/`a`/`n` all
 work; **No** is preselected.
-
-Safe shell commands can skip the prompt entirely — a token-prefix
-allowlist in `~/.tilde/config.json`:
-
-```json
-{"safe_commands": ["git status", "git diff", "ls", "go test", "echo"]}
-```
-
-`git status --short` matches; `git push` does not, and any shell
-metacharacter (`;` `|` `&` `$` backtick, redirections) fails closed —
-`git status ; rm -rf /` never auto-runs. The mode's posture still
-dominates: read-only and plan deny shell outright.
 
 ## Sandbox
 
@@ -107,9 +97,19 @@ directory, `/tmp`, and dev caches** (`~/.cache`, `~/go/pkg/mod`,
 `~/.cargo/registry`, `~/.npm`). A command that tries to write to
 `~/.ssh` or your home fails with `Permission denied` — enforced by
 the kernel, not by tilde. On by default where the kernel supports
-it; `{"sandbox": false}` opts out. PATH bin dirs (`~/go/bin`,
+it. A model can pass `{"sandbox": false}` when confinement breaks
+a command — that escape always goes through the approval dialog in
+ask mode. PATH bin dirs (`~/go/bin`,
 `~/.local/bin`) stay read-only, so a command can't drop an
 executable where your shell will find it.
+
+In-process file writes (`write_file`, `edit_file`) can't be
+Landlocked, so the gate bounds them by path instead: writes inside
+the same roots run without prompting in `ask` mode (symlinks are
+resolved first, so an in-tree path pointing outside still asks);
+anything else asks. Where Landlock is unavailable, ask mode
+prompts for every action — it never auto-runs a command it cannot
+actually confine.
 
 ## In the TUI
 
