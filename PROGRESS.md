@@ -328,3 +328,58 @@ Spec: [docs/specs/phase4-mcp.md](docs/specs/phase4-mcp.md)
 - Subagent Manager: in-process goroutines, typed event channels,
   same trust boundary — built last per the spec, once everything
   underneath is solid.
+
+---
+
+# Phase 5 — Subagent Manager (status: complete, live-verified)
+
+Spec: [docs/specs/phase5-subagents.md](docs/specs/phase5-subagents.md)
+
+## Built
+
+- `internal/subagent` — Runner (a sub-orchestrator: same provider,
+  model, and gate — one trust boundary, one audit log — narrower
+  system prompt, tool subset with every spawn tool excluded so
+  recursion is impossible by construction), the `spawn_subagent` tool
+  (Action-Allowed: a paid API call), and a settable Emitter so the
+  TUI becomes the progress sink once it exists.
+- `internal/tui` — labeled `[subagent title]` transcript lines; text
+  accumulates per title and flushes at boundaries (tool, done, error)
+  so the log stays readable; subagent usage adds to session totals.
+- `internal/tools` — `Registry.All()` for the subset builder.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all nine packages: runner returns the
+  final answer and the exact event sequence; the subagent's request
+  provably carries the subagent prompt and NO spawn tool (asserted on
+  the request the fake provider receives); errors propagate; an
+  empty answer is explicit, not silent; subagent tool calls land in
+  the shared audit log; spawn tool tier and argument validation;
+  TUI rendering and usage accumulation.
+- **PTY**: parent called spawn_subagent; the TUI showed live labeled
+  activity while the subagent really wrote a file through the shared
+  gate; the result fed back; both levels audited.
+- **Live OpenRouter**: the real model delegated a task; the subagent
+  ran `echo delegate` for real, reported the output, and the parent
+  relayed it — all visible in the transcript and audit log.
+
+## Phase 5 assumptions
+
+1. Sequential spawns: multiple spawn calls in one round execute one
+   after another. The TUI stays live during a spawn (events stream
+   while the parent waits), which is the non-blocking property the
+   spec requires; parallel dispatch buys nothing yet and changes core
+   dispatch.
+2. No nesting: enforced by tool exclusion, not a depth counter.
+3. Subagents share the parent's model and permission posture
+   (including mid-session mode switches — the gate is shared).
+4. Labeled transcript lines now; panes are a later visual upgrade.
+
+## Next (Phase 6, only after user review)
+
+- Polish: tree-structured session storage + resume, compaction,
+  headless `-p`/`--json`, packaging/distribution. Plus the
+  deliberately deferred items: AGENTS.md hierarchical loading (spec
+  Section 5, still unowned), `/config` and `/reload`, prompt
+  templates, MCP debug view, project config allow-list keys.

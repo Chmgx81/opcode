@@ -645,3 +645,42 @@ func TestTrustPromptAtStartup(t *testing.T) {
 		t.Error("grant note missing from transcript")
 	}
 }
+
+func TestSubagentEventsRender(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.width, m.height = 80, 40
+
+	// Streamed text accumulates per title; tool calls flush it.
+	m.Update(subagentMsg(subagentEvent{Title: "auditor", Kind: subagentText, Text: "Reading the files. "}))
+	m.Update(subagentMsg(subagentEvent{Title: "auditor", Kind: subagentText, Text: "Found two."}))
+	m.Update(subagentMsg(subagentEvent{Title: "auditor", Kind: subagentTool, Text: "read_file {\"path\": \"x\"}"}))
+	m.Update(subagentMsg(subagentEvent{Title: "auditor", Kind: subagentUsage, Usage: llm.Usage{PromptTokens: 30, CompletionTokens: 4}}))
+	m.Update(subagentMsg(subagentEvent{Title: "auditor", Kind: subagentDone, Text: "audit complete"}))
+
+	joined := strings.Join(m.lines, "\n")
+	if !strings.Contains(joined, "[subagent auditor] Reading the files. Found two.") {
+		t.Errorf("accumulated text not flushed at the tool boundary:\n%s", joined)
+	}
+	if !strings.Contains(joined, "read_file") {
+		t.Errorf("tool event missing:\n%s", joined)
+	}
+	if !strings.Contains(joined, "audit complete") {
+		t.Errorf("done event missing:\n%s", joined)
+	}
+	if !strings.Contains(joined, "done") {
+		t.Errorf("done marker missing:\n%s", joined)
+	}
+	// Usage from subagents adds to the session totals.
+	if m.usage.PromptTokens != 30 || m.usage.CompletionTokens != 4 {
+		t.Errorf("usage = %+v", m.usage)
+	}
+
+	// Errors flush and label.
+	m.Update(subagentMsg(subagentEvent{Title: "w", Kind: subagentText, Text: "working"}))
+	m.Update(subagentMsg(subagentEvent{Title: "w", Kind: subagentError, Text: "gave up"}))
+	joined = strings.Join(m.lines, "\n")
+	if !strings.Contains(joined, "working") || !strings.Contains(joined, "error: gave up") {
+		t.Errorf("error path broken:\n%s", joined)
+	}
+}
