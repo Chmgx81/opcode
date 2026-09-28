@@ -1864,3 +1864,18 @@ multiline-guard/persistence/cap, commit boundary rhythm, View
 skipping committed entries, the no-program no-op. Spec §3/§4/§5/§6
 updated in the same change; the not-yet list drops inline commit
 and composer history.
+
+# History paste-token caveat fixed (status: complete, unit-verified)
+
+The known edge from the scrollback/history phase: history stored the
+typed form, so a recalled [paste N] token from an earlier session was
+a dead token. Fixed in pushHistory: at submit time the paste map is
+still populated, so paste tokens expand into their content for the
+stored form — recall now gives back usable text. @path mentions
+stay raw (they re-read the file fresh at submit, which is what you
+want). An expansion beyond ~4 KB keeps the typed form on purpose:
+a visible dead token on recall beats megabytes in history.jsonl.
+Pinned by TestHistoryExpandsPasteTokens and
+TestHistoryKeepsHugePastesAsTyped. The recall key path itself was
+already PTY-verified last phase; this change only touches what
+pushHistory stores, so a fresh PTY run was not needed.
