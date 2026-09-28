@@ -49,6 +49,11 @@ func (r *Registry) Register(t Tool) {
 	r.tools = append(r.tools, t)
 }
 
+// All returns every registered tool in registration order.
+func (r *Registry) All() []Tool {
+	return append([]Tool(nil), r.tools...)
+}
+
 func (r *Registry) Get(name string) (Tool, bool) {
 	for _, t := range r.tools {
 		if t.Name() == name {
