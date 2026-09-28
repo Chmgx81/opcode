@@ -24,8 +24,8 @@ func (m *Model) View() string {
 // timelineView renders the transcript entries.
 func (m *Model) timelineView() []string {
 	var out []string
-	for _, e := range m.entries {
-		out = append(out, m.renderEntry(e)...)
+	for i := range m.entries {
+		out = append(out, m.renderEntry(&m.entries[i])...)
 	}
 	// In-flight assistant text.
 	if s := strings.TrimSpace(m.stream.String()); s != "" {
@@ -34,20 +34,26 @@ func (m *Model) timelineView() []string {
 	return out
 }
 
-// renderEntry maps one structured entry to view lines.
-func (m *Model) renderEntry(e entry) []string {
+// renderEntry maps one structured entry to view lines. Assistant text
+// renders as markdown, cached per width on the entry: View runs every
+// frame and re-running glamour per frame would visibly cost.
+func (m *Model) renderEntry(e *entry) []string {
 	w := m.termWidth()
 	switch e.kind {
 	case entryUser:
 		return wrapAll(accentStyle.Render(GlyphPrompt+" ")+e.text, w)
 	case entryAssistant:
-		return renderAssistant(e.text, w)
+		if e.rendered == nil || e.renderedW != w {
+			e.rendered = renderMarkdown(e.text, w)
+			e.renderedW = w
+		}
+		return e.rendered
 	case entryTool:
 		args := truncate(e.text, 70)
 		return []string{accentStyle.Render(GlyphBullet+" ") +
 			toolNameStyle.Render(e.tool) + dimStyle.Render(" "+args)}
 	case entryResult:
-		return m.renderResult(e, w)
+		return m.renderResult(*e, w)
 	case entryOK:
 		return wrapAll(okStyle.Render(GlyphOK+" ")+e.text, w)
 	case entryErr:
@@ -175,6 +181,9 @@ func (m *Model) floatingView() []string {
 	if m.paletteOpen() {
 		out = append(out, "", m.paletteView(w))
 	}
+	if m.picker != nil {
+		out = append(out, "", m.pickerView(w))
+	}
 	if m.helpOpen {
 		out = append(out, "", m.helpView(w))
 	}
@@ -260,6 +269,51 @@ func (m *Model) paletteView(w int) string {
 		lines = append(lines, marker+style.Render(c.Name)+dimStyle.Render("  "+c.Desc))
 	}
 	return paletteStyle.Width(w - 4).Render(strings.Join(lines, "\n"))
+}
+
+// pickerView renders the /model and /sessions overlay: a filter line,
+// the matched items with a caret on the selection, and a scroll hint
+// when the list outgrows the frame.
+func (m *Model) pickerView(w int) string {
+	p := m.picker
+	rows := []string{
+		promptStyle.Render(p.title) +
+			dimStyle.Render("  type to filter · arrows to move · enter to select · esc to close"),
+	}
+	if q := p.query; q != "" {
+		rows = append(rows, accentStyle.Render(GlyphPrompt+" ")+q)
+	}
+	if len(p.matched) == 0 {
+		rows = append(rows, dimStyle.Render("  no matches"))
+	}
+	const visible = 12
+	lo, hi := 0, len(p.matched)
+	if hi > visible {
+		// Scroll a window around the selection.
+		lo = maxInt(p.idx-visible/2, 0)
+		if lo+visible > hi {
+			lo = hi - visible
+		}
+		hi = lo + visible
+	}
+	for i := lo; i < hi; i++ {
+		it := p.matched[i]
+		marker, style := "  ", dimStyle
+		if i == p.idx {
+			marker = accentStyle.Render(GlyphCaret + " ")
+			style = toolNameStyle
+		}
+		line := marker + style.Render(truncate(it.Label, maxInt(w-16, 12)))
+		if it.Detail != "" {
+			line += dimStyle.Render("  " + truncate(it.Detail, 56))
+		}
+		rows = append(rows, line)
+	}
+	if len(p.matched) > visible {
+		rows = append(rows, dimStyle.Render(
+			fmt.Sprintf("  … %d more — keep typing to narrow", len(p.matched)-visible)))
+	}
+	return paletteStyle.Width(w - 4).Render(strings.Join(rows, "\n"))
 }
 
 // helpView is the "?" overlay: keys and commands at a glance.

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -13,6 +15,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/session"
 	"github.com/Chmgx81/tilde/internal/tools"
 )
 
@@ -90,6 +93,21 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.helpOpen {
 		m.helpOpen = false
 		return m, nil
+	}
+
+	// The overlay picker owns the keyboard while open; typing filters
+	// instead of reaching the composer.
+	if m.picker != nil {
+		k := keyInput{name: msg.String()}
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+			k.printable = string(msg.Runes)
+		}
+		if sel, handled := m.handlePickerKey(k); handled {
+			if sel != nil {
+				m.pickerSelect(*sel)
+			}
+			return m, nil
+		}
 	}
 
 	switch msg.String() {
@@ -268,8 +286,10 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		m.setMode(arg)
 		return nil
 	case "/model":
-		m.add(entry{kind: entryDim, text: fmt.Sprintf("model %s · provider %s · base %s",
-			m.opt.Model, m.opt.ProviderName, m.opt.BaseURL)})
+		m.handleModelCommand(arg)
+		return nil
+	case "/sessions":
+		m.openSessionsPicker()
 		return nil
 	case "/skills":
 		m.listSkills()
@@ -543,6 +563,195 @@ func (m *Model) handleSubagent(ev subagentEvent) {
 		m.add(entry{kind: entrySubagent, subTitle: label, text: dangerStyle.Render("error: " + ev.Text)})
 	}
 	m.subMu.Unlock()
+}
+
+// handleModelCommand implements /model: no argument opens the picker
+// over models.json; a name switches immediately if it is configured.
+func (m *Model) handleModelCommand(arg string) {
+	if arg == "" {
+		m.openModelPicker()
+		return
+	}
+	for provider, pc := range m.opt.Models.Providers {
+		for _, model := range pc.Models {
+			if model == arg {
+				m.switchModel(provider, model)
+				return
+			}
+		}
+	}
+	m.add(entry{kind: entryErr,
+		text: "unknown model " + arg + " — /model to pick one, or add it to models.json"})
+}
+
+// openModelPicker lists every configured provider and model, marking
+// the active one.
+func (m *Model) openModelPicker() {
+	if m.working {
+		m.add(entry{kind: entryErr, text: "finish or interrupt the turn before switching models"})
+		return
+	}
+	if m.opt.SwitchModel == nil {
+		m.add(entry{kind: entryErr, text: "model switching is not wired in this build"})
+		return
+	}
+	names := make([]string, 0, len(m.opt.Models.Providers))
+	for name := range m.opt.Models.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var items []pickerItem
+	for _, name := range names {
+		pc := m.opt.Models.Providers[name]
+		if len(pc.Models) == 0 {
+			items = append(items, pickerItem{
+				Label:    name,
+				Detail:   "no models listed — switches provider, keeps the current model",
+				Provider: name,
+			})
+			continue
+		}
+		for _, model := range pc.Models {
+			detail := name + " · " + pc.BaseURL
+			if name == m.opt.ProviderName && model == m.opt.Model {
+				detail += " · active"
+			}
+			items = append(items, pickerItem{Label: model, Detail: detail, Provider: name, Model: model})
+		}
+	}
+	if len(items) == 0 {
+		m.add(entry{kind: entryDim, text: "no providers or models configured in models.json"})
+		return
+	}
+	m.picker = newPicker(pickerModels, "switch model", items)
+}
+
+// switchModel rebuilds the provider and model everywhere through the
+// injected callback, then updates the status bar state it owns.
+func (m *Model) switchModel(provider, model string) {
+	if m.working {
+		m.add(entry{kind: entryErr, text: "finish or interrupt the turn before switching models"})
+		return
+	}
+	if m.opt.SwitchModel == nil {
+		m.add(entry{kind: entryErr, text: "model switching is not wired in this build"})
+		return
+	}
+	if err := m.opt.SwitchModel(provider, model); err != nil {
+		m.add(entry{kind: entryErr, text: "could not switch: " + err.Error()})
+		return
+	}
+	if model != "" {
+		m.opt.Model = model
+	}
+	if provider != "" {
+		m.opt.ProviderName = provider
+	}
+	if pc, ok := m.opt.Models.Providers[provider]; ok && pc.BaseURL != "" {
+		m.opt.BaseURL = pc.BaseURL
+	}
+	note := "switched to " + m.opt.Model + " (provider " + m.opt.ProviderName + ") — the next request uses it"
+	m.showToast("model switched to " + m.opt.Model)
+	m.add(entry{kind: entryOK, text: note})
+}
+
+// openSessionsPicker lists saved sessions newest-first.
+func (m *Model) openSessionsPicker() {
+	if m.working {
+		m.add(entry{kind: entryErr, text: "finish or interrupt the turn before resuming a session"})
+		return
+	}
+	if m.opt.ResumeSession == nil {
+		m.add(entry{kind: entryErr, text: "session resume is not wired in this build"})
+		return
+	}
+	items, err := sessionItems(m.opt.TildeHome)
+	if err != nil {
+		m.add(entry{kind: entryErr, text: "could not read sessions: " + err.Error()})
+		return
+	}
+	if len(items) == 0 {
+		m.add(entry{kind: entryDim, text: "no saved sessions in " + session.Dir(m.opt.TildeHome)})
+		return
+	}
+	m.picker = newPicker(pickerSessions, "resume session", items)
+}
+
+// sessionItems reads the sessions directory, newest first. A corrupt
+// file is skipped, not fatal: history browsing must not break on one
+// bad write.
+func sessionItems(homeDir string) ([]pickerItem, error) {
+	dir := session.Dir(homeDir)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	items := make([]pickerItem, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		s, err := session.Load(path)
+		if err != nil {
+			continue
+		}
+		detail := fmt.Sprintf("%d messages · %s", len(s.History()), s.Model)
+		if preview := firstUserText(s); preview != "" {
+			detail += " · " + preview
+		}
+		items = append(items, pickerItem{Label: name, Detail: detail, Path: path})
+	}
+	return items, nil
+}
+
+func firstUserText(s *session.Session) string {
+	for _, msg := range s.History() {
+		if msg.Role != "user" || strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		preview := strings.Join(strings.Fields(msg.Content), " ")
+		return truncate(preview, 48)
+	}
+	return ""
+}
+
+// pickerSelect runs the command-specific action for a selection.
+func (m *Model) pickerSelect(it pickerItem) {
+	if it.Path != "" {
+		m.resumeSession(it.Path, it.Label)
+		return
+	}
+	m.switchModel(it.Provider, it.Model)
+}
+
+// resumeSession saves the current conversation, then re-seeds the
+// orchestrator from the chosen session. The transcript resets: the
+// conversation context moved wholesale into the orchestrator.
+func (m *Model) resumeSession(path, label string) {
+	if m.opt.SaveCurrentSession != nil {
+		m.opt.SaveCurrentSession()
+	}
+	n, err := m.opt.ResumeSession(path)
+	if err != nil {
+		m.add(entry{kind: entryErr, text: "could not resume " + label + ": " + err.Error()})
+		return
+	}
+	m.entries = nil
+	m.stream.Reset()
+	m.queue = nil
+	m.usage = llm.Usage{}
+	m.add(entry{kind: entryUser, text: boldStyle.Render("tilde " + version)})
+	m.add(entry{kind: entryDim, text: dimStyle.Render(m.opt.Model + " · " + m.opt.Mode)})
+	m.add(entry{kind: entryOK, text: fmt.Sprintf("resumed %s — %d messages in context", label, n)})
+	m.showToast("resumed " + label)
 }
 
 // finishStream flushes the accumulated assistant text into the

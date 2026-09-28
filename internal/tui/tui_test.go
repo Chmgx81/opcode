@@ -15,6 +15,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/session"
 	"github.com/Chmgx81/tilde/internal/tools"
 )
 
@@ -23,6 +24,9 @@ type scriptedProvider struct {
 	mu          sync.Mutex
 	rounds      [][]llm.ChatEvent
 	gotRequests []llm.ChatRequest
+	switchedTo  string
+	saved       bool
+	resumed     string
 }
 
 func (p *scriptedProvider) StreamChat(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
@@ -67,6 +71,25 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 		ProviderName: "openrouter",
 		BaseURL:      "http://example.test/v1",
 		AuditPath:    filepath.Join(dir, "audit.jsonl"),
+		Models: config.ModelsConfig{
+			DefaultProvider: "openrouter",
+			Providers: map[string]config.ProviderConfig{
+				"openrouter": {
+					BaseURL:   "http://example.test/v1",
+					APIKeyEnv: "OPENROUTER_API_KEY",
+					Models:    []string{"test-model", "other-model"},
+				},
+			},
+		},
+		SwitchModel: func(provider, model string) error {
+			fp.switchedTo = model
+			return nil
+		},
+		SaveCurrentSession: func() { fp.saved = true },
+		ResumeSession: func(path string) (int, error) {
+			fp.resumed = path
+			return 42, nil
+		},
 	})
 	m.width, m.height = 80, 30
 	return m, fp
@@ -75,8 +98,8 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 // transcript renders the entry list with ANSI stripped, for assertions.
 func (m *Model) transcript() string {
 	var out []string
-	for _, e := range m.entries {
-		out = append(out, m.renderEntry(e)...)
+	for i := range m.entries {
+		out = append(out, m.renderEntry(&m.entries[i])...)
 	}
 	return stripANSI(strings.Join(out, "\n"))
 }
@@ -311,17 +334,136 @@ func TestPaletteFiltersAndRuns(t *testing.T) {
 		t.Fatalf("matches = %v", matches)
 	}
 
-	// Down selects /model; Enter runs it.
+	// Down selects /model; Enter opens the models picker.
 	m.Update(keyMsg("down"))
 	typeAndEnter(m, "/mo")
-	if tr := m.transcript(); !strings.Contains(tr, "provider openrouter") {
-		t.Errorf("/model did not run: %s", tr)
+	if m.picker == nil || m.picker.kind != pickerModels {
+		t.Fatalf("/model should open the model picker: %s", m.transcript())
+	}
+	if it, _ := m.picker.current(); it.Model != "test-model" || it.Label != "test-model" {
+		t.Errorf("picker cursor = %+v, want test-model active first", it)
 	}
 
 	// A space closes the palette (an argument is being typed).
+	m.picker = nil
 	m.composer.SetValue("/mode read-only")
 	if m.paletteOpen() {
 		t.Error("palette must close once arguments start")
+	}
+}
+
+func TestModelPickerFiltersAndSwitches(t *testing.T) {
+	dir := t.TempDir()
+	m, fp := newText(t, dir, nil)
+
+	typeAndEnter(m, "/model")
+	if m.picker == nil {
+		t.Fatal("/model should open the picker")
+	}
+	// Type to filter; only other-model matches.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("other")})
+	if got := len(m.picker.matched); got != 1 {
+		t.Fatalf("filter matches = %d, want 1", got)
+	}
+	// Enter selects; SwitchModel runs; the status state follows.
+	m.Update(keyMsg("enter"))
+	if m.picker != nil {
+		t.Error("picker should close on select")
+	}
+	if fp.switchedTo != "other-model" {
+		t.Errorf("SwitchModel got %q, want other-model", fp.switchedTo)
+	}
+	if m.opt.Model != "other-model" {
+		t.Errorf("opt.Model = %q, want other-model", m.opt.Model)
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "switched to other-model") {
+		t.Errorf("no switch note: %s", tr)
+	}
+	// Esc with the picker open cancels without switching.
+	typeAndEnter(m, "/model")
+	m.Update(keyMsg("esc"))
+	if m.picker != nil {
+		t.Error("esc should close the picker")
+	}
+	if fp.switchedTo != "other-model" {
+		t.Errorf("esc must not switch: got %q", fp.switchedTo)
+	}
+}
+
+func TestSessionsPickerResumes(t *testing.T) {
+	dir := t.TempDir()
+	m, fp := newText(t, dir, nil)
+
+	// One saved session in the sessions dir.
+	s := session.FromHistory("saved-model", tools.ModeAskEveryTime,
+		[]llm.Message{{Role: "user", Content: "hello from the past"}})
+	if err := os.MkdirAll(session.Dir(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(session.Dir(dir), "20260101-000000-abc123.json")
+	if err := s.Save(path, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	typeAndEnter(m, "/sessions")
+	if m.picker == nil || m.picker.kind != pickerSessions {
+		t.Fatalf("/sessions should open the picker: %s", m.transcript())
+	}
+	it, ok := m.picker.current()
+	if !ok || it.Path != path {
+		t.Fatalf("picker item = %+v, want %s", it, path)
+	}
+	if !strings.Contains(it.Detail, "hello from the past") {
+		t.Errorf("preview missing: %q", it.Detail)
+	}
+	m.Update(keyMsg("enter"))
+	if !fp.saved {
+		t.Error("the current conversation must be saved before switching")
+	}
+	if fp.resumed != path {
+		t.Errorf("ResumeSession got %q, want %s", fp.resumed, path)
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "resumed") || !strings.Contains(tr, "42 messages") {
+		t.Errorf("no resume note: %s", tr)
+	}
+}
+
+func TestAssistantEntriesRenderMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.entries = nil // drop the greeting block; test only this entry
+	m.entries = append(m.entries, entry{kind: entryAssistant,
+		text: "# Title\n\nsome *emphasis* and a [link](http://example.test)\n\n```go\nfmt.Println(\"hi\")\n```\n"})
+
+	var lines []string
+	for i := range m.entries {
+		lines = append(lines, m.renderEntry(&m.entries[i])...)
+	}
+	rendered := stripANSI(strings.Join(lines, "\n"))
+	for _, want := range []string{"Title", "emphasis", "link", `fmt.Println("hi")`} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("markdown render lost %q:\n%s", want, rendered)
+		}
+	}
+	// Second render uses the cache: same pointer, no rebuild needed.
+	if m.entries[0].rendered == nil || m.entries[0].renderedW != m.termWidth() {
+		t.Errorf("render cache not populated: %d lines, width %d",
+			len(m.entries[0].rendered), m.entries[0].renderedW)
+	}
+	before := m.entries[0].rendered
+	for i := range m.entries {
+		m.renderEntry(&m.entries[i])
+	}
+	if &m.entries[0].rendered[0] != &before[0] {
+		t.Error("cache must be reused, not re-rendered")
+	}
+	// A width change re-renders instead of reusing a stale layout.
+	m.width = 60
+	for i := range m.entries {
+		m.renderEntry(&m.entries[i])
+	}
+	if m.entries[0].renderedW != 60 {
+		t.Errorf("width change not picked up: %d", m.entries[0].renderedW)
 	}
 }
 

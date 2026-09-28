@@ -1,8 +1,9 @@
 # tilde
 
-A terminal-based coding agent harness in Go. Phase 1: a Bubble Tea TUI
-over the proven core loop — streaming responses, permission prompts for
-actions, steering mid-turn, and `/login` / `/logout`.
+A terminal-based coding agent harness in Go: a Bubble Tea TUI over a
+UI-independent agent loop — streaming markdown responses, a collapsible
+tool timeline, permission modes, steering mid-turn, skills, MCP,
+subagents, sessions, and a `/model` picker.
 
 Architecture and build order: [docs/specs/tilde-architecture.md](docs/specs/tilde-architecture.md).
 Current status and honest verification notes: [PROGRESS.md](PROGRESS.md).
@@ -61,10 +62,13 @@ Keys while a turn is running:
 | Esc | cancel the current turn |
 | Ctrl+C | cancel and quit |
 
-Slash commands: `/mode` (show or switch permission mode), `/login`
-(store a key, masked input, takes effect immediately), `/logout`
-(remove the stored key only — never touches env vars or revokes at the
-provider), `/exit`.
+Slash commands: `/mode` (show or switch permission mode), `/model`
+(pick a model, or `/model <name>` to switch directly — provider, key,
+and audit redactor follow), `/sessions` (browse saved sessions
+newest-first and resume in place; the current conversation is saved
+first), `/skills`, `/mcp`, `/login` (store a key, masked input, takes
+effect immediately), `/logout` (remove the stored key only — never
+touches env vars or revokes at the provider), `/exit`.
 
 Permission modes (`permission_mode` in config.json, or `/mode <name>` at
 runtime):
