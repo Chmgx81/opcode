@@ -1306,3 +1306,56 @@ Spec: [docs/specs/phase20-codex-restyle.md](docs/specs/phase20-codex-restyle.md)
    actually renders.
 2. ChatGPT blue as accent is "match Codex" done honestly; tilde's
    name and `~` glyph keep it a distinct product.
+
+# Phase 21 — Landlock sandbox (status: complete, live-verified)
+
+Spec: [docs/specs/phase21-landlock.md](docs/specs/phase21-landlock.md)
+
+## Built
+
+- **The ruleset** (`internal/sandbox`, mirrors Codex's landlock.rs):
+  handle every fs access right the kernel's ABI knows (probed at
+  runtime; REFER ≥ v2, TRUNCATE ≥ v3, IOCTL_DEV ≥ v4), read+execute
+  beneath `/`, full access beneath each writable root and the file
+  subset on `/dev/null`, then `PR_SET_NO_NEW_PRIVS` and
+  `landlock_restrict_self`.
+- **The Go constraint, honestly solved**: Landlock confines the
+  calling *thread* and Go's runtime has several threads before main —
+  so commands run through a self re-exec, `tilde __sandbox
+  <writable…> -- cmd`: a fresh single-threaded child applies the
+  ruleset and immediately execs, which inherits it process-wide.
+  Intercepted at the very top of `main`, before anything spawns.
+- **Writable roots**: cwd, temp dir, and dev caches that exist
+  (`~/.cache` via XDG, `~/go/pkg/mod`, `~/.cargo/registry`, `~/.npm`,
+  `$GOCACHE`/`$GOMODCACHE` when set). PATH bin dirs stay read-only —
+  the executable-drop class is exactly what this blocks.
+- **Wiring**: `run_shell` and `run_skill_script` build commands
+  through the installed runner (nil runner = plain commands, every
+  call site unchanged). Default on where the kernel supports it;
+  `{"sandbox": false}` opts out; the startup note always states the
+  real posture — enforced, off, or unavailable. Children die with
+  the parent (Pdeathsig).
+
+## Verified for real
+
+- All twelve packages; the enforcement test re-execs the test binary
+  as a sandbox child that applies the actual ruleset and attempts
+  writes — inside the root succeeds, outside is denied by the
+  kernel (exit status + missing file both checked), no mocks.
+- **Real binary, real kernel**: `tilde __sandbox` directly — an
+  inside write succeeded, a home write failed `Permission denied`.
+- **PTY, live**: a scripted model called run_shell writing both
+  inside the project and to `$HOME`; the startup note showed
+  `sandbox: landlock v10…`, the tool result carried the kernel's
+  `Permission denied` for the home write, and only the project file
+  exists on disk.
+
+## Phase 21 assumptions
+
+1. Reads stay unrestricted — tools need system headers and libs;
+   Codex allows the same.
+2. Commands that legitimately write outside the roots (e.g.
+   `go install` to `~/go/bin`) now fail EACCES — surfaced in the
+   tool result; disabling the sandbox is the documented escape.
+3. Network isolation (seccomp) is a future phase; Landlock v5
+   cannot scope TCP.

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Chmgx81/tilde/internal/sandbox"
 )
 
 // RunShell executes a shell command with the user's shell and returns the
@@ -51,7 +53,7 @@ func (RunShell) Execute(ctx context.Context, args string) (string, error) {
 		ctx, cancel = context.WithTimeout(ctx, runShellTimeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, "sh", "-c", a.Command)
+	cmd := sandbox.Command(ctx, "sh", "-c", a.Command)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return string(out), fmt.Errorf("run_shell: timed out after %s", runShellTimeout)

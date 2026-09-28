@@ -36,6 +36,12 @@ type Config struct {
 	// cheaper model for the summarizer round (empty = the main model).
 	ContextWindow   int    `json:"context_window"`
 	CompactionModel string `json:"compaction_model"`
+	// Sandbox confines shell-command writes with Landlock (Linux):
+	// read+execute anywhere, writes only to the project dir, temp,
+	// and dev caches. Nil/absent means enabled when the kernel
+	// supports it; false opts out. Unavailable kernels degrade to
+	// unsandboxed and say so in the startup notes.
+	Sandbox *bool `json:"sandbox"`
 }
 
 // UserDir returns the user-level tilde directory: $TILDE_HOME if set,

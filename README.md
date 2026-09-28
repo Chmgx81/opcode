@@ -61,6 +61,18 @@ metacharacter (`;` `|` `&` `$` backtick, redirections) fails closed —
 `git status ; rm -rf /` never auto-runs. The mode's posture still
 dominates: read-only and plan deny shell outright.
 
+## Sandbox
+
+On Linux, shell commands run under a kernel Landlock ruleset:
+reads and execution anywhere, **writes only to the project
+directory, `/tmp`, and dev caches** (`~/.cache`, `~/go/pkg/mod`,
+`~/.cargo/registry`, `~/.npm`). A command that tries to write to
+`~/.ssh` or your home fails with `Permission denied` — enforced by
+the kernel, not by tilde. On by default where the kernel supports
+it; `{"sandbox": false}` opts out. PATH bin dirs (`~/go/bin`,
+`~/.local/bin`) stay read-only, so a command can't drop an
+executable where your shell will find it.
+
 ## In the TUI
 
 | Key | |
