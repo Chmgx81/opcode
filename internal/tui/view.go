@@ -37,6 +37,14 @@ var (
 func (m *Model) View() string {
 	var b strings.Builder
 
+	// Top context block like the references: app, model, mode, working
+	// directory, over a thin separator — the demo and Antigravity
+	// captures both lead with this.
+	b.WriteString(m.header())
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", m.termWidth())))
+	b.WriteString("\n\n")
+
 	visible := m.visibleLines()
 	for _, l := range visible {
 		b.WriteString(l)
@@ -72,6 +80,29 @@ func (m *Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(m.metaRow())
 	return b.String()
+}
+
+// header is the dim context line at the top of the frame. The working
+// directory gets whatever width is left and ellipsizes, so the header
+// never wraps or overflows the frame.
+func (m *Model) header() string {
+	prefix := strings.Join([]string{"tilde", m.opt.Model, m.opt.Mode}, " · ")
+	line := prefix
+	if m.opt.Cwd != "" {
+		budget := m.termWidth() - lipgloss.Width(prefix) - 3
+		cwd := m.opt.Cwd
+		if budget < 1 {
+			// No room for the path at all.
+			cwd = ""
+		} else if lipgloss.Width(cwd) > budget {
+			runes := []rune(cwd)
+			cwd = string(runes[:budget-1]) + "…"
+		}
+		if cwd != "" {
+			line = prefix + " · " + cwd
+		}
+	}
+	return dimStyle.Render(line)
 }
 
 // metaRow is the dim line under the input box: what's happening on the
@@ -110,7 +141,7 @@ func (m *Model) visibleLines() []string {
 	// below the transcript: the input box (3), the meta row (1), the
 	// prompt box (3) when a permission or login prompt is up, the
 	// streaming line, and spacing.
-	reserved := 8
+	reserved := 11 // + header, separator, spacing
 	if m.awaitingPerm != nil || m.login != nil {
 		reserved += 4
 	}
