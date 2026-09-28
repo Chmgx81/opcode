@@ -59,8 +59,9 @@ Cycle with **Tab**. Read-only tools never prompt in any mode.
 | **?** | everything else |
 
 `/model` switches models at runtime. `/sessions` resumes one.
-`! cmd` runs shell directly, `@file` attaches a file, big pastes
-collapse to a token.
+Typing `@` opens a live file picker (type to filter, enter to attach);
+`!` turns the composer amber — shell mode, Enter runs it directly, no
+model round trip. Big pastes collapse to a token.
 
 ## Beyond the loop
 

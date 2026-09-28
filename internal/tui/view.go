@@ -88,10 +88,10 @@ func (m *Model) renderEntry(e *entry) []string {
 	w := m.termWidth()
 	switch e.kind {
 	case entryUser:
-		// The echoed query stays bright with the accent prompt — the
-		// reference apps render user messages at full weight, letting
-		// the agent's response follow at the same level.
-		return wrapAll(accentStyle.Render(GlyphPrompt+" ")+e.text, w)
+		// The echoed query sits in a subtle background panel — the
+		// demo's separation between what you said and what the agent
+		// answered, without dimming the text.
+		return []string{userPanel(wrapAll(accentStyle.Render(GlyphPrompt+" ")+e.text, w), m.termWidth())}
 	case entryAssistant:
 		if e.rendered == nil || e.renderedW != w {
 			e.rendered = renderMarkdown(e.text, w)
@@ -206,6 +206,18 @@ func renderAssistant(text string, w int) []string {
 	return out
 }
 
+// userPanel paints the user's echoed query with the deep-fill
+// background, padded to the terminal width so it reads as one panel.
+func userPanel(lines []string, w int) string {
+	panel := lipgloss.NewStyle().Background(Deep2)
+	var out []string
+	for _, l := range lines {
+		pad := maxInt(w-lipgloss.Width(l), 0)
+		out = append(out, panel.Render(l+strings.Repeat(" ", pad)))
+	}
+	return strings.Join(out, "\n")
+}
+
 // floatingView renders the trust prompt, permission prompt, login
 // prompt, palette, toast, and help overlay.
 func (m *Model) floatingView() []string {
@@ -237,6 +249,9 @@ func (m *Model) floatingView() []string {
 	if m.picker != nil {
 		out = append(out, "", m.pickerView(w))
 	}
+	if m.atMenuOpen() {
+		out = append(out, "", m.atMenuView(w))
+	}
 	if m.helpOpen {
 		out = append(out, "", m.helpView(w))
 	}
@@ -256,13 +271,20 @@ func (m *Model) floatingView() []string {
 func (m *Model) composerView() []string {
 	var out []string
 
-	// Status line while a turn runs: spinner, elapsed, tokens, keys.
+	// Working line in the reference apps' shape: spinner, a gerund,
+	// then how long and how much, with esc to stop. Enter steers and
+	// alt+enter queue live in the help overlay, not here — the line
+	// stays a feeling, not a legend.
 	if m.working {
 		elapsed := time.Since(m.workingSince).Round(time.Second)
 		tokens := m.usage.PromptTokens + m.usage.CompletionTokens
+		verb := m.workingVerb
+		if verb == "" {
+			verb = "Thinking…"
+		}
 		left := accentStyle.Render(m.spinner.View()) + " " +
-			infoStyle.Render("working") + dimStyle.Render(
-			fmt.Sprintf(" · %s · %s tokens · esc to interrupt · enter steers · alt+enter queues",
+			accentStyle.Render(verb) + dimStyle.Render(
+			fmt.Sprintf(" (esc to interrupt · %s · ↓ %s tokens)",
 				elapsed, humanCount(tokens)))
 		out = append(out, "", left)
 	} else {
@@ -275,14 +297,22 @@ func (m *Model) composerView() []string {
 		masked := strings.Repeat("\u2022", len(m.composer.Value()))
 		composer = accentStyle.Render(GlyphPrompt+" ") + masked
 	}
-	out = append(out, boxStyle.Width(m.termWidth()-4).Render(composer))
+	// A leading "!" is a shell escape: the box goes amber so the mode
+	// is visible before Enter, not after.
+	box := boxStyle
+	if m.shellMode() {
+		box = promptBoxStyle
+	}
+	out = append(out, box.Width(m.termWidth()-4).Render(composer))
 
-	// Mode line, Claude-Code-shaped footer: the permission posture
-	// first, then the always-available prefixes as dim hints. The
-	// placeholder stays a real placeholder ("ask tilde anything…"),
-	// not a keymap.
-	mode := accent2Style.Render(GlyphPrompt + " " + m.opt.Mode)
-	hint := dimStyle.Render("? help · / commands · ! shell · @ files")
+	// Mode line in the reference shape: "~ mode (tab to cycle)" then
+	// the minimal hints. Shell mode swaps the hint for its own.
+	mode := accent2Style.Render(GlyphPrompt+" "+m.opt.Mode) +
+		dimStyle.Render(" (tab to cycle)")
+	hint := dimStyle.Render("? help · / commands")
+	if m.shellMode() {
+		hint = dimStyle.Render("shell — enter runs it directly, no model round trip")
+	}
 	out = append(out, mode+"   "+hint)
 	return out
 }
@@ -373,6 +403,24 @@ func (m *Model) pickerView(w int) string {
 	if len(p.matched) > visible {
 		rows = append(rows, dimStyle.Render(
 			fmt.Sprintf("  … %d more — keep typing to narrow", len(p.matched)-visible)))
+	}
+	return paletteStyle.Width(w - 4).Render(strings.Join(rows, "\n"))
+}
+
+// atMenuView is the @-mention file picker: a compact live-filtered
+// list above the composer.
+func (m *Model) atMenuView(w int) string {
+	rows := []string{
+		promptStyle.Render("@ file") +
+			dimStyle.Render("  type to filter · enter to attach · esc to close"),
+	}
+	for i, p := range m.atMenu {
+		marker, style := "  ", dimStyle
+		if i == m.atIdx {
+			marker = accentStyle.Render(GlyphCaret + " ")
+			style = toolNameStyle
+		}
+		rows = append(rows, marker+style.Render(truncate(p, maxInt(w-16, 12))))
 	}
 	return paletteStyle.Width(w - 4).Render(strings.Join(rows, "\n"))
 }
