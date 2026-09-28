@@ -78,6 +78,25 @@ if a `git pull` changes them, tilde asks again. `--trust` (or
 `TILDE_TRUST=1`) pre-approves for scripted use. Declining leaves the
 project's skills unloaded; nothing from it runs.
 
+## MCP
+
+Servers are configured in `~/.tilde/mcp.json` (always) or
+`.tilde/mcp.json` (only after project trust) using the usual
+`mcpServers` shape:
+
+```json
+{"mcpServers": {"fetch": {"command": "npx", "args": ["-y", "some-server"]}}}
+```
+
+tilde speaks MCP over stdio (JSON-RPC, newline-delimited; HTTP
+transport is not supported yet). Discovered tools appear to the model
+as `mcp__<server>__<tool>` and are always Action-Allowed — the
+protocol's read-only hints are self-reported and never lower a tier.
+Servers connect in parallel at startup with a 5s timeout each; a dead
+server is skipped with a visible note. A crashed server gets one
+restart (with a full re-handshake) on its next call. A project server
+can never replace a user server with the same name.
+
 ## Test
 
 ```
