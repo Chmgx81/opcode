@@ -118,6 +118,22 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// The login prompt: Enter saves, Esc cancels and discards the
+	// typed key. Everything else falls through to the composer (View
+	// renders it masked).
+	if m.login != nil {
+		switch msg.String() {
+		case "enter":
+			return m, m.submitLogin()
+		case "esc":
+			m.login = nil
+			m.composer.SetValue("")
+			m.resizeComposer()
+			m.add(entry{kind: entryDim, text: "login cancelled"})
+			return m, nil
+		}
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.cancelTurn()
@@ -125,6 +141,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.working {
 			m.cancelTurn()
+			return m, nil
+		}
+		// With no turn in flight, esc closes the command palette
+		// instead of leaving a half-typed command in the composer.
+		if m.paletteOpen() {
+			m.composer.SetValue("")
+			m.resizeComposer()
+			m.showToast("palette closed")
 		}
 		return m, nil
 	case "shift+tab":
@@ -144,9 +168,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case "enter":
-		if m.login != nil {
-			return m, m.submitLogin()
-		}
 		return m, m.submitInput(false)
 	case "alt+enter":
 		return m, m.submitInput(true)
