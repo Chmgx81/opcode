@@ -284,6 +284,14 @@ func run() error {
 		ProviderName: providerName,
 		BaseURL:      providerCfg.BaseURL,
 		AuditPath:    auditPath,
+		Skills:       &skillManager,
+		MCPNames: func() []string {
+			var names []string
+			for _, note := range mcpManager.Notes() {
+				names = append(names, note)
+			}
+			return names
+		},
 		PendingTrust: pending,
 		StartupNotes: startupNotes,
 	})

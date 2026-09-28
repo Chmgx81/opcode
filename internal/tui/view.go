@@ -3,99 +3,311 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Palette matched against the references in tilde/references: Claude
-// Code's dark slate terminal with its coral accent, and the blue/orange
-// mix in the demo capture. tilde's own accent is the coral one.
-// subagentEvent kinds, kept in sync with internal/subagent.
-const (
-	subagentText  = "text"
-	subagentTool  = "tool"
-	subagentDone  = "done"
-	subagentError = "error"
-	subagentUsage = "usage"
-)
-
-var (
-	accentStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#D97757")) // coral
-	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	steerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	queuedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	toolNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	resultStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	okStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
-	promptStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
-
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Padding(0, 1)
-	promptBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("220")).
-			Padding(0, 1)
-)
-
-// View implements tea.Model. Layout follows the references: transcript
-// with marker glyphs, then a rounded input box at the bottom with a dim
-// meta row (status and token counts) under it — no top bar.
+// View implements tea.Model: identity block and timeline, a working
+// status line while a turn runs, the composer with a mode line under
+// it, and floating layers (palette, help) that fit the terminal.
 func (m *Model) View() string {
-	var b strings.Builder
+	var layers []string
 
-	visible := m.visibleLines()
-	for _, l := range visible {
-		b.WriteString(l)
-		b.WriteString("\n")
+	layers = append(layers, m.timelineView()...)
+	layers = append(layers, m.floatingView()...)
+	layers = append(layers, m.composerView()...)
+
+	return strings.Join(m.fit(layers), "\n")
+}
+
+// timelineView renders the transcript entries.
+func (m *Model) timelineView() []string {
+	var out []string
+	for _, e := range m.entries {
+		out = append(out, m.renderEntry(e)...)
 	}
-	if s := m.stream.String(); s != "" {
-		for _, line := range wordWrap(s, m.termWidth()) {
-			b.WriteString(line)
-			b.WriteString("\n")
+	// In-flight assistant text.
+	if s := strings.TrimSpace(m.stream.String()); s != "" {
+		out = append(out, renderAssistant(s, m.termWidth())...)
+	}
+	return out
+}
+
+// renderEntry maps one structured entry to view lines.
+func (m *Model) renderEntry(e entry) []string {
+	w := m.termWidth()
+	switch e.kind {
+	case entryUser:
+		return wrapAll(accentStyle.Render(GlyphPrompt+" ")+e.text, w)
+	case entryAssistant:
+		return renderAssistant(e.text, w)
+	case entryTool:
+		args := truncate(e.text, 70)
+		return []string{accentStyle.Render(GlyphBullet+" ") +
+			toolNameStyle.Render(e.tool) + dimStyle.Render(" "+args)}
+	case entryResult:
+		return m.renderResult(e, w)
+	case entryOK:
+		return wrapAll(okStyle.Render(GlyphOK+" ")+e.text, w)
+	case entryErr:
+		return wrapAll(dangerStyle.Render(GlyphWarn+" ")+e.text, w)
+	case entryDim:
+		return wrapAll(e.text, w)
+	case entrySteer:
+		return wrapAll(steerStyle.Render("(steering) ")+e.text, w)
+	case entryQueued:
+		return wrapAll(queuedStyle.Render("(queued) ")+e.text, w)
+	case entryCompaction:
+		return wrapAll(infoStyle.Render("… ")+e.text, w)
+	case entrySubagent:
+		return wrapAll(dimStyle.Render(e.subTitle)+e.text, w)
+	}
+	return nil
+}
+
+// renderResult shows a tool result: one collapsed line by default,
+// full text when ctrl+r expanded. edit_file results render as a diff
+// hunk with colored − / + lines either way.
+func (m *Model) renderResult(e entry, w int) []string {
+	prefix := dimStyle.Render("  " + GlyphBranch + " ")
+	if e.tool == "edit_file" && e.path != "" {
+		adds, dels := diffCounts(e.old, e.new)
+		head := prefix + dimStyle.Render(fmt.Sprintf("updated %s ", e.path)) +
+			okStyle.Render(fmt.Sprintf("%s%d", GlyphAdded, adds)) + " " +
+			dangerStyle.Render(fmt.Sprintf("%s%d", GlyphDeleted, dels))
+		if !m.expandResults {
+			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
 		}
+		out := []string{head}
+		for _, l := range strings.Split(e.old, "\n") {
+			out = append(out, dangerStyle.Render(strings.Repeat(" ", 5)+GlyphDeleted+" "+l))
+		}
+		for _, l := range strings.Split(e.new, "\n") {
+			out = append(out, okStyle.Render(strings.Repeat(" ", 5)+GlyphAdded+" "+l))
+		}
+		return out
 	}
+	if m.expandResults && e.full != "" {
+		out := []string{prefix + dimStyle.Render(e.summary)}
+		for _, l := range wrapAll(e.full, w-4) {
+			out = append(out, dimStyle.Render("      "+l))
+		}
+		return out
+	}
+	hint := ""
+	if e.summary != "" {
+		hint = dimStyle.Render("  (ctrl+r to expand)")
+	}
+	return []string{prefix + resultStyle.Render(truncate(e.summary, m.termWidth()-14)) + hint}
+}
 
-	if m.login != nil {
-		b.WriteString("\n")
-		b.WriteString(promptBoxStyle.Render(
-			promptStyle.Render("API key for " + m.login.provider + " — input hidden, Enter to save, Esc to cancel")))
-		b.WriteString("\n")
+// renderAssistant renders assistant text with light structure: fenced
+// code blocks become boxed monospace, everything else wraps plainly.
+func renderAssistant(text string, w int) []string {
+	var out []string
+	var fence []string
+	flushFence := func() {
+		if len(fence) == 0 {
+			return
+		}
+		box := fenceStyle.Width(maxInt(w-6, 20))
+		for _, l := range strings.Split(box.Render(strings.Join(fence, "\n")), "\n") {
+			out = append(out, l)
+		}
+		fence = nil
 	}
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			if len(fence) > 0 {
+				flushFence()
+			} else {
+				fence = fence[:0]
+				_ = fence
+			}
+			continue
+		}
+		if fence != nil {
+			fence = append(fence, line)
+			continue
+		}
+		if trimmed == "" {
+			out = append(out, "")
+			continue
+		}
+		// Headings get weight; list markers stay as typed.
+		if strings.HasPrefix(trimmed, "#") {
+			out = append(out, wrapAll(boldStyle.Render(trimmed), w)...)
+			continue
+		}
+		out = append(out, wrapAll(line, w)...)
+	}
+	flushFence()
+	return out
+}
+
+// floatingView renders the trust prompt, permission prompt, login
+// prompt, palette, toast, and help overlay.
+func (m *Model) floatingView() []string {
+	var out []string
+	w := m.termWidth()
 
 	if m.awaitingTrust != nil {
 		files := strings.Join(m.awaitingTrust.Approved, ", ")
-		b.WriteString("\n")
-		b.WriteString(promptBoxStyle.Width(m.termWidth() - 4).Render(
-			promptStyle.Render("trust this project?") + " " +
-				dimStyle.Render("it would be able to run: "+files+" — y trust, n/Esc decline")))
-		b.WriteString("\n")
+		out = append(out, "",
+			promptBoxStyle.Width(w-4).Render(
+				promptStyle.Render("trust this project?")+" "+
+					dimStyle.Render("it would be able to run: "+files+" — y trust, n/Esc decline")))
 	}
-
 	if m.awaitingPerm != nil {
-		b.WriteString("\n")
-		b.WriteString(promptBoxStyle.Width(m.termWidth() - 4).Render(fmt.Sprintf(
-			"%s %s %s",
-			promptStyle.Render("allow?"),
-			toolNameStyle.Render(m.awaitingPerm.tool),
-			dimStyle.Render("(tier "+string(m.awaitingPerm.tier)+") — y allow, a allow all action tools this session, n/Esc deny"))))
-		b.WriteString("\n")
+		out = append(out, "",
+			promptBoxStyle.Width(w-4).Render(
+				promptStyle.Render("allow?")+" "+toolNameStyle.Render(m.awaitingPerm.tool)+" "+
+					dimStyle.Render("(tier "+string(m.awaitingPerm.tier)+
+						") — y allow · a allow all action tools this session · n/Esc deny")))
 	}
-
-	b.WriteString("\n")
-	box := boxStyle.Width(m.termWidth() - 4)
-	b.WriteString(box.Render(m.input.View()))
-	b.WriteString("\n")
-	b.WriteString(m.metaRow())
-	return b.String()
+	if m.login != nil {
+		out = append(out, "",
+			promptBoxStyle.Width(w-4).Render(
+				promptStyle.Render("API key for "+m.login.provider+" — input hidden, Enter to save, Esc to cancel")))
+	}
+	if m.paletteOpen() {
+		out = append(out, "", m.paletteView(w))
+	}
+	if m.helpOpen {
+		out = append(out, "", m.helpView(w))
+	}
+	if m.toast != "" && time.Since(m.toastAt) < 4*time.Second {
+		out = append(out, "", infoStyle.Render(GlyphOK+" "+m.toast))
+	}
+	return out
 }
 
-// metaRow is the dim line under the input box: what's happening on the
-// left, model and tokens on the right.
-// termWidth is the terminal width, defaulting to 80 before the first
-// WindowSizeMsg.
+// composerView renders the working status line, the composer box, and
+// the mode line under it.
+func (m *Model) composerView() []string {
+	var out []string
+
+	// Status line while a turn runs: spinner, elapsed, tokens, keys.
+	if m.working {
+		elapsed := time.Since(m.workingSince).Round(time.Second)
+		tokens := m.usage.PromptTokens + m.usage.CompletionTokens
+		left := accentStyle.Render(m.spinner.View()) + " " +
+			infoStyle.Render("working") + dimStyle.Render(
+			fmt.Sprintf(" · %s · %s tokens · esc to interrupt · enter steers · alt+enter queues",
+				elapsed, humanCount(tokens)))
+		out = append(out, "", left)
+	} else {
+		out = append(out, "")
+	}
+
+	composer := m.composer.View()
+	if m.login != nil {
+		// textarea has no echo mode: render the value masked here.
+		masked := strings.Repeat("\u2022", len(m.composer.Value()))
+		composer = accentStyle.Render(GlyphPrompt+" ") + masked
+	}
+	out = append(out, boxStyle.Width(m.termWidth()-4).Render(composer))
+
+	// Mode line: the permission posture, always visible, cyclable.
+	mode := accent2Style.Render(GlyphPrompt + " " + m.opt.Mode)
+	hint := dimStyle.Render("shift+tab to cycle · ctrl+r expand results · ? help")
+	out = append(out, mode+"   "+hint)
+	return out
+}
+
+// paletteOpen reports whether the command palette should show: the
+// composer's first line starts with "/" and has no space yet.
+func (m *Model) paletteOpen() bool {
+	if m.login != nil || m.awaitingPerm != nil || m.awaitingTrust != nil {
+		return false
+	}
+	v := m.composer.Value()
+	first := strings.SplitN(v, "\n", 2)[0]
+	return strings.HasPrefix(first, "/") && !strings.Contains(first, " ")
+}
+
+// paletteMatches returns the commands matching the typed prefix.
+func (m *Model) paletteMatches() []command {
+	prefix := strings.TrimSpace(strings.SplitN(m.composer.Value(), "\n", 2)[0])
+	var out []command
+	for _, c := range commands {
+		if strings.HasPrefix(c.Name, prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (m *Model) paletteView(w int) string {
+	matches := m.paletteMatches()
+	if len(matches) == 0 {
+		return dimStyle.Render("  no matching command")
+	}
+
+	if m.paletteIdx >= len(matches) {
+		m.paletteIdx = len(matches) - 1
+	}
+	var lines []string
+	for i, c := range matches {
+		marker := "  "
+		style := dimStyle
+		if i == m.paletteIdx {
+			marker = accentStyle.Render(GlyphCaret + " ")
+			style = toolNameStyle
+		}
+		lines = append(lines, marker+style.Render(c.Name)+dimStyle.Render("  "+c.Desc))
+	}
+	return paletteStyle.Width(w - 4).Render(strings.Join(lines, "\n"))
+}
+
+// helpView is the "?" overlay: keys and commands at a glance.
+func (m *Model) helpView(w int) string {
+	rows := []string{
+		accentStyle.Render("keys"),
+		dimStyle.Render("  enter        send · ctrl+j  newline"),
+		dimStyle.Render("  alt+enter    queue a follow-up while working"),
+		dimStyle.Render("  esc          interrupt the turn"),
+		dimStyle.Render("  shift+tab    cycle permission mode"),
+		dimStyle.Render("  ctrl+r       expand / collapse tool results"),
+		dimStyle.Render("  ! command    run a shell command directly"),
+		dimStyle.Render("  @path        attach a file's contents"),
+		dimStyle.Render("  /            command palette"),
+		accentStyle.Render("commands"),
+	}
+	for _, c := range commands {
+		rows = append(rows, dimStyle.Render("  "+c.Name+strings.Repeat(" ", 12-len(c.Name))+c.Desc))
+	}
+	rows = append(rows, dimStyle.Render("press any key to close"))
+	return helpStyle.Width(w - 4).Render(strings.Join(rows, "\n"))
+}
+
+// fit trims rendered layers so the frame never exceeds the terminal
+// (bubbletea's inline renderer corrupts when it does).
+func (m *Model) fit(layers []string) []string {
+	if m.height <= 0 {
+		return layers
+	}
+	// Reserve rows for the composer (3-line textarea + borders + mode
+	// line + status) so long transcripts trim, not the composer.
+	reserved := 9
+	if m.working {
+		reserved += 2
+	}
+	max := m.height - reserved
+	if max < 1 {
+		max = 1
+	}
+	if len(layers) <= max {
+		return layers
+	}
+	dropped := len(layers) - max
+	out := make([]string, 0, max+1)
+	out = append(out, dimStyle.Render(fmt.Sprintf("… %d earlier lines", dropped)))
+	return append(out, layers[dropped:]...)
+}
+
 func (m *Model) termWidth() int {
 	if m.width > 0 {
 		return m.width
@@ -103,80 +315,27 @@ func (m *Model) termWidth() int {
 	return 80
 }
 
-func (m *Model) metaRow() string {
-	left := "ctrl+c to exit"
-	if m.working {
-		left = m.spinner.View() + " esc to interrupt · Enter steers · Alt+Enter queues"
-	}
-	right := m.opt.Model
-	if m.usage.PromptTokens > 0 || m.usage.CompletionTokens > 0 {
-		right += fmt.Sprintf(" · %d in / %d out", m.usage.PromptTokens, m.usage.CompletionTokens)
-	}
-	gap := m.termWidth() - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	return dimStyle.Render(left) + strings.Repeat(" ", gap) + dimStyle.Render(right)
-}
-
-// visibleLines trims the transcript to the space left under the
-// transcript, boxes, and meta row.
-func (m *Model) visibleLines() []string {
-	// The frame must fit the terminal exactly: bubbletea's inline
-	// renderer corrupts the screen when a frame is taller than the
-	// window. Budget for what the current layout actually renders
-	// below the transcript: the input box (3), the meta row (1), the
-	// prompt box (3) when a permission or login prompt is up, the
-	// streaming line, and spacing.
-	reserved := 8 // input box, meta row, spacing
-	if m.awaitingPerm != nil || m.login != nil {
-		reserved += 4
-	}
-	if m.awaitingTrust != nil {
-		reserved += 3
-	}
-	if m.stream.String() != "" {
-		reserved += 1
-	}
-	if m.height <= 0 {
-		return m.lines
-	}
-	max := m.height - reserved
-	if max < 1 {
-		max = 1
-	}
-	if len(m.lines) <= max {
-		return m.lines
-	}
-	dropped := len(m.lines) - max
-	out := make([]string, 0, max+1)
-	out = append(out, dimStyle.Render(fmt.Sprintf("... %d earlier lines not shown ...", dropped)))
-	return append(out, m.lines[dropped:]...)
-}
-
-// wordWrap wraps plain (unstyled) text at width, breaking on spaces.
-// Transcript content that is styled gets wrapped before styling, where
-// the plain text is still in hand — a wrapped ANSI string cannot be
-// re-split safely afterwards.
-func wordWrap(s string, width int) []string {
-	if width < 10 {
-		width = 10
+// wrapAll hard-wraps plain (unstyled) text to width. Styled strings are
+// measured by visible width via lipgloss.Width where needed.
+func wrapAll(s string, w int) []string {
+	if w < 10 {
+		w = 10
 	}
 	var out []string
 	for _, para := range strings.Split(s, "\n") {
-		if len([]rune(para)) <= width {
+		if lipgloss.Width(para) <= w {
 			out = append(out, para)
 			continue
 		}
 		line := ""
-		for _, w := range strings.Fields(para) {
+		for _, word := range strings.Fields(para) {
 			if line == "" {
-				line = w
-			} else if len([]rune(line))+1+len([]rune(w)) <= width {
-				line += " " + w
+				line = word
+			} else if lipgloss.Width(line)+1+lipgloss.Width(word) <= w {
+				line += " " + word
 			} else {
 				out = append(out, line)
-				line = w
+				line = word
 			}
 		}
 		if line != "" {
@@ -184,4 +343,40 @@ func wordWrap(s string, width int) []string {
 		}
 	}
 	return out
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
+}
+
+// diffCounts returns additions and removals between old and new.
+func diffCounts(old, new string) (int, int) {
+	oldLines := len(strings.Split(old, "\n"))
+	newLines := len(strings.Split(new, "\n"))
+	if old == new {
+		return 0, 0
+	}
+	if newLines > oldLines {
+		return newLines - oldLines, 0
+	}
+	return 0, oldLines - newLines
+}
+
+func humanCount(n int) string {
+	switch {
+	case n >= 1000:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

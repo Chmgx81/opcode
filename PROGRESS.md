@@ -442,3 +442,71 @@ Spec: [docs/specs/phase6-polish.md](docs/specs/phase6-polish.md)
 
 Every phase of Section 8 is now built and live-verified: 0 loop,
 1 TUI, 2 modes, 3 trust + skills, 4 MCP, 5 subagents, 6 polish.
+
+---
+
+# Phase 7 — UI/UX Overhaul + Branding (status: complete, live-verified)
+
+## Built
+
+- **Design tokens** (`internal/tui/style.go`): tilde's own identity —
+  the green stack (16DB65 / 058C42 / 04471C / 0D2818 / 020202) plus
+  danger/warning/info/dim semantics, a fixed glyph vocabulary (● └ ▹ ✓
+  ! − +), and one place to reskin the whole product.
+- **Composer v2**: multiline textarea (ctrl+j newline — shift+enter is
+  indistinguishable from enter in this bubbletea version, no kitty
+  protocol), bracketed paste with large pastes (≥4 lines or ≥1000
+  chars) collapsed to `[paste N · L lines]` tokens that re-expand on
+  submit, `!` shell escape (user-run, no model round trip), `@path`
+  file mentions expanded inline (2KB cap).
+- **Command palette**: typing `/` opens a filtered picker (arrows +
+  enter); /help /model /skills /mcp /mode /login /logout /exit.
+- **Tool timeline**: ● Tool(args) with └ collapsed result lines,
+  ctrl+r expands/collapses; edit_file results render as colored diff
+  hunks with +/− counts; assistant text boxes fenced code blocks and
+  bolds headings.
+- **Status & mode**: a working line (spinner, elapsed, tokens, esc/
+  steer/queue hints), a persistent mode line under the composer, and
+  shift+tab cycles permission modes with a toast; compaction renders
+  as a status entry.
+- **Help overlay** (`?`) with keys and commands.
+- **Color robustness**: termenv's terminal query fails under script/
+  CI (no answer → zero color); Run() now falls back to $TERM /
+  COLORTERM so the brand palette survives those environments. Found
+  live: the first PTY run rendered with no color at all.
+
+## Verified for real
+
+- All eleven packages pass; the TUI suite now covers paste collapse +
+  re-expansion, palette filtering/execution (including the
+  clear-before-consult bug the test caught), shift+tab cycling with
+  gate follow-through, ctrl+r expansion, edit_file diff rendering,
+  shell escape, @mention attachment, help overlay, layout fitting.
+- **PTY**: timeline, collapsed/expanded results, mode cycle + toast,
+  palette, /model — all live; 430 SGR sequences confirmed (the
+  palette renders as ANSI256 under xterm-256color, exact hexes on
+  truecolor terminals).
+- **Live OpenRouter**: real write_file/read_file through the new UI,
+  file created, clean exit.
+
+## Found and fixed during verification
+
+- Palette bug: submitInput cleared the composer before consulting the
+  palette, so "/mo" + Enter became an unknown command instead of the
+  highlighted /mode or /model.
+- The color-profile fallback above.
+
+## Explicitly deferred (from the request, not built this pass)
+
+Syntax highlighting, LaTeX, image paste / vision, drag-and-drop,
+models picker, session history sidebar/browser, plan mode, todos,
+reasoning display, retry/handoff UI, multi-select questions,
+@-mention fuzzy file picker (inline expansion only), MCP debug view,
+streaming markdown beyond fence-boxing, kitty keyboard protocol
+(would enable true shift+enter).
+
+## Next candidates
+
+Markdown streaming polish (glamour or hand-rolled), syntax
+highlighting (chroma), models picker over models.json, session
+browser over ~/.tilde/sessions, kitty protocol for shift+enter.

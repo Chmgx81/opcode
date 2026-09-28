@@ -1,35 +1,35 @@
-// Package tui is tilde's Bubble Tea front end (Phase 1): streamed tokens
-// rendered as they arrive, a status bar, permission prompts, steer vs.
-// follow-up input handling, and /login, /logout.
-//
-// The TUI never reaches into the agent loop: it consumes the same
-// orchestrator event channel the Phase 0 bare loop did, and talks back
-// only through Send (new turn), Steer (mid-turn steering), and the gate's
-// prompt callback.
+// Package tui is tilde's Bubble Tea front end: a streaming transcript
+// with a collapsible tool timeline, a multiline composer with paste
+// collapsing and a command palette, mode cycling, and headless-friendly
+// wiring — the orchestrator stays UI-independent.
 package tui
 
 import (
 	"context"
 	_ "embed"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/skills"
 	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // version tracks the architecture doc revision.
-const version = "v0.1"
+const version = "v0.2"
 
-// The tilde logo, shown at the top of a fresh session like the
-// reference apps' welcome screens; it scrolls away with the transcript.
+// The tilde logo, shown at the top of a fresh session; it scrolls away
+// with the transcript.
 //
 //go:embed banner.txt
 var banner string
@@ -38,38 +38,33 @@ var banner string
 // injected; the package never loads config itself.
 type Options struct {
 	Orch      *orchestrator.Orchestrator
-	Model     string // model name, status bar
-	Mode      string // permission mode name, status bar
-	Cwd       string // working directory, status bar
-	TildeHome string // user-level dir: /login, /logout write here
+	Model     string
+	Mode      string
+	Cwd       string
+	TildeHome string
 	// ProviderName + BaseURL let /login rebuild the LLM client with the
 	// new key instead of needing a restart.
 	ProviderName string
 	BaseURL      string
-	AuditPath    string // audit log path, to rebuild the redactor after /login
+	AuditPath    string
 
-	// PendingTrust, when non-nil, shows the project-trust prompt at
-	// startup: the project has an executable surface the user has not
-	// approved (or it changed). OnAnswer persists the decision and
-	// re-discovers skills; the TUI owns only the question.
+	// Skills and MCP managers back the /skills and /mcp commands.
+	Skills   *skills.Manager
+	MCPNames func() []string // connected server names + tool counts
+
 	PendingTrust *TrustDecision
-
-	// StartupNotes render in the greeting (MCP server status, config
-	// warnings): dim lines that scroll away with the transcript.
 	StartupNotes []string
 }
 
 // TrustDecision is one pending project-trust question. Approved lists
-// the literal files that will become runnable, so the prompt can show
-// exactly what the user is approving (Section 7).
+// the literal files that will become runnable (Section 7).
 type TrustDecision struct {
 	ProjectDir string
 	Approved   []string
 	OnAnswer   func(trusted bool)
 }
 
-// permRequest is one pending permission decision. The gate's prompt
-// callback blocks on reply; Update answers it from a keypress.
+// permRequest is one pending permission decision.
 type permRequest struct {
 	tool  string
 	tier  tools.Tier
@@ -77,20 +72,16 @@ type permRequest struct {
 	reply chan bool
 }
 
-// permRequestMsg delivers a permission request to the tea program.
 type permRequestMsg struct{ req *permRequest }
 
 // orchestratorMsg wraps one orchestrator event as a tea.Msg.
 type orchestratorMsg orchestrator.Event
 
-// loginFlow is active while /login captures a key with masked input.
 type loginFlow struct{ provider string }
 
 // subagentMsg wraps one subagent progress event as a tea.Msg.
 type subagentMsg subagentEvent
 
-// subagentEvent mirrors subagent.Event without importing the package
-// into the TUI's hot types; the wiring converts.
 type subagentEvent struct {
 	Title string
 	Kind  string
@@ -98,69 +89,152 @@ type subagentEvent struct {
 	Usage llm.Usage
 }
 
+// statusTickMsg drives the working-status line (elapsed time).
+type statusTickMsg time.Time
+
+// Subagent event kinds, in sync with internal/subagent.
+const (
+	subagentText  = "text"
+	subagentTool  = "tool"
+	subagentDone  = "done"
+	subagentError = "error"
+	subagentUsage = "usage"
+)
+
+// Entry kinds in the transcript. Results carry enough structure to
+// render collapsed or expanded, and edit_file results render as a
+// colored diff hunk.
+type entryKind int
+
+const (
+	entryUser entryKind = iota
+	entryAssistant
+	entryTool
+	entryResult
+	entryOK
+	entryErr
+	entryDim
+	entrySteer
+	entryQueued
+	entryCompaction
+	entrySubagent
+)
+
+type entry struct {
+	kind entryKind
+	text string // primary text / tool args / note text
+	tool string // tool name (entryTool, entryResult)
+	// Diff details for edit_file results; empty for other tools.
+	path     string
+	old, new string
+	full     string // full result text (expansion)
+	summary  string // collapsed one-liner
+	subTitle string // subagent label
+}
+
 // Model is the Bubble Tea model. Pointer receiver so the gate's prompt
-// closure and the pump goroutine share one instance.
+// closure, the pump goroutine, and the palette share one instance.
 type Model struct {
 	opt     Options
 	program *tea.Program
 
-	input   textinput.Model
-	spinner spinner.Model
-	width   int
-	height  int
+	composer textarea.Model
+	spinner  spinner.Model
+	width    int
+	height   int
 
-	working bool               // a turn is in flight
-	cancel  context.CancelFunc // cancels the in-flight turn
+	working      bool
+	workingSince time.Time
+	cancel       context.CancelFunc
 
-	awaitingTrust *TrustDecision // non-nil while the trust prompt is up
-	awaitingPerm  *permRequest   // non-nil while the permission prompt is shown
-	allowAll      bool           // "a" answered once: skip action-tier prompts this session
+	awaitingTrust *TrustDecision
+	awaitingPerm  *permRequest
+	allowAll      bool
 
 	queue []string // follow-ups (Alt+Enter while working)
 
-	usage  llm.Usage // cumulative token usage
-	lines  []string  // finished transcript lines
-	stream strings.Builder
-	login  *loginFlow
+	usage llm.Usage
 
-	// Subagent progress: streaming text accumulates per title and
-	// flushes at boundaries (tool call, done, error) so the log stays
-	// readable instead of one line per delta.
+	// entries is the structured transcript; View renders it.
+	entries []entry
+	stream  strings.Builder
+	login   *loginFlow
+
+	// expandResults toggles ctrl+r result expansion.
+	expandResults bool
+
+	// Composer plumbing: large pastes collapse to tokens in the
+	// composer and re-expand on submit.
+	pastes  []string
+	pasteAt map[string]string // token -> content
+
+	// Command palette: open when the composer starts with "/".
+	paletteIdx int
+
+	// help overlay ("?").
+	helpOpen bool
+
+	// toast is a transient status message above the composer.
+	toast   string
+	toastAt time.Time
+
+	// Subagent progress accumulation, flushed at boundaries.
 	subMu      sync.Mutex
 	subStreams map[string]*strings.Builder
 }
 
+// Commands is the palette's source of truth; the desc renders in the
+// picker, the action runs on Enter.
+type command struct {
+	Name string
+	Desc string
+}
+
+var commands = []command{
+	{"/exit", "quit tilde"},
+	{"/help", "show keys and commands"},
+	{"/mode", "show or switch permission mode"},
+	{"/model", "show the active model and provider"},
+	{"/skills", "list available skills"},
+	{"/mcp", "list MCP servers and tools"},
+	{"/login", "store an API key (masked)"},
+	{"/logout", "remove the stored key"},
+}
+
 func New(opt Options) *Model {
-	input := textinput.New()
-	input.Prompt = "~ "
-	input.PromptStyle = accentStyle
-	input.Placeholder = "type a message, /login, /logout, or /exit"
-	input.Focus()
+	ta := textarea.New()
+	ta.Placeholder = "ask tilde anything…  /  commands · !  shell · @  files · ?  help"
+	ta.Prompt = GlyphPrompt + " "
+	ta.CharLimit = 0
+	ta.SetHeight(3)
+	ta.ShowLineNumbers = false
+	ta.Focus()
 
 	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 
 	m := &Model{
-		opt:     opt,
-		input:   input,
-		spinner: sp,
+		opt:        opt,
+		composer:   ta,
+		spinner:    sp,
+		pasteAt:    map[string]string{},
+		subStreams: map[string]*strings.Builder{},
 	}
-	// Greeting block, in the reference welcome screens' shape: logo,
-	// app name and version, model and mode, working directory — stacked
-	// lines that scroll away with the transcript.
+	// Identity block: logo, name and version, model and mode, working
+	// directory, then startup notes — stacked lines that scroll away.
 	for _, line := range strings.Split(strings.TrimRight(banner, "\n"), "\n") {
-		m.lines = append(m.lines, accentStyle.Render(line))
+		m.entries = append(m.entries, entry{kind: entryDim, text: accentStyle.Render(line)})
 	}
-	m.lines = append(m.lines, "")
-	m.lines = append(m.lines, lipgloss.NewStyle().Bold(true).Render("tilde "+version))
-	m.lines = append(m.lines, dimStyle.Render(opt.Model+" · "+opt.Mode))
+	m.entries = append(m.entries, entry{kind: entryDim, text: ""})
+	m.entries = append(m.entries, entry{kind: entryUser, text: boldStyle.Render("tilde " + version)})
+	m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Model + " · " + opt.Mode)})
 	if opt.Cwd != "" {
-		m.lines = append(m.lines, dimStyle.Render(opt.Cwd))
+		m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Cwd)})
 	}
 	for _, note := range opt.StartupNotes {
-		m.lines = append(m.lines, dimStyle.Render(note))
+		m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(note)})
 	}
 	if len(opt.StartupNotes) > 0 {
-		m.lines = append(m.lines, "")
+		m.entries = append(m.entries, entry{kind: entryDim, text: ""})
 	}
 	m.awaitingTrust = opt.PendingTrust
 	return m
@@ -168,26 +242,42 @@ func New(opt Options) *Model {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	return textinput.Blink
+	return textarea.Blink
 }
 
-// Run starts the program and blocks until it exits.
+// Run starts the program and blocks until it exits. Bubble Tea's
+// bracketed paste mode is on by default, so large pastes arrive as a
+// single flagged key event and can be collapsed.
+//
+// termenv detects the color profile by querying the terminal; under
+// script(1), CI, or any non-answering terminal that query fails and
+// everything renders without color. Falling back to $TERM keeps the
+// brand palette alive in those environments; a real terminal still
+// uses the query result.
 func Run(m *Model) error {
+	if lipgloss.ColorProfile() == termenv.Ascii {
+		term := os.Getenv("TERM")
+		switch {
+		case os.Getenv("COLORTERM") != "" || strings.Contains(term, "truecolor"):
+			lipgloss.SetColorProfile(termenv.TrueColor)
+		case strings.Contains(term, "256color"):
+			lipgloss.SetColorProfile(termenv.ANSI256)
+		case term != "" && term != "dumb":
+			lipgloss.SetColorProfile(termenv.ANSI)
+		}
+	}
 	p := tea.NewProgram(m)
 	m.program = p
 	_, err := p.Run()
 	return err
 }
 
-// Prompt returns the callback the permission gate should call when a
-// tool needs a decision. It blocks until the user answers, so it is only
-// suitable from the orchestrator's goroutine during a turn.
+// Prompt returns the callback the permission gate calls when a tool
+// needs a decision. It blocks until the user answers.
 func (m *Model) Prompt() func(tool tools.Tool, args string) bool {
 	return m.decide
 }
 
-// decide is the gate's prompt callback, running on the orchestrator's
-// goroutine. It shows the prompt and blocks until the user answers.
 func (m *Model) decide(tool tools.Tool, args string) bool {
 	if m.allowAll {
 		return true
@@ -202,21 +292,20 @@ func (m *Model) decide(tool tools.Tool, args string) bool {
 	return <-req.reply
 }
 
-// startTurn sends a new user message and pumps the turn's events into the
-// tea program until the channel closes.
+// startTurn sends a new user message and pumps the turn's events into
+// the tea program until the channel closes.
 func (m *Model) startTurn(text string) {
 	if m.working {
 		return
 	}
 	m.working = true
+	m.workingSince = time.Now()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	ch := m.opt.Orch.Send(ctx, text)
 
 	go func() {
-		// program is nil before Run starts (and in tests that drive
-		// Update directly); events are dropped then, never panic.
 		for ev := range ch {
 			if m.program != nil {
 				m.program.Send(orchestratorMsg(ev))
@@ -232,13 +321,15 @@ func (m *Model) cancelTurn() {
 	}
 }
 
-// finishStream flushes the accumulated assistant text into the
-// transcript.
-func (m *Model) finishStream() {
-	if s := strings.TrimRight(m.stream.String(), "\n"); s != "" {
-		m.lines = append(m.lines, s)
-	}
-	m.stream.Reset()
+// add appends a transcript entry.
+func (m *Model) add(e entry) {
+	m.entries = append(m.entries, e)
+}
+
+// showToast sets the transient message above the composer.
+func (m *Model) showToast(text string) {
+	m.toast = text
+	m.toastAt = time.Now()
 }
 
 // SubagentSink returns the function the subagent wiring uses to report
@@ -251,4 +342,11 @@ func (m *Model) SubagentSink() func(title, kind, text string, usage llm.Usage) {
 			}))
 		}
 	}
+}
+
+// statusTick schedules the next working-status tick.
+func statusTick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return statusTickMsg(t)
+	})
 }
