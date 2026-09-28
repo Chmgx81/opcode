@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"tilde/internal/llm"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // Event kinds emitted during a turn.
@@ -24,6 +24,7 @@ const (
 	EventToolStart    = "tool_start"    // a tool call is being dispatched
 	EventToolResult   = "tool_result"   // a tool call finished
 	EventUsage        = "usage"         // token usage for one model round
+	EventCompaction   = "compaction"    // history was auto-summarized
 	EventTurnComplete = "turn_complete" // the model stopped calling tools
 	EventError        = "error"
 )
@@ -68,6 +69,19 @@ type Orchestrator struct {
 	// skills mid-session.
 	SkillsIndex string
 
+	// Compaction (Section 3.2): when the previous round's reported
+	// prompt tokens reach CompactionFraction of ContextWindow, the
+	// oldest messages are summarized into a recap and replaced in
+	// place. ContextWindow 0 disables it — model windows vary and a
+	// wrong default would silently rewrite history. CompactionModel
+	// optionally names a cheaper model for the summarizer round.
+	ContextWindow   int
+	CompactionModel string
+
+	// lastPromptTokens is the provider-reported prompt size of the
+	// most recent request — the compaction trigger signal.
+	lastPromptTokens int
+
 	history []llm.Message
 
 	steerMu sync.Mutex
@@ -108,6 +122,20 @@ func (o *Orchestrator) systemPrompt() string {
 		parts = append(parts, instr)
 	}
 	return strings.Join(parts, "\n")
+}
+
+// History returns the conversation so far (a copy) — session storage
+// snapshots this on exit.
+func (o *Orchestrator) History() []llm.Message {
+	out := make([]llm.Message, len(o.history))
+	copy(out, o.history)
+	return out
+}
+
+// Seed replaces the conversation with a loaded session's history, so
+// a resumed session continues where it left off.
+func (o *Orchestrator) Seed(history []llm.Message) {
+	o.history = append([]llm.Message(nil), history...)
 }
 
 // Steer queues a steering message for the in-flight turn. It is appended
@@ -159,6 +187,13 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		for _, steer := range o.drainSteer() {
 			o.history = append(o.history, llm.Message{Role: "user", Content: steer})
 		}
+		if note, err := o.maybeCompact(ctx); err != nil {
+			// Compaction failure must not kill the turn: the
+			// conversation continues uncompacted and the user sees it.
+			events <- Event{Kind: EventError, Err: fmt.Errorf("compaction skipped: %w", err)}
+		} else if note != "" {
+			events <- Event{Kind: EventCompaction, Text: note}
+		}
 		// Copy: the request must be a snapshot. Handing out the live
 		// slice lets any later append (the next turn, a subagent)
 		// reach into a request that already went out.
@@ -188,6 +223,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			case llm.ToolCallEvent:
 				calls = append(calls, ev.Call)
 			case llm.UsageEvent:
+				o.lastPromptTokens = ev.Usage.PromptTokens
 				events <- Event{Kind: EventUsage, Usage: ev.Usage}
 			case llm.ErrorEvent:
 				return ev.Err
@@ -260,4 +296,76 @@ func truncate(s string) string {
 	}
 	return s[:maxToolResultChars] +
 		fmt.Sprintf("\n... truncated (%d more chars)", len(s)-maxToolResultChars)
+}
+
+// CompactionFraction is the share of the context window at which the
+// oldest messages get summarized (spec: ~75%).
+const CompactionFraction = 0.75
+
+// keepRecent is how many of the newest messages survive a compaction
+// verbatim; everything older becomes the recap.
+const keepRecent = 4
+
+// maybeCompact summarizes the oldest history into a recap when the
+// previous round's prompt size crossed the configured threshold. A
+// note is returned when compaction happened; an error means it was
+// attempted and failed (the caller continues regardless).
+func (o *Orchestrator) maybeCompact(ctx context.Context) (string, error) {
+	if o.ContextWindow <= 0 || o.lastPromptTokens == 0 {
+		return "", nil
+	}
+	if o.lastPromptTokens < int(float64(o.ContextWindow)*CompactionFraction) {
+		return "", nil
+	}
+	if len(o.history) <= keepRecent+2 {
+		return "", nil // not enough worth summarizing
+	}
+	old := o.history[:len(o.history)-keepRecent]
+	recent := o.history[len(o.history)-keepRecent:]
+
+	summary, err := o.summarize(ctx, old)
+	if err != nil {
+		return "", err
+	}
+	recap := llm.Message{Role: "user", Content: "Context recap (earlier conversation, auto-summarized):\n" + summary}
+	o.history = append([]llm.Message{recap}, recent...)
+	// Reset the signal so the next round reports fresh size rather than
+	// immediately re-triggering.
+	o.lastPromptTokens = 0
+	return fmt.Sprintf("summarized %d older messages into a recap (%d kept verbatim)", len(old), keepRecent), nil
+}
+
+// summarize runs the summarizer round through the provider — the same
+// interface, optionally a cheaper model (Section 3.2: keep the
+// summarizer swappable).
+func (o *Orchestrator) summarize(ctx context.Context, old []llm.Message) (string, error) {
+	model := o.CompactionModel
+	if model == "" {
+		model = o.Model
+	}
+	stream, err := o.Provider.StreamChat(ctx, llm.ChatRequest{
+		Model:    model,
+		System:   "Summarize this conversation compactly: the tasks, decisions, results, and open threads. Reply with the summary only.",
+		Messages: old,
+	})
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for ev := range stream {
+		switch ev.Type {
+		case llm.TextEvent:
+			b.WriteString(ev.Text)
+		case llm.ErrorEvent:
+			// Drain the rest so the provider goroutine exits.
+			for range stream {
+			}
+			return "", ev.Err
+		}
+	}
+	s := strings.TrimSpace(b.String())
+	if s == "" {
+		return "", fmt.Errorf("summarizer returned nothing")
+	}
+	return s, nil
 }
