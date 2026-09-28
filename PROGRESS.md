@@ -383,3 +383,62 @@ Spec: [docs/specs/phase5-subagents.md](docs/specs/phase5-subagents.md)
   deliberately deferred items: AGENTS.md hierarchical loading (spec
   Section 5, still unowned), `/config` and `/reload`, prompt
   templates, MCP debug view, project config allow-list keys.
+
+---
+
+# Phase 6 — Polish (status: complete, live-verified)
+
+Spec: [docs/specs/phase6-polish.md](docs/specs/phase6-polish.md)
+
+## Built
+
+- `internal/headless` — `tilde -p "prompt"` one-shot mode, plain text
+  or `--json` (one event object per line). Permissions fail closed
+  (nobody to ask); `--trust` keeps Section 7's headless posture.
+- `internal/config` — hierarchical AGENTS.md context (Section 5 step 3,
+  the item no phase owned): user file + root-to-cwd chain,
+  AGENTS.override.md > AGENTS.md > CLAUDE.md per directory, 32KB cap
+  per file, composed into the system prompt, loaded regardless of
+  trust.
+- `internal/session` — tree-structured session storage (Section 3.7's
+  resolved decision): every message a node with a parent so rewind
+  branches instead of overwriting, one JSON file per session under
+  ~/.tilde/sessions/, 0600, credentials redacted on write; saved on
+  exit in every mode; `--resume` / `--continue` seed the orchestrator.
+- Compaction (Section 3.2) — opt-in via `context_window`
+  (0 = disabled; model windows vary and a wrong default would silently
+  rewrite history), 75% threshold on the provider-reported prompt
+  size, summarizer round through the same Provider interface
+  (optional cheaper `compaction_model`), failure skips compaction and
+  the turn continues.
+- Packaging — module path is now `github.com/Chmgx81/tilde` so
+  `go install` works; README documents install, headless, sessions,
+  compaction, and AGENTS.md behavior.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all eleven packages.
+- **Headless live**: `-p` text mode streamed with tool lines and
+  exit 0; `--json` produced one valid event object per line; the
+  session file appeared (0600, tree nodes); `--continue` printed the
+  resume note and the seeded history demonstrably reached the model
+  (the scripted server answered from prior context immediately).
+- **Live OpenRouter one-shot**: `-p` over the real API ran a real
+  write_file + read_file round trip, and the saved session contains
+  zero credential bytes (grep for the key: 0 matches).
+- AGENTS.md composition is unit-tested end to end (hierarchy,
+  precedence, fallback, caps); the live run had an AGENTS.md present
+  and composed, though the free model's obedience to it is not
+  asserted.
+
+## Explicitly deferred (not forgotten)
+
+- `/tree` rewind view in the TUI (storage supports it today).
+- `/config` and `/reload` commands; prompt templates; MCP debug
+  view; project config.json allow-list keys; parallel subagent
+  dispatch; MCP over HTTP.
+
+## Build order complete
+
+Every phase of Section 8 is now built and live-verified: 0 loop,
+1 TUI, 2 modes, 3 trust + skills, 4 MCP, 5 subagents, 6 polish.

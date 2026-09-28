@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // Tool adapts one discovered MCP tool to tilde's tool interface. Every

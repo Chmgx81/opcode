@@ -13,9 +13,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"tilde/internal/llm"
-	"tilde/internal/orchestrator"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // TestFullSessionOverTeaProgram runs the real tea.Program (not just
