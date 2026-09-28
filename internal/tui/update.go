@@ -116,7 +116,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		return nil
 	}
 
-	m.appendWrapped(accentStyle, "❯ ", text)
+	m.appendWrapped(accentStyle, "~ ", text)
 	m.startTurn(text)
 	return tea.Cmd(func() tea.Msg { return m.spinner.Tick() })
 }
@@ -233,7 +233,7 @@ func (m *Model) turnEnded() {
 	}
 	next := m.queue[0]
 	m.queue = m.queue[1:]
-	m.lines = append(m.lines, accentStyle.Render("❯ ")+dimStyle.Render("(follow-up) ")+next)
+	m.lines = append(m.lines, accentStyle.Render("~ ")+dimStyle.Render("(follow-up) ")+next)
 	m.startTurn(next)
 }
 
