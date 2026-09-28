@@ -7,6 +7,7 @@ package tui
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"math/rand"
 	"os"
 	"strings"
@@ -93,11 +94,16 @@ type TrustDecision struct {
 	OnAnswer   func(trusted bool)
 }
 
-// permRequest is one pending permission decision.
+// permRequest is one pending permission decision. sel is the
+// highlighted option (0 yes, 1 yes-and-always, 2 no — the safest
+// default, per spec 9.2); scope is option 2's literal "don't ask
+// again" grant, computed when the request opened.
 type permRequest struct {
 	tool  string
 	tier  tools.Tier
 	args  string
+	scope string
+	sel   int
 	reply chan bool
 }
 
@@ -208,7 +214,14 @@ type Model struct {
 	awaitingTrust *TrustDecision
 	awaitingPerm  *permRequest
 	awaitingPlan  *planRequest
-	allowAll      bool
+	allowAll      bool // legacy global grant: skip every action-tier prompt this session
+
+	// Session-scoped "don't ask again" grants from the approval
+	// dialog: shell commands by token prefix (fail-closed matching,
+	// the same rules the config allowlist uses), other tools by name.
+	sessionRules []string
+	sessionAllow *tools.ShellAllowlist
+	toolAllows   map[string]bool
 
 	queue []queued // follow-ups (Alt+Enter while working)
 
@@ -461,14 +474,97 @@ func (m *Model) decide(tool tools.Tool, args string) bool {
 	if m.allowAll {
 		return true
 	}
+	// Session-scoped grants from a previous "don't ask again": shell
+	// commands by token prefix (fail-closed on metacharacters, the
+	// same matching the config allowlist uses), other tools by name.
+	if m.sessionGrants(tool.Name(), args) {
+		return true
+	}
 	req := &permRequest{
 		tool:  tool.Name(),
 		tier:  tool.Tier(),
 		args:  args,
+		scope: alwaysScope(tool.Name(), args),
+		sel:   2, // the safest default is highlighted first
 		reply: make(chan bool, 1),
+	}
+	if m.program == nil {
+		// No UI is running (tests, or before Run): nothing can be
+		// approved, so the action fails closed.
+		return false
 	}
 	m.program.Send(permRequestMsg{req})
 	return <-req.reply
+}
+
+// sessionGrants reports whether a tool call is covered by a
+// session-scoped always-allow rule.
+func (m *Model) sessionGrants(tool, args string) bool {
+	if m.toolAllows[tool] {
+		return true
+	}
+	if m.sessionAllow != nil && tool == "run_shell" {
+		var a struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal([]byte(args), &a) == nil && a.Command != "" &&
+			m.sessionAllow.Allows(a.Command) {
+			return true
+		}
+	}
+	return false
+}
+
+// alwaysScope computes option 2's literal grant: the shell command's
+// program + subcommand as a prefix rule (displayed "<prefix>:*"),
+// or the tool name for everything else.
+func alwaysScope(tool, args string) string {
+	if tool != "run_shell" {
+		return tool
+	}
+	var a struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal([]byte(args), &a) != nil {
+		return tool
+	}
+	fields := strings.Fields(a.Command)
+	if len(fields) == 0 {
+		return tool
+	}
+	if len(fields) > 1 {
+		return fields[0] + " " + fields[1] + ":*"
+	}
+	return fields[0] + ":*"
+}
+
+// prefixRule is the stored form of a shell always-allow: the program
+// and subcommand, no metacharacters — the ShellAllowlist's matching
+// fails closed on anything else anyway.
+func prefixRule(scope string) string {
+	rule := strings.TrimSuffix(scope, ":*")
+	if strings.ContainsAny(rule, ";|&$`><\\") {
+		return ""
+	}
+	return rule
+}
+
+// grantAlways applies option 2: a session-scoped rule, never a file
+// on disk, never a provider-side change.
+func (m *Model) grantAlways(req *permRequest) {
+	if req.tool == "run_shell" {
+		if rule := prefixRule(req.scope); rule != "" {
+			m.sessionRules = append(m.sessionRules, rule)
+			m.sessionAllow = tools.NewShellAllowlist(m.sessionRules)
+			m.showToast("always allowed " + req.scope + " this session")
+			return
+		}
+	}
+	if m.toolAllows == nil {
+		m.toolAllows = map[string]bool{}
+	}
+	m.toolAllows[req.tool] = true
+	m.showToast("always allowed " + req.tool + " this session")
 }
 
 // PlanApprove returns the callback present_plan calls to surface a

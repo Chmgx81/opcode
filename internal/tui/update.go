@@ -113,20 +113,38 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	// Then the permission prompt.
+	// Then the permission dialog: arrows and number keys move, enter
+	// selects, y/a/n are the fast paths, esc denies.
 	if m.awaitingPerm != nil {
-		switch msg.String() {
-		case "y", "Y":
-			m.awaitingPerm.reply <- true
-		case "a", "A":
-			m.allowAll = true
-			m.awaitingPerm.reply <- true
-		case "n", "N", "esc":
-			m.awaitingPerm.reply <- false
-		default:
-			return m, nil
-		}
+		req := m.awaitingPerm
 		m.awaitingPerm = nil
+		switch msg.String() {
+		case "y", "Y", "1":
+			req.reply <- true
+		case "a", "A", "2":
+			m.grantAlways(req)
+			req.reply <- true
+		case "n", "N", "esc", "3":
+			req.reply <- false
+		case "up":
+			req.sel = (req.sel + 2) % 3
+			m.awaitingPerm = req
+		case "down":
+			req.sel = (req.sel + 1) % 3
+			m.awaitingPerm = req
+		case "enter":
+			switch req.sel {
+			case 0:
+				req.reply <- true
+			case 1:
+				m.grantAlways(req)
+				req.reply <- true
+			default:
+				req.reply <- false
+			}
+		default:
+			m.awaitingPerm = req
+		}
 		return m, nil
 	}
 

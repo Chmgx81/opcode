@@ -80,6 +80,13 @@ Cycle with **Tab**. Approving a plan (`y` implement, `a` implement with
 auto-accept) switches the session into a working mode mid-turn — the
 next request carries the action tools, no restart. `n` keeps planning.
 
+Action-Allowed tools ask through a numbered dialog — the literal
+command, then `1. Yes`, `2. Yes, and don't ask again for: <command
+prefix>:*`, `3. No`. Option 2 grants a session-scoped prefix rule
+(`npm init:*` covers `npm init --yes`, never `npm install`; any shell
+metacharacter fails closed). Arrows, number keys, and `y`/`a`/`n` all
+work; **No** is preselected.
+
 Safe shell commands can skip the prompt entirely — a token-prefix
 allowlist in `~/.tilde/config.json`:
 

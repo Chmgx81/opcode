@@ -1660,3 +1660,57 @@ A full-tree audit: every file read, every symbol grepped for usage.
 - All twelve packages; gofmt, vet, and `go mod tidy` clean; no
   TODO/FIXME markers in non-test code; every PROGRESS spec link
   resolves to an existing file.
+
+# Phase 27 — The approval dialog + install success screen (status: complete, live-verified)
+
+The reference product's permission anatomy and install completion,
+built to the tui-ux-spec's Section 9.
+
+## Built
+
+- **The approval dialog** replaces the one-line "allow?" box: a
+  plain-words title and tier badge ("Bash command · Runs a command"),
+  the literal command shown verbatim, the question, and three
+  numbered options — `1. Yes`, `2. Yes, and don't ask again for:
+  <prefix>:*`, `3. No` — with **No preselected** (the safest
+  default, spec 9.2). Arrows move, number keys and `y`/`a`/`n` are
+  the fast paths, enter takes the highlighted option, esc denies.
+- **Session-scoped "don't ask again"** (option 2): shell commands
+  grant a program+subcommand prefix rule (`npm init:*`), matched by
+  the same fail-closed engine as the config allowlist —
+  metacharacter-bearing commands never match; other tools grant
+  per-tool. Session-only: nothing is written to disk, nothing is
+  revoked at the provider, the toast says exactly what was granted.
+- **A latent fit() bug fixed**: frame fitting counted *layers*, not
+  rendered rows — fine while every layer was one line, broken the
+  moment the multi-row dialog landed (a 31-row frame in a 24-row
+  terminal). fit now counts rows and never trims the protected tail
+  (open dialog, composer); the transcript trims from the front.
+- **decide() fails closed** when no UI is running (nil program):
+  nothing can be approved, so the action is denied — the same
+  nil-guard posture startTurn already had.
+- **install.sh**: "Next: Run tilde --help to get started", matching
+  the reference's completion screen.
+
+## Verified for real
+
+- All twelve packages; new tests pin the dialog's anatomy (title,
+  tier words, literal command, three options), every key path
+  (arrows, numbers, y/a/n, esc, enter, wrap-around), and the grant
+  end to end (matching command auto-allows, non-matching prompts,
+  metacharacters fail closed, per-tool grants for non-shell tools).
+- **PTY, live, ask mode**: a scripted model called `npm init -y` —
+  the dialog rendered with the full anatomy, `2` granted
+  `npm init:*` (toast confirmed), the command executed, and a
+  second `npm init --yes` ran with **no second dialog**. A
+  non-matching `npm install` correctly prompted again, and enter on
+  the preselected No denied it. (Two earlier "nothing happened"
+  runs were the fixture's recurring NameError — probed directly,
+  not a product bug.)
+
+## Phase 27 assumptions
+
+1. `Tab` to amend and `Ctrl+E` to explain (spec 9.2) are not yet
+  built — the dialog's hint line advertises only what works today.
+2. The prefix grant covers program + subcommand, one level deep —
+  the same scoping the reference product shows.

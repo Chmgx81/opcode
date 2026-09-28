@@ -87,4 +87,4 @@ case ":$PATH:" in
     ;;
 esac
 say ""
-say "Next: run tilde in a project directory"
+say "Next: Run tilde --help to get started"
