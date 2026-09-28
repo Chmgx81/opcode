@@ -1071,3 +1071,47 @@ order — items 1, 2, and half of 4 of the borrow list.
 3. Theme-adaptive fills (probe the terminal background, alpha-blend) —
    next pass. Then: footer-hint width fitting, external editor, screen
    reader detection seeding the animations default.
+
+---
+
+# Phase 16 — Theme-Adaptive Palette (status: complete, live-verified)
+
+Borrow list item 3 from the Codex audit: their TUI probes the
+terminal's actual background and adapts — light text on a white
+terminal is invisible, and tilde's hardcoded dark palette had exactly
+that failure class.
+
+## Built
+
+- **The palette became mutable**: style.go's Hex values are vars now,
+  and refreshTokens() is the one place that re-derives every Color
+  and Style from them (populated at init and after a swap). This is
+  the reskin mechanism the "one place to change the look" comment
+  always claimed, finally exercised.
+- **adaptTheme(dark)**: dark is the default posture (and what
+  undetectable terminals fall back to). Light swaps in: dark ink
+  (#1B2A32) instead of near-white text, light fills (#E4EDF1) for the
+  user panel and code blocks, light panel borders (#A8C4CE), and
+  deepened accents/semantics for contrast on white (#0E7490 accent,
+  darker danger/warning/info).
+- **Detection in Run()**: termenv.HasDarkBackground() (the same OSC
+  exchange as the profile probe), skipped under Ascii/NO_COLOR;
+  TILDE_THEME=light|dark overrides the probe. Glamour renderers embed
+  their style config at creation, so adaptTheme drops the renderer
+  cache — post-adapt renders pick up the swapped palette.
+
+## Verified for real
+
+- All eleven packages; new test: the light palette applied (hex
+  assertions), the user panel rendering with the light fill under
+  forced truecolor, and the deepened accent — with an explicit dark
+  restore (adaptTheme's dark branch is a deliberate no-op).
+- **PTY with TILDE_THEME=light on xterm-256color**: the user panel
+  rendered with the light fill (48;5;195 = #E4EDF1) and a dark accent
+  prompt on it; the dark fill was provably absent; light borders on
+  the boxes; the query echoed normally.
+
+## Deferred (borrow list)
+
+Footer-hint width fitting, external editor, screen-reader detection
+seeding the animations default, OSC 8 hyperlinks.

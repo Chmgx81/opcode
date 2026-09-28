@@ -386,6 +386,24 @@ func Run(m *Model) error {
 			lipgloss.SetColorProfile(termenv.ANSI)
 		}
 	}
+	// Theme: the dark palette is the default posture. A real terminal
+	// is asked for its background (the same OSC exchange as the
+	// profile probe); a light background re-skins the tokens for
+	// legibility — light text on a white terminal is invisible.
+	// TILDE_THEME=light|dark overrides the probe; NO_COLOR keeps Ascii
+	// and the dark tokens' uncolored forms.
+	dark := true
+	switch strings.ToLower(os.Getenv("TILDE_THEME")) {
+	case "light":
+		dark = false
+	case "dark":
+	default:
+		if lipgloss.ColorProfile() != termenv.Ascii && os.Getenv("NO_COLOR") == "" {
+			dark = termenv.HasDarkBackground()
+		}
+	}
+	adaptTheme(dark)
+
 	p := tea.NewProgram(m)
 	m.program = p
 	_, err := p.Run()
