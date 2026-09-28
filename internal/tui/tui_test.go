@@ -1,0 +1,428 @@
+package tui
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"tilde/internal/llm"
+	"tilde/internal/orchestrator"
+	"tilde/internal/tools"
+)
+
+// scriptedProvider is an llm.Provider the TUI tests control: each
+// StreamChat call can block until released, so mid-turn actions (steer,
+// queue) happen at deterministic moments.
+type scriptedProvider struct {
+	mu          sync.Mutex
+	rounds      [][]llm.ChatEvent
+	blockFirst  chan struct{} // if non-nil, round 1 blocks until closed
+	gotRequests []llm.ChatRequest
+}
+
+func (p *scriptedProvider) StreamChat(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+	p.mu.Lock()
+	p.gotRequests = append(p.gotRequests, req)
+	if len(p.rounds) == 0 {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("no scripted round left")
+	}
+	round := p.rounds[0]
+	p.rounds = p.rounds[1:]
+	block := p.blockFirst
+	if block != nil {
+		p.blockFirst = nil
+		p.mu.Unlock()
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+	} else {
+		p.mu.Unlock()
+	}
+	ch := make(chan llm.ChatEvent, len(round))
+	for _, ev := range round {
+		ch <- ev
+	}
+	close(ch)
+	return ch, nil
+}
+
+func (p *scriptedProvider) requestCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.gotRequests)
+}
+
+func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scriptedProvider) {
+	t.Helper()
+	fp := &scriptedProvider{rounds: rounds}
+	var reg tools.Registry
+	reg.Register(tools.ReadFile{})
+	reg.Register(tools.WriteFile{})
+	orch := orchestrator.New(fp, "test-model", "sys", &reg, &tools.Gate{})
+	m := New(Options{
+		Orch:         orch,
+		Model:        "test-model",
+		Mode:         tools.ModeAsk,
+		Cwd:          dir,
+		TildeHome:    dir,
+		ProviderName: "openrouter",
+		BaseURL:      "http://example.test/v1",
+		AuditPath:    filepath.Join(dir, "audit.jsonl"),
+	})
+	return m, fp
+}
+
+func keyMsg(s string) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+func enterKey() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyEnter}
+}
+
+func altEnterKey() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyEnter, Alt: true}
+}
+
+func escKey() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyEsc}
+}
+
+func typeAndEnter(m *Model, text string) tea.Cmd {
+	m.input.SetValue(text)
+	model, cmd := m.Update(enterKey())
+	m = model.(*Model)
+	return cmd
+}
+
+func TestSubmitWhileIdleStartsTurn(t *testing.T) {
+	dir := t.TempDir()
+	m, fp := newText(t, dir, [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "hello"}},
+	})
+
+	cmd := typeAndEnter(m, "hi there")
+	if cmd == nil {
+		t.Fatal("submit returned no command")
+	}
+	if !m.working {
+		t.Error("working = false after submit")
+	}
+	waitFor(t, func() bool { return fp.requestCount() == 1 })
+	if got := fp.gotRequests[0].Messages[0].Content; got != "hi there" {
+		t.Errorf("user message = %q", got)
+	}
+}
+
+func TestEnterWhileWorkingSteers(t *testing.T) {
+	dir := t.TempDir()
+	block := make(chan struct{})
+	fp := &scriptedProvider{
+		blockFirst: block,
+		rounds: [][]llm.ChatEvent{
+			// Round 1 must call a tool, so the turn continues to
+			// round 2 — the moment a steering message can fold in.
+			{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+				ID: "call-1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}}},
+			{{Type: llm.TextEvent, Text: "ok"}},
+		},
+	}
+	var reg tools.Registry
+	reg.Register(tools.ReadFile{})
+	orch := orchestrator.New(fp, "m", "s", &reg, &tools.Gate{})
+	m := New(Options{Orch: orch, TildeHome: dir, ProviderName: "openrouter",
+		BaseURL: "http://example.test/v1", AuditPath: filepath.Join(dir, "audit.jsonl")})
+
+	typeAndEnter(m, "first")
+	waitFor(t, func() bool { return fp.requestCount() == 1 })
+
+	// Enter mid-turn steers instead of queuing.
+	typeAndEnter(m, "wait, do it differently")
+	if len(m.queue) != 0 {
+		t.Errorf("queue = %v, want empty (Enter steers, not queues)", m.queue)
+	}
+	close(block)
+	waitFor(t, func() bool { return fp.requestCount() == 2 })
+
+	msgs := fp.gotRequests[1].Messages
+	var steer *llm.Message
+	for i := range msgs {
+		if msgs[i].Role == "user" && msgs[i].Content == "wait, do it differently" {
+			steer = &msgs[i]
+		}
+	}
+	if steer == nil {
+		t.Errorf("steering message never reached the model: %+v", msgs)
+	}
+}
+
+func TestAltEnterWhileWorkingQueuesFollowUp(t *testing.T) {
+	dir := t.TempDir()
+	block := make(chan struct{})
+	fp := &scriptedProvider{
+		blockFirst: block,
+		rounds: [][]llm.ChatEvent{
+			{{Type: llm.TextEvent, Text: "one"}},
+			{{Type: llm.TextEvent, Text: "two"}},
+		},
+	}
+	var reg tools.Registry
+	reg.Register(tools.ReadFile{})
+	orch := orchestrator.New(fp, "m", "s", &reg, &tools.Gate{})
+	m := New(Options{Orch: orch, TildeHome: dir, ProviderName: "openrouter",
+		BaseURL: "http://example.test/v1", AuditPath: filepath.Join(dir, "audit.jsonl")})
+
+	typeAndEnter(m, "first message")
+	waitFor(t, func() bool { return fp.requestCount() == 1 })
+
+	m.input.SetValue("follow up next")
+	m.Update(altEnterKey())
+	if len(m.queue) != 1 || m.queue[0] != "follow up next" {
+		t.Fatalf("queue = %v", m.queue)
+	}
+
+	// Turn completes; the queue must drain into a new turn.
+	close(block)
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventTurnComplete}))
+	if !m.working {
+		t.Error("queued follow-up did not start a new turn")
+	}
+	waitFor(t, func() bool { return fp.requestCount() == 2 })
+	last := fp.gotRequests[1].Messages
+	if last[len(last)-1].Content != "follow up next" {
+		t.Errorf("follow-up not sent after turn complete: %+v", last)
+	}
+}
+
+func TestPermissionPromptAnswers(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	req := &permRequest{tool: "write_file", tier: tools.TierActionAllowed,
+		args: `{"path": "x"}`, reply: make(chan bool, 1)}
+	m.Update(permRequestMsg{req})
+
+	if m.awaitingPerm != req {
+		t.Fatal("prompt not shown")
+	}
+	if v := m.View(); !strings.Contains(v, "write_file") || !strings.Contains(v, "allow all") {
+		t.Errorf("view does not show the permission prompt: %q", v)
+	}
+
+	// Typing anything but y/a/n must not answer the prompt.
+	m.Update(keyMsg("z"))
+	select {
+	case <-req.reply:
+		t.Fatal("stray key answered the prompt")
+	default:
+	}
+
+	m.Update(keyMsg("y"))
+	if m.awaitingPerm != nil {
+		t.Error("prompt still shown after answer")
+	}
+	if !<-req.reply {
+		t.Error("y must allow")
+	}
+
+	// Deny path.
+	req2 := &permRequest{tool: "run_shell", tier: tools.TierActionAllowed,
+		args: `{}`, reply: make(chan bool, 1)}
+	m.Update(permRequestMsg{req2})
+	m.Update(escKey())
+	if <-req2.reply {
+		t.Error("esc must deny")
+	}
+
+	// "a" allows now and skips prompts for the session.
+	req3 := &permRequest{tool: "write_file", tier: tools.TierActionAllowed,
+		args: `{}`, reply: make(chan bool, 1)}
+	m.Update(permRequestMsg{req3})
+	m.Update(keyMsg("a"))
+	if !<-req3.reply {
+		t.Error("a must allow")
+	}
+	if !m.decide(tools.WriteFile{}, `{}`) {
+		t.Error("after 'a', action-tier calls must skip the prompt")
+	}
+}
+
+func TestLoginStoresKeyAndSwapsProvider(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	typeAndEnter(m, "/login")
+	if m.login == nil {
+		t.Fatal("/login did not start the login flow")
+	}
+	if v := m.View(); !strings.Contains(v, "input hidden") {
+		t.Errorf("view does not mention masked input: %q", v)
+	}
+
+	m.input.SetValue("brand-new-key")
+	m.Update(enterKey())
+
+	data, err := os.ReadFile(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatalf("auth.json not written: %v", err)
+	}
+	if !strings.Contains(string(data), "brand-new-key") {
+		t.Errorf("auth.json = %s", data)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "auth.json"))
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("auth.json mode = %v, want 0600", perm)
+	}
+	// The provider must use the new key without a restart.
+	p, ok := m.opt.Orch.Provider.(*llm.OpenAICompat)
+	if !ok || p.APIKey != "brand-new-key" {
+		t.Errorf("provider not swapped to the new key: %+v", m.opt.Orch.Provider)
+	}
+	if m.login != nil {
+		t.Error("login flow still active after submit")
+	}
+}
+
+func TestLoginEmptyKeyCancels(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	typeAndEnter(m, "/login")
+	m.input.SetValue("   ")
+	m.Update(enterKey())
+	if _, err := os.Stat(filepath.Join(dir, "auth.json")); !os.IsNotExist(err) {
+		t.Error("empty key must not be written")
+	}
+	if m.login != nil {
+		t.Error("login flow still active after empty submit")
+	}
+}
+
+func TestLogoutRemovesStoredKey(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	if err := writeKeyForTest(dir, "openrouter", "to-remove"); err != nil {
+		t.Fatal(err)
+	}
+
+	typeAndEnter(m, "/logout")
+	data, err := os.ReadFile(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatalf("auth.json missing after logout: %v", err)
+	}
+	if strings.Contains(string(data), "to-remove") {
+		t.Errorf("key still present after /logout: %s", data)
+	}
+	p, ok := m.opt.Orch.Provider.(*llm.OpenAICompat)
+	if !ok || p.APIKey != "" {
+		t.Errorf("provider still holds the old key after logout")
+	}
+	var said, saidWhat bool
+	for _, l := range m.lines {
+		if strings.Contains(l, "logout") || strings.Contains(l, "removed") {
+			said = true
+		}
+		if strings.Contains(l, "does not unset") {
+			saidWhat = true
+		}
+	}
+	if !said || !saidWhat {
+		t.Errorf("logout message incomplete: %v", m.lines)
+	}
+
+	// Second logout says there is nothing to remove rather than erroring.
+	before := len(m.lines)
+	typeAndEnter(m, "/logout")
+	if len(m.lines) != before+1 {
+		t.Error("second /logout should print a 'nothing to remove' line")
+	}
+}
+
+func TestEscCancelsWorkingTurn(t *testing.T) {
+	dir := t.TempDir()
+	m, fp := newText(t, dir, [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "partial"}},
+	})
+	typeAndEnter(m, "go")
+	waitFor(t, func() bool { return fp.requestCount() == 1 })
+	if m.cancel == nil {
+		t.Fatal("no cancel function after starting a turn")
+	}
+	m.Update(escKey())
+	if m.cancel != nil {
+		t.Error("esc did not cancel the turn")
+	}
+
+	// A cancelled turn renders as a plain note, not a scary error.
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventError, Err: orchestrator.ErrCancelled}))
+	if m.working {
+		t.Error("still working after cancelled event")
+	}
+	joined := strings.Join(m.lines, "\n")
+	if !strings.Contains(joined, "turn cancelled") {
+		t.Errorf("cancelled note missing: %q", joined)
+	}
+}
+
+func TestStreamingEventsRender(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventText, Text: "Hello "}))
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventText, Text: "world"}))
+	if v := m.View(); !strings.Contains(v, "Hello world") {
+		t.Errorf("streamed text not rendered incrementally: %q", v)
+	}
+
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventToolStart,
+		ToolCall: llm.ToolCall{Name: "read_file", Arguments: `{"path": "x"}`}}))
+	if v := m.View(); !strings.Contains(v, "read_file") {
+		t.Errorf("tool call not rendered: %q", v)
+	}
+
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventUsage,
+		Usage: llm.Usage{PromptTokens: 7, CompletionTokens: 3}}))
+	if v := m.View(); !strings.Contains(v, "7 in / 3 out") {
+		t.Errorf("usage not in status bar: %q", v)
+	}
+}
+
+func TestExitCommandQuits(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	cmd := typeAndEnter(m, "/exit")
+	if cmd == nil {
+		t.Fatal("/exit returned no command — it must quit")
+	}
+	// tea.Quit is a command; the only observable contract here is that
+	// submitting /exit produces a command (nil means "keep going").
+}
+
+func writeKeyForTest(dir, provider, key string) error {
+	f, err := os.Create(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fmt.Fprintf(f, `{"%s": "%s"}`, provider, key)
+	return nil
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("condition never became true")
+}

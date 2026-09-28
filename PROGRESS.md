@@ -87,3 +87,65 @@ OpenRouter key.** Stop point for user review.
 
 - Real Bubble Tea TUI: streaming render, status bar, permission prompts,
   steer/follow-up, `/login` and `/logout`.
+
+---
+
+# Phase 1 — Real Bubble Tea TUI (status: complete, live-verified)
+
+Spec: [docs/specs/phase1-tui.md](docs/specs/phase1-tui.md)
+
+## Built
+
+- `internal/tui` — Bubble Tea front end: streaming render, status bar
+  (model, mode, cwd, cumulative token usage, spinner), permission
+  prompts, steer/follow-up input handling, `/login`, `/logout`, `/exit`.
+- `internal/llm` — `stream_options.include_usage`; Usage events.
+- `internal/orchestrator` — `Steer()` (folds in at round boundaries),
+  `ErrCancelled` sentinel, usage forwarding.
+- `internal/tools` — `PolicyDecide`: the Phase 1 subset of Section 7's
+  tiered model (Read-Only always allowed; Action-Allowed prompted in ask
+  mode, allowed+logged in full-auto, denied when no one can answer).
+- `internal/config` — `WriteAuthKey` / `RemoveAuthKey` (0600/0700 kept),
+  the backend for `/login` and `/logout`.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all packages, including:
+  - A full `tea.Program` session test (not just Update calls): real
+    orchestrator, real gate in ask mode, real SSE server, permission
+    prompt answered by a synthetic keystroke — tool executes, round 2
+    runs, audit written.
+  - TUI state machine: steer vs follow-up vs submit, queue drain after
+    turn complete, permission y/a/n paths, cancel rendering, /login and
+    /logout against temp dirs.
+  - Orchestrator: steering folds in at the round boundary after the tool
+    result; cancellation maps to `ErrCancelled`.
+- **Live OpenRouter TUI run (2026-09-28, `inclusionai/ling-3.0-flash-fin:free`,
+  ask mode)**: full session in a PTY — streamed response, `write_file`
+  permission prompt answered with `y`, real file written, `read_file`
+  ran without prompting (Read-Only tier), model confirmed the real
+  contents, clean `/exit`. Audit log shows the allowed action-tier call
+  and the unprompted read-tier call.
+- **Live bug found and fixed during that run**: OpenRouter interleaves
+  non-JSON `data:` lines in its SSE stream; the Phase 0 parser killed the
+  turn on them. The parser now skips unparsable data lines (regression
+  tested); errors inside valid JSON still fail loudly.
+
+## Phase 1 assumptions
+
+1. Permission prompt is inline in the transcript, not a modal overlay
+   (spec Section 9 open question — inline is simpler and keeps context
+   visible; can be revisited).
+2. `y`/`a`/`n` single keys answer prompts; Esc denies.
+3. Only `ask` and `full-auto` modes are honored; other values behave as
+   ask (fail closed). The full mode set is Phase 2.
+4. `/login` writes the key for the configured provider and rebuilds the
+   provider + audit redactor immediately; no restart needed.
+5. Token usage is requested via `include_usage` and shown cumulatively;
+   servers that don't report it show nothing.
+
+## Next (Phase 2, only after user review)
+
+- Full permission mode system: read-only / ask-every-time /
+  auto-accept-safe-ops / full-auto as a switchable mode set, mode-aware
+  tool filtering and prompt policy.
