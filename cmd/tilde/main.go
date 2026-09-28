@@ -219,6 +219,11 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	}
 	registry.Register(subagent.SpawnTool{Runner: subRunner, Emitter: spawnEmitter})
 
+	// present_plan (Draft-Only): plan mode's exit. The Approve
+	// callback is wired after the UI exists, like the gate's prompt.
+	planTool := &tools.PresentPlan{}
+	registry.Register(planTool)
+
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
 	orch.SkillsIndex = skillManager.Index()
@@ -383,6 +388,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.
 	gate.Decide = tools.PolicyDecide(cfg.PermissionMode, ui.Prompt())
+	planTool.Approve = ui.PlanApprove()
 
 	// Subagent progress flows into the transcript as labeled lines.
 	sink := ui.SubagentSink()

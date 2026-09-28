@@ -87,6 +87,20 @@ type permRequest struct {
 
 type permRequestMsg struct{ req *permRequest }
 
+// planRequest is one pending plan decision: the model presented a
+// plan (present_plan tool); the reply carries the verdict.
+type planRequest struct {
+	plan  string
+	reply chan planVerdict
+}
+
+type planVerdict struct {
+	proceed bool
+	auto    bool
+}
+
+type planRequestMsg struct{ req *planRequest }
+
 // orchestratorMsg wraps one orchestrator event as a tea.Msg.
 type orchestratorMsg orchestrator.Event
 
@@ -131,6 +145,7 @@ const (
 	entryQueued
 	entryCompaction
 	entrySubagent
+	entryPlan
 )
 
 type entry struct {
@@ -167,6 +182,7 @@ type Model struct {
 
 	awaitingTrust *TrustDecision
 	awaitingPerm  *permRequest
+	awaitingPlan  *planRequest
 	allowAll      bool
 
 	queue []string // follow-ups (Alt+Enter while working)
@@ -373,6 +389,21 @@ func (m *Model) decide(tool tools.Tool, args string) bool {
 	}
 	m.program.Send(permRequestMsg{req})
 	return <-req.reply
+}
+
+// PlanApprove returns the callback present_plan calls to surface a
+// plan. It blocks on the orchestrator's goroutine until the user
+// answers, like the permission prompt.
+func (m *Model) PlanApprove() func(plan string) (proceed, auto bool) {
+	return func(plan string) (bool, bool) {
+		req := &planRequest{
+			plan:  plan,
+			reply: make(chan planVerdict, 1),
+		}
+		m.program.Send(planRequestMsg{req})
+		v := <-req.reply
+		return v.proceed, v.auto
+	}
 }
 
 // startTurn sends a new user message and pumps the turn's events into

@@ -36,15 +36,18 @@ immediately) — or set `$OPENROUTER_API_KEY`. Non-default providers
 (Ollama, vLLM, anything OpenAI-compatible) go in `~/.tilde/models.json`.
 Credentials never load from a project-level `.tilde/`.
 
-## The three modes
+## The four modes
 
-| Mode | Writes, shell, MCP |
+| Mode | What the model gets |
 |---|---|
-| `read-only` | not even offered to the model |
+| `read-only` | read tools only — nothing else is offered |
+| `plan` | reads + `present_plan`: it researches, presents a plan, you approve |
 | `ask-every-time` | asks you first — the default |
 | `full-auto` | runs without prompting, still logged |
 
-Cycle with **Tab**. Read-only tools never prompt in any mode.
+Cycle with **Tab**. Approving a plan (`y` implement, `a` implement with
+auto-accept) switches the session into a working mode mid-turn — the
+next request carries the action tools, no restart. `n` keeps planning.
 
 ## In the TUI
 

@@ -69,7 +69,7 @@ func LoadConfig(dir string) (Config, error) {
 	// at load time, not silently behave like something permissive.
 	cfg.PermissionMode = tools.NormalizeMode(cfg.PermissionMode)
 	if !tools.ValidMode(cfg.PermissionMode) {
-		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, ask-every-time, full-auto; legacy: ask, auto-accept-safe-ops)",
+		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, plan, ask-every-time, full-auto; legacy: ask, auto-accept-safe-ops)",
 			cfg.PermissionMode)
 	}
 	return cfg, nil
