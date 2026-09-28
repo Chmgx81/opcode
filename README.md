@@ -97,6 +97,16 @@ server is skipped with a visible note. A crashed server gets one
 restart (with a full re-handshake) on its next call. A project server
 can never replace a user server with the same name.
 
+## Subagents
+
+The model can delegate a self-contained task with the `spawn_subagent`
+tool (`{task, title?}`). A subagent is another orchestrator instance in
+its own goroutine: same provider, same permission gate and audit log
+(same trust boundary), narrower system prompt, and no spawn tool of its
+own — so subagents cannot recurse by construction. Progress renders in
+the transcript as labeled `[subagent title]` lines while it works; the
+final answer returns to the parent as the tool result.
+
 ## Test
 
 ```
@@ -107,6 +117,7 @@ go test ./...
 
 ```
 cmd/tilde              entry point (thin wiring, TUI launch)
+internal/subagent      spawn_subagent tool: scoped orchestrator instances, labeled progress events
 internal/tui           Bubble Tea model: streaming, prompts, steer/follow-up
 internal/orchestrator  agent loop, UI-independent
 internal/tools         built-ins, permission gate + tier policy, audit log

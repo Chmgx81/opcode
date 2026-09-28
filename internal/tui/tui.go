@@ -12,6 +12,7 @@ import (
 	"context"
 	_ "embed"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -85,6 +86,18 @@ type orchestratorMsg orchestrator.Event
 // loginFlow is active while /login captures a key with masked input.
 type loginFlow struct{ provider string }
 
+// subagentMsg wraps one subagent progress event as a tea.Msg.
+type subagentMsg subagentEvent
+
+// subagentEvent mirrors subagent.Event without importing the package
+// into the TUI's hot types; the wiring converts.
+type subagentEvent struct {
+	Title string
+	Kind  string
+	Text  string
+	Usage llm.Usage
+}
+
 // Model is the Bubble Tea model. Pointer receiver so the gate's prompt
 // closure and the pump goroutine share one instance.
 type Model struct {
@@ -109,6 +122,12 @@ type Model struct {
 	lines  []string  // finished transcript lines
 	stream strings.Builder
 	login  *loginFlow
+
+	// Subagent progress: streaming text accumulates per title and
+	// flushes at boundaries (tool call, done, error) so the log stays
+	// readable instead of one line per delta.
+	subMu      sync.Mutex
+	subStreams map[string]*strings.Builder
 }
 
 func New(opt Options) *Model {
@@ -220,4 +239,16 @@ func (m *Model) finishStream() {
 		m.lines = append(m.lines, s)
 	}
 	m.stream.Reset()
+}
+
+// SubagentSink returns the function the subagent wiring uses to report
+// progress. Events before the program starts are dropped.
+func (m *Model) SubagentSink() func(title, kind, text string, usage llm.Usage) {
+	return func(title, kind, text string, usage llm.Usage) {
+		if m.program != nil {
+			m.program.Send(subagentMsg(subagentEvent{
+				Title: title, Kind: kind, Text: text, Usage: usage,
+			}))
+		}
+	}
 }

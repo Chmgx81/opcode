@@ -16,6 +16,7 @@ import (
 	"tilde/internal/mcp"
 	"tilde/internal/orchestrator"
 	"tilde/internal/skills"
+	"tilde/internal/subagent"
 	"tilde/internal/tools"
 	"tilde/internal/trust"
 	"tilde/internal/tui"
@@ -163,7 +164,20 @@ func run() error {
 		connectProjectMcp()
 	}
 
+	// Subagents (Section 3.3): another orchestrator instance per
+	// spawn, same provider and gate (same trust boundary), narrower
+	// prompt and tool subset. The emitter is settable so the TUI —
+	// which does not exist yet — can become the sink right after it is
+	// built.
 	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
+	spawnEmitter := &subagent.Emitter{}
+	registry.Register(subagent.SpawnTool{Runner: &subagent.Runner{
+		Provider: provider,
+		Model:    cfg.Model,
+		Registry: &registry,
+		Gate:     gate,
+	}, Emitter: spawnEmitter})
+
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
 	orch.SkillsIndex = skillManager.Index()
@@ -209,6 +223,12 @@ func run() error {
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.
 	gate.Decide = tools.PolicyDecide(cfg.PermissionMode, ui.Prompt())
+
+	// Subagent progress flows into the transcript as labeled lines.
+	sink := ui.SubagentSink()
+	spawnEmitter.Set(func(ev subagent.Event) {
+		sink(ev.Title, ev.Kind, ev.Text, ev.Usage)
+	})
 
 	return tui.Run(ui)
 }

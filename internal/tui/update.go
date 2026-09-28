@@ -37,6 +37,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case orchestratorMsg:
 		return m.handleEvent(orchestrator.Event(msg)), nil
 
+	case subagentMsg:
+		m.handleSubagent(subagentEvent(msg))
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -330,4 +334,50 @@ func (m *Model) answerTrust(trusted bool) {
 		m.appendWrapped(errorStyle, "",
 			"project not trusted — running with user-level skills only")
 	}
+}
+
+// handleSubagent renders one subagent progress event as labeled
+// transcript lines. Text deltas accumulate per title; tool calls,
+// completion, and errors flush whatever accumulated first.
+func (m *Model) handleSubagent(ev subagentEvent) {
+	label := "[subagent " + ev.Title + "] "
+	m.subMu.Lock()
+	if m.subStreams == nil {
+		m.subStreams = map[string]*strings.Builder{}
+	}
+	acc, ok := m.subStreams[ev.Title]
+	if !ok {
+		acc = &strings.Builder{}
+		m.subStreams[ev.Title] = acc
+	}
+	switch ev.Kind {
+	case subagentText:
+		acc.WriteString(ev.Text)
+	case subagentTool:
+		m.flushSubagentLocked(acc, label)
+		m.appendWrapped(queuedStyle, label, ev.Text)
+	case subagentUsage:
+		m.usage.PromptTokens += ev.Usage.PromptTokens
+		m.usage.CompletionTokens += ev.Usage.CompletionTokens
+	case subagentDone:
+		if ev.Text != "" {
+			acc.Reset()
+			acc.WriteString(ev.Text)
+		}
+		m.flushSubagentLocked(acc, label)
+		m.appendWrapped(okStyle, label, "done")
+	case subagentError:
+		m.flushSubagentLocked(acc, label)
+		m.appendWrapped(errorStyle, label, "error: "+ev.Text)
+	}
+	m.subMu.Unlock()
+}
+
+// flushSubagentLocked moves a subagent's accumulated text into the
+// transcript as one labeled, wrapped line. Caller holds subMu.
+func (m *Model) flushSubagentLocked(acc *strings.Builder, label string) {
+	if s := strings.TrimSpace(acc.String()); s != "" {
+		m.appendWrapped(dimStyle, label, s)
+	}
+	acc.Reset()
 }

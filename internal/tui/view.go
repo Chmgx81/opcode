@@ -10,6 +10,15 @@ import (
 // Palette matched against the references in tilde/references: Claude
 // Code's dark slate terminal with its coral accent, and the blue/orange
 // mix in the demo capture. tilde's own accent is the coral one.
+// subagentEvent kinds, kept in sync with internal/subagent.
+const (
+	subagentText  = "text"
+	subagentTool  = "tool"
+	subagentDone  = "done"
+	subagentError = "error"
+	subagentUsage = "usage"
+)
+
 var (
 	accentStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#D97757")) // coral
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
