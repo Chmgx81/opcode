@@ -223,7 +223,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// prompt and tool subset. The emitter is settable so the TUI —
 	// which does not exist yet — can become the sink right after it is
 	// built.
-	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
+	provider := llm.New(providerCfg.API, providerCfg.BaseURL, key.Value)
 	spawnEmitter := &subagent.Emitter{}
 	subRunner := &subagent.Runner{
 		Provider: provider,
@@ -356,7 +356,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			return fmt.Errorf("no API key for provider %q (set %s, /login, or auth.json)",
 				providerName, pc.APIKeyEnv)
 		}
-		newProvider := llm.NewOpenAICompat(pc.BaseURL, k.Value)
+		newProvider := llm.New(pc.API, pc.BaseURL, k.Value)
 		orch.Provider = newProvider
 		orch.Model = model
 		subRunner.Provider = newProvider
@@ -411,6 +411,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		TildeHome:    userDir,
 		ProviderName: providerName,
 		BaseURL:      providerCfg.BaseURL,
+		API:          providerCfg.API,
 		AuditPath:    auditPath,
 		Animations:   cfg.Animations == nil || *cfg.Animations,
 		ShellAllow:   shellAllow,

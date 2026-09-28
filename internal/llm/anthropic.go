@@ -1,0 +1,311 @@
+// Anthropic Messages API client — the one built-in provider that is
+// not OpenAI-compatible. Streams /v1/messages SSE into the same
+// ChatEvent stream the OpenAI client produces, so the orchestrator
+// is provider-agnostic: text deltas, reasoning deltas (extended
+// thinking), completed tool calls, usage, and errors all map onto
+// the same events.
+package llm
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+)
+
+// anthropicVersion is the required API version header.
+const anthropicVersion = "2023-06-01"
+
+// anthropicDefaultMaxTokens: Anthropic requires max_tokens; 0 on the
+// request means this cap.
+const anthropicDefaultMaxTokens = 8192
+
+// Anthropic is an llm.Provider against the Messages API.
+type Anthropic struct {
+	baseURL string
+	apiKey  string
+	client  *http.Client
+}
+
+// NewAnthropic builds the client. baseURL is the API root
+// (e.g. https://api.anthropic.com) — /v1/messages is appended.
+func NewAnthropic(baseURL, apiKey string) *Anthropic {
+	return &Anthropic{baseURL: strings.TrimSuffix(baseURL, "/"), apiKey: apiKey,
+		client: &http.Client{}}
+}
+
+// New selects a provider implementation by wire API: "anthropic"
+// gets the Messages client, anything else the OpenAI-compatible one.
+// The three construction sites (main, /model, /login) share this.
+func New(api, baseURL, apiKey string) Provider {
+	if api == "anthropic" {
+		return NewAnthropic(baseURL, apiKey)
+	}
+	return NewOpenAICompat(baseURL, apiKey)
+}
+
+// --- wire types -------------------------------------------------------
+
+type anthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+type anthropicRequest struct {
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    string          `json:"system,omitempty"`
+	Messages  []anthropicMsg  `json:"messages"`
+	Tools     []anthropicTool `json:"tools,omitempty"`
+	Stream    bool            `json:"stream"`
+}
+
+// anthropicMsg is one message: role plus content, which is either a
+// plain string or an array of typed blocks.
+type anthropicMsg struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+func textMsg(role, text string) anthropicMsg {
+	raw, _ := json.Marshal(text)
+	return anthropicMsg{Role: role, Content: raw}
+}
+
+func blocksMsg(role string, blocks []map[string]any) anthropicMsg {
+	raw, _ := json.Marshal(blocks)
+	return anthropicMsg{Role: role, Content: raw}
+}
+
+// toAnthropic converts tilde's history into Messages-API form. The
+// mapping is the whole compatibility story:
+//
+//	system            → top-level system param
+//	user text         → string content; images become image blocks
+//	assistant + calls → text block + one tool_use block per call
+//	tool result       → user message with a tool_result block
+func toAnthropic(req ChatRequest) anthropicRequest {
+	ar := anthropicRequest{
+		Model:     req.Model,
+		MaxTokens: req.MaxTokens,
+		System:    req.System,
+		Stream:    true,
+	}
+	if ar.MaxTokens <= 0 {
+		ar.MaxTokens = anthropicDefaultMaxTokens
+	}
+	for _, m := range req.Messages {
+		switch m.Role {
+		case "user":
+			if len(m.Images) == 0 {
+				ar.Messages = append(ar.Messages, textMsg("user", m.Content))
+				continue
+			}
+			blocks := []map[string]any{}
+			for _, img := range m.Images {
+				blocks = append(blocks, map[string]any{
+					"type": "image",
+					"source": map[string]any{
+						"type":       "base64",
+						"media_type": img.MimeType,
+						"data":       img.base64(),
+					},
+				})
+			}
+			if m.Content != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+			}
+			ar.Messages = append(ar.Messages, blocksMsg("user", blocks))
+		case "assistant":
+			var blocks []map[string]any
+			if m.Content != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+			}
+			for _, tc := range m.ToolCalls {
+				var input any
+				if json.Valid([]byte(tc.Arguments)) {
+					_ = json.Unmarshal([]byte(tc.Arguments), &input)
+				} else {
+					input = map[string]any{}
+				}
+				blocks = append(blocks, map[string]any{
+					"type": "tool_use", "id": tc.ID, "name": tc.Name, "input": input,
+				})
+			}
+			if len(blocks) == 0 {
+				blocks = []map[string]any{{"type": "text", "text": ""}}
+			}
+			ar.Messages = append(ar.Messages, blocksMsg("assistant", blocks))
+		case "tool":
+			// Tool results ride as user messages with tool_result
+			// blocks keyed by the tool_use id.
+			ar.Messages = append(ar.Messages, blocksMsg("user", []map[string]any{{
+				"type": "tool_result", "tool_use_id": m.ToolCallID, "content": m.Content,
+			}}))
+		}
+	}
+	for _, t := range req.Tools {
+		schema := t.Parameters
+		if len(schema) == 0 {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		ar.Tools = append(ar.Tools, anthropicTool{
+			Name: t.Name, Description: t.Description, InputSchema: schema,
+		})
+	}
+	return ar
+}
+
+// --- streaming --------------------------------------------------------
+
+// anthropicEvent is one SSE data payload; Type discriminates.
+type anthropicEvent struct {
+	Type    string `json:"type"`
+	Message struct {
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	} `json:"message"`
+	Index        int `json:"index"`
+	ContentBlock struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"content_block"`
+	Delta struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		PartialJSON string `json:"partial_json"`
+		StopReason  string `json:"stop_reason"`
+	} `json:"delta"`
+	Usage struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// StreamChat performs one streaming request and returns the event
+// channel; it closes when the stream ends.
+func (a *Anthropic) StreamChat(ctx context.Context, req ChatRequest) (<-chan ChatEvent, error) {
+	body, err := json.Marshal(toAnthropic(req))
+	if err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		a.baseURL+"/v1/messages", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", a.apiKey)
+	httpReq.Header.Set("anthropic-version", anthropicVersion)
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	resp, err := a.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request %s: %w", httpReq.URL, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("%s: %s", resp.Status, readableProviderError(msg))
+	}
+
+	events := make(chan ChatEvent, 32)
+	go a.consume(resp.Body, events)
+	return events, nil
+}
+
+// consume parses the SSE stream into ChatEvents. Tool calls arrive
+// as input_json_delta fragments and are emitted complete at
+// content_block_stop — the same policy as the OpenAI client.
+func (a *Anthropic) consume(r io.Reader, events chan<- ChatEvent) {
+	defer close(events)
+
+	type block struct {
+		kind string // "text" | "thinking" | "tool_use"
+		id   string
+		name string
+		json strings.Builder
+	}
+	blocks := map[int]*block{}
+	inputTokens := 0
+
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 || line[0] == ':' {
+			continue // keep-alive comments
+		}
+		data, ok := sseData(line)
+		if !ok {
+			continue
+		}
+		var ev anthropicEvent
+		if err := json.Unmarshal(data, &ev); err != nil {
+			continue // tolerate unknown event types
+		}
+		switch ev.Type {
+		case "message_start":
+			inputTokens = ev.Message.Usage.InputTokens
+		case "content_block_start":
+			blocks[ev.Index] = &block{kind: ev.ContentBlock.Type,
+				id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
+		case "content_block_delta":
+			b := blocks[ev.Index]
+			if b == nil {
+				continue
+			}
+			switch ev.Delta.Type {
+			case "text_delta":
+				events <- ChatEvent{Type: TextEvent, Text: ev.Delta.Text}
+			case "thinking_delta":
+				events <- ChatEvent{Type: ReasoningEvent, Text: ev.Delta.Thinking}
+			case "input_json_delta":
+				b.json.WriteString(ev.Delta.PartialJSON)
+			}
+		case "content_block_stop":
+			if b := blocks[ev.Index]; b != nil && b.kind == "tool_use" {
+				events <- ChatEvent{Type: ToolCallEvent, Call: ToolCall{
+					ID: b.id, Name: b.name, Arguments: b.json.String(),
+				}}
+			}
+		case "message_delta":
+			if ev.Usage.OutputTokens > 0 || inputTokens > 0 {
+				events <- ChatEvent{Type: UsageEvent, Usage: Usage{
+					PromptTokens:     inputTokens,
+					CompletionTokens: ev.Usage.OutputTokens,
+				}}
+			}
+		case "error":
+			msg := "stream error"
+			if ev.Error != nil && ev.Error.Message != "" {
+				msg = ev.Error.Message
+			}
+			events <- ChatEvent{Type: ErrorEvent, Err: fmt.Errorf("%s", msg)}
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		events <- ChatEvent{Type: ErrorEvent, Err: fmt.Errorf("read stream: %w", err)}
+	}
+}
+
+// sseData strips the "data: " prefix from one SSE line.
+func sseData(line []byte) ([]byte, bool) {
+	s := string(line)
+	if strings.HasPrefix(s, "data: ") {
+		return []byte(strings.TrimPrefix(s, "data: ")), true
+	}
+	return nil, false
+}
