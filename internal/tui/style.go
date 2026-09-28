@@ -135,7 +135,14 @@ const (
 	GlyphTodoOn  = "☑" // todo: done
 	GlyphTodoOff = "☐" // todo: pending
 	GlyphQueued  = "⏵" // queued follow-up
-	GlyphThought = "△" // reasoning: the model's thinking block
+
+	// Mode glyphs — the footer's mode line carries its own shape so
+	// the brand ~ stays the composer's alone.
+	GlyphModeReadOnly = "○"  // read-only: nothing will run
+	GlyphModePlan     = "⏸"  // plan: writes paused
+	GlyphModeAsk      = "›"  // ask: the ball is in your court
+	GlyphModeFullAuto = "⏵⏵" // full-auto: everything proceeds
+	GlyphThought      = "△"  // reasoning: the model's thinking block
 )
 
 // Spacing scale — the rhythm between blocks.

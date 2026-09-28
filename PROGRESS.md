@@ -1813,3 +1813,12 @@ rules: border-colored at rest, amber in shell mode, so the input
 is findable without a box. fit()'s composer reservation grows by
 the two rule rows so short terminals still trim the transcript,
 never the composer. The spec's §3.3 mockup shows the frame.
+
+# Mode glyphs (status: complete, live-verified)
+
+The mode line no longer borrows the brand ~: each permission mode
+carries its own glyph — ○ read-only (nothing will run), ⏸ plan
+(writes paused), › ask (the ball is in your court), ⏵⏵ full-auto
+(everything proceeds, the reference product's own shape). The ~
+now means exactly one thing: the composer. Verified live by
+cycling all four modes with Tab in a PTY.

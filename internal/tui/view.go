@@ -439,7 +439,7 @@ func (m *Model) composerView() []string {
 	// the minimal hints. Codex's footer fitting: candidates from
 	// fullest to bare mode, first one that fits the terminal wins — a
 	// shortcut never separates from its label on narrow screens.
-	mode := accent2Style.Render(GlyphBrand + " " + m.opt.Mode)
+	mode := accent2Style.Render(modeGlyph(m.opt.Mode) + " " + m.opt.Mode)
 	var hint string
 	if m.shellMode() {
 		hint = dimStyle.Render("shell — enter runs it directly, no model round trip")
@@ -804,4 +804,19 @@ func (m *Model) permDialogView(req *permRequest, w int) string {
 	rows = append(rows, "",
 		dimStyle.Render("1-3 or arrows to choose · enter selects · y/a/n work · esc cancels"))
 	return promptBoxStyle.Width(w - 4).Render(strings.Join(rows, "\n"))
+}
+
+// modeGlyph maps a permission mode to its footer glyph. The brand ~
+// belongs to the composer; each mode reads at a glance by shape.
+func modeGlyph(mode string) string {
+	switch mode {
+	case tools.ModeReadOnly:
+		return GlyphModeReadOnly
+	case tools.ModePlan:
+		return GlyphModePlan
+	case tools.ModeFullAuto:
+		return GlyphModeFullAuto
+	default:
+		return GlyphModeAsk
+	}
 }
