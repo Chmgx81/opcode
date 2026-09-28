@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"tilde/internal/llm"
 	"tilde/internal/orchestrator"
@@ -425,4 +426,89 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition never became true")
+}
+
+func TestViewLayoutFitsTerminal(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.width, m.height = 80, 24
+
+	// Build a realistic mid-turn state: transcript, stream, prompt.
+	m.appendWrapped(accentStyle, "❯ ", "create the file")
+	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventText, Text: "Writing it now."}))
+	m.Update(orchestratorMsg(orchestrator.Event{
+		Kind:     orchestrator.EventToolStart,
+		ToolCall: llm.ToolCall{Name: "write_file", Arguments: `{"path": "demo.txt", "content": "x"}`}}))
+	req := &permRequest{tool: "write_file", tier: tools.TierActionAllowed,
+		args: `{}`, reply: make(chan bool, 1)}
+	m.Update(permRequestMsg{req})
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+
+	// The whole frame must fit the terminal: bubbletea's inline
+	// renderer corrupts the screen when a frame is taller than the
+	// window (seen live in the PTY).
+	if len(lines) > 24 {
+		t.Errorf("frame is %d rows, must fit 24:\n%s", len(lines), view)
+	}
+
+	// Every rendered line must fit the width — a frame line wider than
+	// the terminal wraps on its own and breaks the layout.
+	for i, l := range lines {
+		if w := lipgloss.Width(l); w > 80 {
+			t.Errorf("line %d is %d cols wide (max 80): %q", i, w, l)
+		}
+	}
+
+	// The input box must be a proper rounded rectangle, closed on both
+	// sides, with its width tied to the terminal.
+	var boxTop, boxBottom bool
+	for _, l := range lines {
+		v := lipgloss.Width(l)
+		if strings.HasPrefix(l, "╭─") && v == 78 {
+			boxTop = true
+		}
+		if strings.HasPrefix(l, "╰─") && v == 78 {
+			boxBottom = true
+		}
+	}
+	if !boxTop || !boxBottom {
+		t.Errorf("input box borders missing or wrong width:\n%s", view)
+	}
+
+	// The permission prompt must render inside the frame, not push the
+	// input box off-screen: with the prompt up, the transcript should
+	// have been trimmed accordingly.
+	if !strings.Contains(view, "allow?") {
+		t.Errorf("permission prompt missing from view:\n%s", view)
+	}
+}
+
+func TestViewWideContentWrapsNotOverflows(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.width, m.height = 80, 40
+
+	// A very long tool result must become multiple transcript lines,
+	// each within the terminal width.
+	m.Update(orchestratorMsg(orchestrator.Event{
+		Kind:       orchestrator.EventToolResult,
+		ToolResult: strings.Repeat("the quick brown fox jumps over the lazy dog ", 20),
+	}))
+
+	view := m.View()
+	for i, l := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(l); w > 80 {
+			t.Errorf("line %d is %d cols wide: %q", i, w, l)
+		}
+	}
+	// Exactly one ⎿ marker per entry; the overflow shows up as extra
+	// indented lines carrying the wrapped text.
+	if n := strings.Count(view, "⎿"); n != 1 {
+		t.Errorf("got %d ⎿ markers, want 1", n)
+	}
+	if n := strings.Count(view, "the quick brown fox"); n < 2 {
+		t.Errorf("long result should wrap into several lines, got %d", n)
+	}
 }

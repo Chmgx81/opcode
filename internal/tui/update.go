@@ -1,8 +1,9 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -115,7 +116,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		return nil
 	}
 
-	m.lines = append(m.lines, userStyle.Render("> "+text))
+	m.appendWrapped(accentStyle, "❯ ", text)
 	m.startTurn(text)
 	return tea.Cmd(func() tea.Msg { return m.spinner.Tick() })
 }
@@ -137,11 +138,11 @@ func (m *Model) submitLogin() tea.Cmd {
 	m.input.Placeholder = "type a message, /login, /logout, or /exit"
 
 	if key == "" {
-		m.lines = append(m.lines, errorStyle.Render("login cancelled: no key entered"))
+		m.appendWrapped(errorStyle, "", "login cancelled: no key entered")
 		return nil
 	}
 	if err := config.WriteAuthKey(m.opt.TildeHome, provider, key); err != nil {
-		m.lines = append(m.lines, errorStyle.Render("login failed: "+err.Error()))
+		m.appendWrapped(errorStyle, "", "login failed: "+err.Error())
 		return nil
 	}
 	// Use the new key immediately: rebuild the provider and the audit
@@ -153,8 +154,8 @@ func (m *Model) submitLogin() tea.Cmd {
 		}),
 		Audit: tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),
 	}
-	m.lines = append(m.lines, okStyle.Render(
-		"key for "+provider+" stored in auth.json (0600) — future requests use it"))
+	m.appendWrapped(okStyle, "",
+		"key for "+provider+" stored in auth.json (0600) — future requests use it")
 	return nil
 }
 
@@ -163,18 +164,18 @@ func (m *Model) submitLogin() tea.Cmd {
 func (m *Model) logout() {
 	removed, err := config.RemoveAuthKey(m.opt.TildeHome, m.opt.ProviderName)
 	if err != nil {
-		m.lines = append(m.lines, errorStyle.Render("logout failed: "+err.Error()))
+		m.appendWrapped(errorStyle, "", "logout failed: "+err.Error())
 		return
 	}
 	if !removed {
-		m.lines = append(m.lines, okStyle.Render(
-			"no stored key for "+m.opt.ProviderName+" — nothing to remove"))
+		m.appendWrapped(okStyle, "",
+			"no stored key for "+m.opt.ProviderName+" — nothing to remove")
 		return
 	}
 	m.opt.Orch.Provider = llm.NewOpenAICompat(m.opt.BaseURL, "")
-	m.lines = append(m.lines, okStyle.Render(
+	m.appendWrapped(okStyle, "",
 		"removed the stored key for "+m.opt.ProviderName+
-			". This does not unset environment variables or revoke the key at the provider."))
+			". This does not unset environment variables or revoke the key at the provider.")
 }
 
 // handleEvent renders one orchestrator event into TUI state.
@@ -185,15 +186,19 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 
 	case orchestrator.EventToolStart:
 		m.finishStream()
-		m.lines = append(m.lines, toolStyle.Render(
-			fmt.Sprintf("[tool] %s %s", ev.ToolCall.Name, ev.ToolCall.Arguments)))
+		args := ev.ToolCall.Arguments
+		if len(args) > 60 {
+			args = args[:60] + "..."
+		}
+		m.lines = append(m.lines, accentStyle.Render("⏺ ")+
+			toolNameStyle.Render(ev.ToolCall.Name)+dimStyle.Render(" "+args))
 
 	case orchestrator.EventToolResult:
 		res := strings.ReplaceAll(strings.TrimSpace(ev.ToolResult), "\n", " ")
 		if len(res) > 200 {
 			res = res[:200] + "..."
 		}
-		m.lines = append(m.lines, resultStyle.Render("[tool result] "+res))
+		m.appendWrapped(resultStyle, "  ⎿ ", res)
 
 	case orchestrator.EventUsage:
 		m.usage.PromptTokens += ev.Usage.PromptTokens
@@ -228,6 +233,23 @@ func (m *Model) turnEnded() {
 	}
 	next := m.queue[0]
 	m.queue = m.queue[1:]
-	m.lines = append(m.lines, userStyle.Render("(follow-up) > "+next))
+	m.lines = append(m.lines, accentStyle.Render("❯ ")+dimStyle.Render("(follow-up) ")+next)
 	m.startTurn(next)
+}
+
+// appendWrapped adds a transcript entry whose plain text is word-wrapped
+// to the terminal width before styling, so long content never wraps a
+// rendered frame line on its own.
+func (m *Model) appendWrapped(style lipgloss.Style, prefix, text string) {
+	width := m.termWidth() - lipgloss.Width(prefix)
+	wrapped := wordWrap(text, width)
+	for i, line := range wrapped {
+		if i == 0 {
+			m.lines = append(m.lines, style.Render(prefix+line))
+		} else {
+			// Continuation lines keep the indentation of the prefix.
+			m.lines = append(m.lines, style.Render(
+				strings.Repeat(" ", lipgloss.Width(prefix))+line))
+		}
+	}
 }
