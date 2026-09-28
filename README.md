@@ -101,6 +101,10 @@ tilde --help · tilde --version · tilde --continue     # resume latest
 Reduced motion: `{"animations": false}` in config.json — the spinner
 and toast animations become static glyphs, the information stays.
 
+Light terminals: tilde asks the terminal for its background and
+re-skins (dark ink on light fills, deepened accents) — or force it
+with `TILDE_THEME=light|dark`.
+
 Everything is recorded honestly in [PROGRESS.md](PROGRESS.md) — what
 was verified live, what wasn't, and what is deferred. The architecture
 and per-phase specs live in [docs/specs/](docs/specs/).

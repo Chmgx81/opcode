@@ -1286,3 +1286,44 @@ func TestReducedMotion(t *testing.T) {
 		}
 	}
 }
+
+func TestLightThemeAdaptation(t *testing.T) {
+	// The dark palette is the default; a light terminal re-skins it.
+	// Restore afterward: these are package-wide tokens.
+	defer func() {
+		// The dark branch of adaptTheme is a no-op by design, so restore
+		// the dark values explicitly.
+		HexAccent, HexAccent2 = "#22D3EE", "#0891B2"
+		HexDeep, HexDeep2 = "#0B3A47", "#06222B"
+		HexText, HexDim = "#E6F2F5", "#7A8B94"
+		HexDanger, HexWarning, HexInfo = "#F87171", "#FBBF24", "#93C5FD"
+		refreshTokens()
+	}()
+
+	adaptTheme(false)
+
+	if HexAccent != "#0E7490" || HexText != "#1B2A32" || HexDeep2 != "#E4EDF1" {
+		t.Errorf("light palette not applied: accent=%s text=%s fill=%s",
+			HexAccent, HexText, HexDeep2)
+	}
+
+	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	// The user panel renders with the LIGHT fill, and the body text is
+	// dark ink — the legibility failure class this exists to prevent.
+	panel := strings.Join(m_renderUserPanel("hello"), "\n")
+	if !strings.Contains(panel, "48;2;227;237;241") { // #E4EDF1 (termenv rounds one step)
+		t.Errorf("user panel lacks the light fill:\n%q", panel)
+	}
+	// The composer's accent prompt uses the deepened light accent.
+	prompt := accentStyle.Render("~ ")
+	if !strings.Contains(prompt, "38;2;14;116;144") { // #0E7490
+		t.Errorf("accent not deepened for light background: %q", prompt)
+	}
+}
+
+func m_renderUserPanel(text string) []string {
+	m := &Model{width: 80}
+	return m.renderEntry(&entry{kind: entryUser, text: text})
+}
