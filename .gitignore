@@ -3,3 +3,6 @@
 
 # editor/os noise
 .DS_Store
+
+# local-only design references (third-party screenshots)
+/references/

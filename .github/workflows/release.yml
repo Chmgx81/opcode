@@ -1,0 +1,38 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${platform%/*}"; arch="${platform#*/}"
+            name="tilde-${os}-${arch}"
+            ext=""
+            if [ "$os" = "windows" ]; then ext=".exe"; name="${name}.exe"; fi
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
+              -trimpath -ldflags="-s -w" -o "dist/${name}" ./cmd/tilde
+            if [ "$os" = "windows" ]; then
+              (cd dist && zip -q "${name}.zip" "${name}" && rm "${name}")
+            else
+              (cd dist && tar czf "${name}.tar.gz" "${name}" && rm "${name}")
+            fi
+          done
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

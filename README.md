@@ -1,164 +1,216 @@
-# tilde
+<p align="center">
+  <pre align="center">
+   ▄▄▄▄▄▄▄
+▄▄█▀▀▀▀▀▀▀█▄
+▀▀         ▀███▄         ▄
+               ▀█▄▄▄▄▄▄▄█▀
+                 ▀▀▀▀▀▀▀</pre>
+  <h1 align="center">tilde</h1>
+  <p align="center">a terminal coding agent, in one Go binary</p>
+</p>
 
-A terminal-based coding agent harness in Go: a Bubble Tea TUI over a
-UI-independent agent loop — streaming markdown responses, a collapsible
-tool timeline, permission modes, steering mid-turn, skills, MCP,
-subagents, sessions, and a `/model` picker.
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/Chmgx81/tilde"><img src="https://img.shields.io/badge/go-1.24-16DB65.svg" alt="go 1.24"></a>
+  <a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/github/v/release/Chmgx81/tilde?color=16DB65&label=release" alt="release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16DB65.svg" alt="MIT"></a>
+  <a href="https://github.com/Chmgx81/tilde/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/tilde/ci.yml?label=ci" alt="ci"></a>
+</p>
 
-Architecture and build order: [docs/specs/tilde-architecture.md](docs/specs/tilde-architecture.md).
-Current status and honest verification notes: [PROGRESS.md](PROGRESS.md).
+---
 
-## Install / Run
+tilde is a coding agent that lives in your terminal: it reads and writes
+files, runs shell commands, and streams markdown answers as it works —
+under your permission system, not around it. Any OpenAI-compatible
+endpoint works (OpenRouter out of the box, Ollama/vLLM for local runs).
 
+```sh
+go install github.com/Chmgx81/tilde/cmd/tilde@latest
 ```
-go install github.com/Chmgx81/tilde/cmd/tilde@latest   # from the repo
-go build ./cmd/tilde                                    # from a checkout: binary "tilde"
+
+## Features
+
+- **Streaming TUI** — markdown-rendered answers, a collapsible tool
+  timeline (`ctrl+r`), per-entry diffs, and a one-line composer that
+  grows with your text.
+- **Permission tiers** — read-only tools always run; writes, shell, and
+  MCP tools prompt (or don't, if you say so). Four modes, one keypress
+  to cycle.
+- **Steering** — Enter mid-turn to steer at the next round boundary,
+  Alt+Enter to queue a follow-up, Esc to stop everything (queue
+  included).
+- **Sessions** — tree-structured history in `~/.tilde/sessions/`,
+  resume from `/sessions` in the TUI or `--continue` at launch.
+- **Skills** — drop a `SKILL.md` folder in; the model sees the index
+  and loads the body only when it matches. Project skills stay locked
+  until you trust the project.
+- **MCP** — stdio servers from `mcp.json`, parallel startup, crash
+  restart, tools namespaced `mcp__<server>__<tool>`.
+- **Subagents** — the model can delegate; same gate, same audit log,
+  no recursion by construction.
+- **Headless** — `tilde -p "..."` (text or `--json` events) for
+  scripts and CI.
+
+## Install
+
+**Binaries** (Linux, macOS, Windows; amd64 + arm64) from the
+[releases page](https://github.com/Chmgx81/tilde/releases) — every tag
+is built by CI.
+
+**Go**:
+
+```sh
+go install github.com/Chmgx81/tilde/cmd/tilde@latest
 ```
 
-One-shot (headless) mode runs a single turn without the TUI:
+**From source**:
 
+```sh
+git clone https://github.com/Chmgx81/tilde
+cd tilde && go build ./cmd/tilde
 ```
-tilde -p "explain what this repo does"           # plain text
-tilde -p "run the tests" --json                 # one JSON event per line
+
+## Quick start
+
+Everything lives user-level in `~/.tilde/` (override with `$TILDE_HOME`).
+Three files, two optional:
+
+```sh
+# 1. pick a model — any OpenAI-compatible model name
+echo '{"model": "anthropic/claude-sonnet-4.5", "permission_mode": "ask-every-time"}' > ~/.tilde/config.json
+
+# 2. (optional) non-default provider: any OpenAI-compatible server
+echo '{"default_provider": "local", "providers": {"local": {"base_url": "http://localhost:11434/v1", "models": ["llama3"]}}}' > ~/.tilde/models.json
+
+# 3. your key — or skip this and set $OPENROUTER_API_KEY
+echo '{"openrouter": "<key>"}' > ~/.tilde/auth.json && chmod 600 ~/.tilde/auth.json
 ```
 
-Permissions fail closed headless — with nobody to ask, Action-Allowed
-tools are denied (visible in the output); use `full-auto` for
-unattended automation. `--trust` / `TILDE_TRUST=1` pre-approves the
-project's executable surface, per Section 7's headless posture.
+Then run `tilde` in a project directory and type. `/login` does step 3
+interactively (masked, no restart needed); `/model` switches models at
+runtime.
 
-Sessions are saved to `~/.tilde/sessions/` (tree-structured, with
-credentials redacted). Resume with `tilde --continue` or
-`tilde --resume ~/.tilde/sessions/<file>`.
+Credentials resolve in order: `auth.json` entry (literal, or
+`"!pass show openrouter"` to shell out to a secret manager), then the
+provider's environment variable. tilde **never** reads credentials
+from a project-level `.tilde/` directory and refuses them loudly.
 
-Compaction (Section 3.2) is opt-in: set `context_window` in
-config.json to the model's token window, and optionally
-`compaction_model` for a cheaper summarizer; at 75% of the window the
-oldest messages are auto-summarized into a recap.
-
-Hierarchical `AGENTS.md` context loads automatically: the user-level
-file, then each directory from the filesystem root to the working
-directory (`AGENTS.override.md` > `AGENTS.md` > `CLAUDE.md` per
-directory).
-
-Configuration is user-level only for now (`~/.tilde/`, or `$TILDE_HOME`):
-
-- `config.json` — `{"model": "anthropic/claude-sonnet-4.5", "permission_mode": "ask"}`
-- `models.json` — providers; defaults to OpenRouter
-  (`https://openrouter.ai/api/v1`). Any OpenAI-compatible server works:
-  `{"default_provider": "local", "providers": {"local": {"base_url": "http://localhost:11434/v1", "models": ["llama3"]}}}`
-- `auth.json` — `{"openrouter": "<key>"}`, or `{"openrouter": "!pass show openrouter"}`
-  to fetch from a secret manager. Falls back to `$OPENROUTER_API_KEY`.
-  Never read from a project-level `.tilde/` directory.
-
-Then run `tilde` in your project directory.
-
-Keys while a turn is running:
+## Keys
 
 | Key | Effect |
 |---|---|
-| Enter | steer — folds into the conversation at the next round boundary |
-| Alt+Enter | queue a follow-up — sent when the current turn completes |
-| Esc | cancel the current turn |
-| Ctrl+C | cancel and quit |
+| Enter | send · mid-turn: steer at the next round boundary |
+| Ctrl+J | newline in the composer |
+| Alt+Enter | queue a follow-up, sent when the turn completes |
+| Esc | interrupt the turn — or close the palette, pickers, help, prompts |
+| Shift+Tab | cycle permission mode |
+| Ctrl+R | expand / collapse tool results |
+| `?` | help overlay |
+| Ctrl+C | quit |
 
-Esc also closes whatever is open: the command palette (clearing the
-half-typed command), the model/session pickers, the help overlay, the
-permission prompt (deny), the trust prompt (decline), and the `/login`
-input (cancels and discards the typed key — nothing is written).
+Large pastes (4+ lines or 1000+ chars) collapse to `[paste N · L
+lines]` and re-expand on send. `! <cmd>` runs a shell command directly
+(no model round trip). `@<path>` attaches a file's contents.
 
-Slash commands: `/mode` (show or switch permission mode), `/model`
-(pick a model, or `/model <name>` to switch directly — provider, key,
-and audit redactor follow), `/sessions` (browse saved sessions
-newest-first and resume in place; the current conversation is saved
-first), `/skills`, `/mcp`, `/login` (store a key, masked input, takes
-effect immediately), `/logout` (remove the stored key only — never
-touches env vars or revokes at the provider), `/exit`.
+## Commands
 
-Permission modes (`permission_mode` in config.json, or `/mode <name>` at
-runtime):
-
-| Mode | Action-Allowed tools (write/edit/shell) |
+| Command | What it does |
 |---|---|
-| `read-only` | not even offered to the model; a call is denied outright |
+| `/model` | pick a model from `models.json` (or `/model <name>` directly) — provider, key, and audit redactor follow |
+| `/sessions` | browse saved sessions, resume in place (current one is saved first) |
+| `/mode` | show or switch the permission mode |
+| `/skills`, `/mcp` | what's loaded and connected |
+| `/login`, `/logout` | store / remove a key (logout never touches env vars or the provider) |
+| `/help`, `/exit` | |
+
+## Permission modes
+
+| Mode | Writes, shell, MCP tools |
+|---|---|
+| `read-only` | not even offered to the model |
 | `ask-every-time` | prompted each time (default) |
-| `auto-accept-safe-ops` | prompted (read-only and draft tools auto-run) |
+| `auto-accept-safe-ops` | reads and drafts auto-run; actions still prompt |
 | `full-auto` | allowed without prompting, still logged |
 
-Read-Only tools never prompt in any mode. Permission prompts (when they
-appear): `y` allow, `a` allow action tools for this session, `n`/Esc
-deny. The legacy config value `ask` still works and means
-`ask-every-time`.
+Prompts answer with `y`, `a` (this session), or `n`/Esc (deny). Headless
+mode fails closed — use `full-auto` for unattended runs.
 
 ## Skills
 
-A skill is a folder in `~/.tilde/skills/` (always loaded) or
-`.tilde/skills/` (project, only after you trust the project) with a
-`SKILL.md`:
+A skill is a folder with a `SKILL.md` (frontmatter name + description,
+body = instructions) under `~/.tilde/skills/` (always) or
+`.tilde/skills/` (project, after trust). Optional `scripts/` run as
+subprocesses with a JSON-in/JSON-out contract. Only the name and
+description reach the model's context — the body loads on demand.
 
-```
-my-skill/
-  SKILL.md      # --- name: ... / description: ... --- then instructions
-  scripts/      # optional: run via the run_skill_script tool (JSON in, JSON out)
-```
+**Project trust**: the first run in a project whose `.tilde/` holds
+anything executable (skill scripts, `mcp.json`) asks once, showing the
+literal files, and fingerprints them. Change them (e.g. a `git pull`)
+and tilde asks again. `--trust` / `TILDE_TRUST=1` pre-approves for
+scripts.
 
-Only the name and description sit in the context; the model loads the
-body with the `load_skill` tool when a request matches. Scripts run as
-subprocesses (Action-Allowed tier, so ask mode prompts).
-
-**Project trust**: the first time tilde runs in a project whose
-`.tilde/` contains anything executable (skill scripts, mcp.json), it
-asks once and shows the literal files. The decision is stored in
-`~/.tilde/trusted-projects.json` with a fingerprint of those files —
-if a `git pull` changes them, tilde asks again. `--trust` (or
-`TILDE_TRUST=1`) pre-approves for scripted use. Declining leaves the
-project's skills unloaded; nothing from it runs.
-
-## MCP
-
-Servers are configured in `~/.tilde/mcp.json` (always) or
-`.tilde/mcp.json` (only after project trust) using the usual
-`mcpServers` shape:
+## MCP & subagents
 
 ```json
 {"mcpServers": {"fetch": {"command": "npx", "args": ["-y", "some-server"]}}}
 ```
 
-tilde speaks MCP over stdio (JSON-RPC, newline-delimited; HTTP
-transport is not supported yet). Discovered tools appear to the model
-as `mcp__<server>__<tool>` and are always Action-Allowed — the
-protocol's read-only hints are self-reported and never lower a tier.
-Servers connect in parallel at startup with a 5s timeout each; a dead
-server is skipped with a visible note. A crashed server gets one
-restart (with a full re-handshake) on its next call. A project server
-can never replace a user server with the same name.
+MCP over stdio (JSON-RPC, newline-delimited; HTTP not yet). Parallel
+connect at startup, 5s timeout each, one restart after a crash.
+MCP tools are always action-tier — self-reported read-only hints never
+lower a tier.
 
-## Subagents
+`spawn_subagent` (`{task, title?}`) delegates a self-contained task:
+another orchestrator in its own goroutine, same permission gate and
+audit log, no spawn tool of its own — recursion is impossible by
+construction. Progress streams as labeled `[subagent]` lines.
 
-The model can delegate a self-contained task with the `spawn_subagent`
-tool (`{task, title?}`). A subagent is another orchestrator instance in
-its own goroutine: same provider, same permission gate and audit log
-(same trust boundary), narrower system prompt, and no spawn tool of its
-own — so subagents cannot recurse by construction. Progress renders in
-the transcript as labeled `[subagent title]` lines while it works; the
-final answer returns to the parent as the tool result.
+## Headless & sessions
 
-## Test
-
+```sh
+tilde -p "run the tests"          # one turn, plain text
+tilde -p "..." --json             # one JSON event per line
+tilde --continue                  # resume the latest session
+tilde --resume ~/.tilde/sessions/<file>
 ```
-go test ./...
-```
+
+Sessions save on exit (tree-structured, credentials redacted, 0600).
+Compaction is opt-in: set `context_window` (and optionally a cheaper
+`compaction_model`); at 75% of the window, old messages are summarized
+into a recap.
+
+Hierarchical `AGENTS.md` context loads automatically — user file, then
+each directory from the filesystem root down to the working directory
+(`AGENTS.override.md` > `AGENTS.md` > `CLAUDE.md` per directory).
 
 ## Layout
 
 ```
-cmd/tilde              entry point (thin wiring, TUI or headless)
-internal/headless      one-shot -p runner (text and --json event output)
-internal/session       tree-structured session storage + resume, redaction on write
-internal/subagent      spawn_subagent tool: scoped orchestrator instances, labeled progress events
-internal/tui           Bubble Tea model: streaming, prompts, steer/follow-up
-internal/orchestrator  agent loop, UI-independent
-internal/tools         built-ins, permission gate + tier policy, audit log
+cmd/tilde              entry point: thin wiring, TUI or headless
+internal/tui           Bubble Tea model: streaming, pickers, prompts
+internal/orchestrator  the agent loop, UI-independent
+internal/tools         built-ins, permission gate + tiers, audit log
 internal/llm           Provider interface, OpenAI-compatible SSE client
-internal/config        user-level config + credential resolution
+internal/config        user-level config, credential resolution
+internal/skills        SKILL.md discovery (user + trusted project)
+internal/trust         project executable-surface fingerprinting
+internal/mcp           stdio MCP client + manager
+internal/subagent      scoped orchestrator instances, progress events
+internal/session       tree-structured sessions, redaction on write
+internal/headless      one-shot -p runner (text / --json)
 ```
+
+## Status & docs
+
+All phases are built and live-verified — honestly, with what was run
+versus only compiled recorded per phase:
+
+- [PROGRESS.md](PROGRESS.md) — per-phase build log, verification notes, deferred items
+- [docs/specs/](docs/specs/) — the architecture spec and per-phase specs
+
+```sh
+go test ./...
+```
+
+## License
+
+[MIT](LICENSE)

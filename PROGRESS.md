@@ -662,3 +662,45 @@ LaTeX, image paste / vision, drag-and-drop, plan mode, todos, reasoning
 display, retry/handoff UI, multi-select questions, @-mention fuzzy file
 picker, MCP debug view, kitty keyboard protocol (true shift+enter),
 persistent left-column session sidebar.
+
+---
+
+# Phase 9 — Packaging, Distribution, Public (status: complete, live-verified)
+
+## Built
+
+- **README rewrite**: banner-led, badge row (go version, release,
+  license, ci), feature list, install (binaries + go install + source),
+  quick start, keys/commands/modes tables, skills/MCP/subagent/
+  headless sections, layout tree, docs pointers. Written for a reader
+  who has never seen the project.
+- **LICENSE** — MIT (the user can swap it; a public repo ships with
+  one).
+- **CI** (`.github/workflows/ci.yml`) — go vet + go test -count=1 +
+  build on every push/PR to main.
+- **Release pipeline** (`.github/workflows/release.yml`) — on `v*`
+  tags: cross-compiles linux/darwin (amd64+arm64) and windows/amd64,
+  CGO off, trimpath, stripped; tar.gz per platform (zip for windows);
+  publishes a GitHub Release with generated notes.
+- **History purge before going public** (user-authorized force-push
+  to main): filter-branch removed `references/` (17 MB of third-party
+  product screenshots — a copyright and clone-weight problem in a
+  public history) and the stray `internal/subagent/x.txt`; reflog
+  expired and the repo garbage-collected. The local reference files
+  stay on disk, ignored, for design work.
+
+## Verified for real
+
+- Full suite green after every change (11 packages).
+- Repo history scanned for secrets before publicizing: only
+  env-var NAMES in tests, no key material, in any of the 40 commits.
+- The force-pushed history and the release pipeline are verified in
+  the trail that follows this entry (tag → Actions run → release
+  assets → go install).
+
+## Phase 9 assumptions
+
+1. MIT is the license; the copyright line reads "Chmgx81". Swap it
+   any time before wide distribution.
+2. `references/` stays local-only (gitignored), not re-committed.
+3. Version pinned at v0.2 (TUI version string) — tagged v0.2.0.
