@@ -314,7 +314,7 @@ func TestPaletteFiltersAndRuns(t *testing.T) {
 		t.Fatal("palette should open for a bare /command")
 	}
 	matches := m.paletteMatches()
-	if len(matches) != 2 { // /mode, /model
+	if len(matches) != 3 { // /mode, /model, /models
 		t.Fatalf("matches = %v", matches)
 	}
 
@@ -622,8 +622,10 @@ func TestLoginLogoutAndModelCommand(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 
-	// /login stores the key; the provider is rebuilt without a restart.
-	typeAndEnter(m, "/login")
+	// /login <provider> stores the key; the provider is rebuilt
+	// without a restart. (Bare /login opens the provider picker —
+	// covered by TestLoginPickerStartsMaskedFlow.)
+	typeAndEnter(m, "/login openrouter")
 	if m.login == nil {
 		t.Fatal("/login did not start the flow")
 	}
@@ -652,7 +654,7 @@ func TestLoginLogoutAndModelCommand(t *testing.T) {
 
 	// Empty login key is cancelled, not written.
 	before := m.transcript()
-	typeAndEnter(m, "/login")
+	typeAndEnter(m, "/login openrouter")
 	m.composer.SetValue("   ")
 	m.Update(enterKey())
 	if !strings.Contains(m.transcript(), "login cancelled") || m.transcript() == before {
@@ -884,7 +886,7 @@ func TestLoginEscCancels(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 
-	typeAndEnter(m, "/login")
+	typeAndEnter(m, "/login openrouter")
 	if m.login == nil {
 		t.Fatal("/login did not start the flow")
 	}

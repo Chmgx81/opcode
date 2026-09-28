@@ -70,6 +70,11 @@ type Options struct {
 	// runner, audit redactor); the TUI stays free of wiring.
 	Models      config.ModelsConfig
 	SwitchModel func(provider, model string) error
+	// KeyFor resolves a provider's API key through the credential
+	// chain (auth.json, explicit env, derived env) — the /models
+	// picker needs it to fetch live model lists. Missing is fine:
+	// providers without keys are shown with a /login hint.
+	KeyFor func(provider string) (string, bool)
 	// SaveCurrentSession persists the current conversation tree;
 	// ResumeSession loads another session and re-seeds the orchestrator.
 	// /sessions owns only the interaction.
@@ -326,7 +331,8 @@ var commands = []command{
 	{"/sessions", "browse and resume a saved session"},
 	{"/skills", "list available skills"},
 	{"/mcp", "list MCP servers and tools"},
-	{"/login", "store an API key (masked, /login <provider> for another)"},
+	{"/models", "browse every provider's models, fetched live"},
+	{"/login", "store an API key (masked; bare form picks a provider)"},
 	{"/logout", "remove the stored key (/logout <provider>)"},
 }
 

@@ -16,6 +16,7 @@ type pickerItem struct {
 	Provider string // /model: provider name
 	Model    string // /model: model name; empty keeps the current model
 	Path     string // /sessions: session file path
+	Action   string // "" select; "fetch" browse a provider's models; "login" store its key
 }
 
 type pickerKind int
@@ -23,10 +24,13 @@ type pickerKind int
 const (
 	pickerModels pickerKind = iota
 	pickerSessions
+	pickerProviders // /models step 1 and /login: choose a provider
+	pickerCatalog   // /models step 2: one provider's live model list
 )
 
 type picker struct {
 	kind    pickerKind
+	purpose string // disambiguates pickerProviders: "models" or "login"
 	title   string
 	query   string // filter text, typed while open
 	items   []pickerItem

@@ -77,6 +77,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case orchestratorMsg:
 		return m.handleEvent(orchestrator.Event(msg)), nil
 
+	case modelsFetchedMsg:
+		m.handleModelsFetched(msg)
+		return m, nil
+
 	case subagentMsg:
 		m.handleSubagent(subagentEvent(msg))
 		return m, nil
@@ -141,7 +145,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if sel, handled := m.handlePickerKey(k); handled {
 			if sel != nil {
-				m.pickerSelect(*sel)
+				return m, m.pickerSelect(*sel)
 			}
 			return m, nil
 		}
@@ -430,6 +434,10 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		m.helpOpen = true
 		return nil
 	case "/login":
+		if arg == "" {
+			m.openLoginPicker()
+			return nil
+		}
 		m.beginLogin(arg)
 		return nil
 	case "/logout":
@@ -440,6 +448,8 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	case "/model":
 		m.handleModelCommand(arg)
 		return nil
+	case "/models":
+		return m.openModelsPicker(arg)
 	case "/sessions":
 		m.openSessionsPicker()
 		return nil
@@ -865,8 +875,9 @@ func (m *Model) switchModel(provider, model string) {
 	if provider != "" {
 		m.opt.ProviderName = provider
 	}
-	if pc, ok := m.opt.Models.Providers[provider]; ok && pc.BaseURL != "" {
+	if pc, ok := m.providerConfigFor(provider); ok && pc.BaseURL != "" {
 		m.opt.BaseURL = pc.BaseURL
+		m.opt.API = pc.API
 	}
 	note := "switched to " + m.opt.Model + " (provider " + m.opt.ProviderName + ") — the next request uses it"
 	m.showToast("model switched to " + m.opt.Model)
@@ -942,12 +953,24 @@ func firstUserText(s *session.Session) string {
 }
 
 // pickerSelect runs the command-specific action for a selection.
-func (m *Model) pickerSelect(it pickerItem) {
+// The item carries its own action (built when the picker opened — the
+// picker itself is closed before this runs), and a fetch returns the
+// Cmd so the async model list actually starts.
+func (m *Model) pickerSelect(it pickerItem) tea.Cmd {
 	if it.Path != "" {
 		m.resumeSession(it.Path, it.Label)
-		return
+		return nil
 	}
-	m.switchModel(it.Provider, it.Model)
+	switch it.Action {
+	case "login":
+		m.beginLogin(it.Provider)
+		return nil
+	case "fetch":
+		return m.fetchModelsCmd(it.Provider)
+	default:
+		m.switchModel(it.Provider, it.Model)
+		return nil
+	}
 }
 
 // resumeSession saves the current conversation, then re-seeds the

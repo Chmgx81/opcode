@@ -338,7 +338,13 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	switchModel := func(providerName, model string) error {
 		pc, ok := models.Providers[providerName]
 		if !ok {
-			return fmt.Errorf("provider %q is not in models.json", providerName)
+			// A built-in catalog provider that models.json doesn't list
+			// (the /models picker offers all of them).
+			spec, inCatalog := config.BuiltInProviders[providerName]
+			if !inCatalog {
+				return fmt.Errorf("unknown provider %q", providerName)
+			}
+			pc = config.ProviderConfig{BaseURL: spec.BaseURL, API: spec.API, APIKeyEnv: spec.APIKeyEnv}
 		}
 		if pc.BaseURL == "" {
 			return fmt.Errorf("provider %q has no base_url configured", providerName)
@@ -423,8 +429,22 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			}
 			return names
 		},
-		Models:             models,
-		SwitchModel:        switchModel,
+		Models:      models,
+		SwitchModel: switchModel,
+		KeyFor: func(provider string) (string, bool) {
+			pc := models.Providers[provider]
+			if pc.BaseURL == "" {
+				if spec, ok := config.BuiltInProviders[provider]; ok {
+					pc = config.ProviderConfig{BaseURL: spec.BaseURL, API: spec.API, APIKeyEnv: spec.APIKeyEnv}
+				}
+			}
+			r := config.NewResolver(auth, pc)
+			k, hasKey, err := r.APIKey(provider)
+			if err != nil || !hasKey {
+				return "", false
+			}
+			return k.Value, true
+		},
 		SaveCurrentSession: saveSession,
 		ResumeSession:      resumeSession,
 		PendingTrust:       pending,
