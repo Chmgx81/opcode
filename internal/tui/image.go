@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,24 +18,29 @@ const imageBytesCap = 8 << 20
 // ErrNoImage is the honest "nothing to attach" verdict.
 var ErrNoImage = errors.New("no image on the clipboard")
 
-// clipboardSource is one platform clipboard tool that can dump a PNG.
+// clipboardSource is one platform clipboard tool invocation that can
+// dump image bytes in one format.
 type clipboardSource struct {
 	name string
 	args []string
 }
 
-// clipboardSources, tried in order: Wayland, X11, macOS. Whichever
-// exists and returns bytes wins — the terminals themselves cannot
-// deliver image bytes through bracketed paste.
+// clipboardSources, tried in order. PNG first (the common case), then
+// JPEG — a clipboard holding only a JPEG screenshot would fail the
+// PNG request and still attach. Wayland, X11, macOS; whichever exists
+// and returns bytes wins — terminals themselves cannot deliver image
+// bytes through bracketed paste.
 var clipboardSources = []clipboardSource{
 	{"wl-paste", []string{"-t", "image/png"}},
+	{"wl-paste", []string{"-t", "image/jpeg"}},
 	{"xclip", []string{"-selection", "clipboard", "-t", "image/png", "-o"}},
-	{"pngpaste", []string{"-"}},
+	{"xclip", []string{"-selection", "clipboard", "-t", "image/jpeg", "-o"}},
+	{"pngpaste", []string{"-"}}, // macOS: PNG always
 }
 
-// readClipboardImage returns the clipboard image as PNG bytes, or
-// ErrNoImage when every source is unavailable or empty. A source
-// that errors is skipped, not fatal — the next one may work.
+// readClipboardImage returns the clipboard image bytes, or ErrNoImage
+// when every source is unavailable or empty. A source that errors is
+// skipped, not fatal — the next one may work.
 func readClipboardImage() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -51,6 +57,24 @@ func readClipboardImage() ([]byte, error) {
 		return out, nil
 	}
 	return nil, ErrNoImage
+}
+
+// detectImageMime reports the actual format of the bytes from their
+// magic signature — png, jpeg, gif, or webp — or "" when they are not
+// a recognized image. The bytes are already in hand, so the label is
+// read from them, never assumed from the tool that produced them.
+func detectImageMime(data []byte) string {
+	switch {
+	case bytes.HasPrefix(data, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}):
+		return "image/png"
+	case bytes.HasPrefix(data, []byte{0xFF, 0xD8, 0xFF}):
+		return "image/jpeg"
+	case bytes.HasPrefix(data, []byte("GIF87a")), bytes.HasPrefix(data, []byte("GIF89a")):
+		return "image/gif"
+	case len(data) >= 12 && bytes.HasPrefix(data, []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
 }
 
 func humanBytes(n int) string {
@@ -83,14 +107,30 @@ func (m *Model) attachClipboardImage() {
 			humanBytes(len(data)), humanBytes(imageBytesCap)))
 		return
 	}
+	mime := detectImageMime(data)
+	if mime == "" {
+		m.showToast("clipboard content is not a recognized image (png, jpeg, gif, webp)")
+		return
+	}
 	if m.images == nil {
 		m.images = make(map[string]llm.Image)
 	}
 	m.imageSeq++
 	token := fmt.Sprintf("[Image #%d]", m.imageSeq)
-	m.images[token] = llm.Image{MimeType: "image/png", Data: data}
+	m.images[token] = llm.Image{MimeType: mime, Data: data}
 	m.composer.InsertString(token)
-	m.showToast(fmt.Sprintf("attached %s image (ctrl+v again for more)", humanBytes(len(data))))
+	m.showToast(fmt.Sprintf("attached %s %s (ctrl+v again for more)",
+		humanBytes(len(data)), shortMime(mime)))
+}
+
+// shortMime drops the "image/" prefix for toasts — "attached 12 KiB
+// png" reads better than the full type.
+func shortMime(mime string) string {
+	const p = "image/"
+	if len(mime) > len(p) && mime[:len(p)] == p {
+		return mime[len(p):]
+	}
+	return mime
 }
 
 // pendingImages returns the attached images in placeholder order and

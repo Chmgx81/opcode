@@ -1404,7 +1404,8 @@ Spec: [docs/specs/phase22-image-paste.md](docs/specs/phase22-image-paste.md)
 
 ## Phase 22 assumptions
 
-1. The platform tool reports PNG; other clipboard formats surface as
-   whatever bytes arrive with an `image/png` mime.
+1. The image format is sniffed from the bytes' magic signature —
+   png, jpeg, gif, webp — never assumed from the platform tool;
+   unrecognized bytes are refused with a toast, not mislabeled.
 2. Vision-less providers will 4xx the parts array; the error now
    reads as the provider's own message instead of a JSON dump.
