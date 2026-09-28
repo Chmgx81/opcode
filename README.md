@@ -52,7 +52,15 @@ go install github.com/Chmgx81/tilde/cmd/tilde@latest
 
 ## Install
 
-**Binaries** (Linux, macOS, Windows; amd64 + arm64) from the
+**One line** (Linux and macOS, amd64 + arm64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bash
+```
+
+Downloads the prebuilt release binary for your platform into
+`~/.local/bin` (override with `TILDE_INSTALL_DIR` or pin a version with
+`TILDE_VERSION`). All binaries also sit on the
 [releases page](https://github.com/Chmgx81/tilde/releases) — every tag
 is built by CI.
 

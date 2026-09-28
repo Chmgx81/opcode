@@ -717,3 +717,20 @@ persistent left-column session sidebar.
    any time before wide distribution.
 2. `references/` stays local-only (gitignored), not re-committed.
 3. Version pinned at v0.2 (TUI version string) — tagged v0.2.0.
+
+## Phase 9 addendum — install script + --version
+
+- **install.sh** (Claude-Code-style `curl | bash`): detects os/arch,
+  resolves the latest tag from the releases/latest redirect (no API
+  dependency), downloads the platform archive, installs to
+  ~/.local/bin (overridable), prints the version/location/next block,
+  and warns when the install dir is not on PATH. Unknown platforms are
+  pointed at go install instead of failing obscurely.
+- **`tilde --version`**: linked version from the release pipeline
+  (-X main.version), then the module version go install recorded,
+  then (devel). The release workflow now injects the tag.
+- **Verified live**: ran install.sh in a clean temp dir — resolved
+  v0.2.0, downloaded the real release asset, extracted, installed,
+  printed the success block, and the installed binary ran. The curl
+  one-liner against raw.githubusercontent is verified in the trail
+  after the commit that adds install.sh.
