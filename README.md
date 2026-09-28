@@ -17,9 +17,9 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bas
 ```
 
 <p>
-<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/badge/go-1.24-63A8F8.svg" alt="go"></a>&nbsp;
+<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/badge/go-1.24-2dd4bf.svg" alt="go"></a>&nbsp;
 <a href="https://github.com/Chmgx81/tilde/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/tilde/ci.yml?label=ci" alt="ci"></a>&nbsp;
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-63A8F8.svg" alt="MIT"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2dd4bf.svg" alt="MIT"></a>
 </p>
 
 ---
@@ -34,6 +34,7 @@ tilde                                                                   # 2. run
 No key yet? Start tilde and run `/login` — it lists every provider to
 configure; `/login <provider>` skips the picker. Keys are masked,
 stored 0600, and take effect immediately.
+
 ## Providers
 
 Built in — name one in models.json and it works:
@@ -130,7 +131,7 @@ model round trip. Big pastes collapse to a token.
 **Thinking** — reasoning models' thoughts stream into a dim `△` tail
 while it works, then collapse to one line (`ctrl+r` to expand). Writes
 and edits render as syntax-highlighted diffs. **Todos** — the model tracks its own multi-step work with
-`todo_write`; a live panel shows `✓ done · ▸ in progress · · pending`
+`todo_write`; a live panel shows `☐ pending · ◐ in progress · ☑ done`
 with counts, windowed so long lists stay compact.
 
 **Skills** — drop a `SKILL.md` folder in `~/.tilde/skills/`; the model

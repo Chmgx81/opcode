@@ -21,7 +21,6 @@ var (
 	HexDeep   = "#3f4650" // border: rules, dialog frames
 	HexDeep2  = "#262a31" // surface.user: user-message block bg
 	HexCode   = "#1c2026" // surface.code: code block bg
-	HexFloor  = "#020202" // terminal floor
 	HexText   = ""        // fg: terminal default (empty = no fg style)
 
 	// Semantic colors.
@@ -63,7 +62,7 @@ func adaptTheme(dark bool) {
 // Design tokens derived from the palette; refreshTokens (re)builds
 // them so adaptTheme's swap reaches every style.
 var (
-	Accent, Accent2, Deep, Deep2, Code, Floor, Success, Danger, Warning, Info, Dim, Subtle lipgloss.Color
+	Accent, Accent2, Deep, Deep2, Code, Success, Danger, Warning, Info, Dim, Subtle lipgloss.Color
 )
 
 func init() { refreshTokens() }
@@ -76,7 +75,6 @@ func refreshTokens() {
 	Deep = lipgloss.Color(HexDeep)
 	Deep2 = lipgloss.Color(HexDeep2)
 	Code = lipgloss.Color(HexCode)
-	Floor = lipgloss.Color(HexFloor)
 	Success = lipgloss.Color(HexSuccess)
 	Danger = lipgloss.Color(HexDanger)
 	Warning = lipgloss.Color(HexWarning)
@@ -92,7 +90,6 @@ func refreshTokens() {
 	warnStyle = lipgloss.NewStyle().Foreground(Warning)
 	dangerStyle = lipgloss.NewStyle().Foreground(Danger)
 	okStyle = lipgloss.NewStyle().Foreground(Success)
-	errorStyle = dangerStyle
 	resultStyle = dimStyle
 	// Prompt titles are bold default-fg (spec 2.3: bold for names and
 	// labels); amber stays on the attention box border, not the words.
@@ -101,7 +98,6 @@ func refreshTokens() {
 	queuedStyle = dimStyle
 	toolNameStyle = lipgloss.NewStyle().Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
-	codeStyle = lipgloss.NewStyle().Foreground(Accent2)
 
 	boxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -153,15 +149,7 @@ const (
 // Styles derived from the tokens; populated by refreshTokens.
 var (
 	accentStyle, accent2Style, dimStyle, subtleStyle, infoStyle, warnStyle,
-	dangerStyle, okStyle, errorStyle, resultStyle, promptStyle,
-	steerStyle, queuedStyle, toolNameStyle, boldStyle, codeStyle,
+	dangerStyle, okStyle, resultStyle, promptStyle,
+	steerStyle, queuedStyle, toolNameStyle, boldStyle,
 	boxStyle, promptBoxStyle, paletteStyle, helpStyle lipgloss.Style
-)
-
-// remapLegacyStyles keeps older references building during the token
-// migration; new code must use the tokens above.
-var (
-	userStyle    = accentStyle
-	toolStyle    = accentStyle
-	resultStyle2 = resultStyle
 )
