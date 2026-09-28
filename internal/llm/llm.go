@@ -58,6 +58,10 @@ type ChatRequest struct {
 const (
 	// TextEvent carries a text delta, streamed as it arrives.
 	TextEvent = "text"
+	// ReasoningEvent carries a thinking delta — OpenRouter's
+	// "reasoning" field, or the DeepSeek-compatible
+	// "reasoning_content". For the UI; not conversation history.
+	ReasoningEvent = "reasoning"
 	// ToolCallEvent carries one completed tool call, emitted only after
 	// its arguments are known complete.
 	ToolCallEvent = "tool_call"

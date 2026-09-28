@@ -21,6 +21,7 @@ import (
 // Event kinds emitted during a turn.
 const (
 	EventText         = "text"          // streamed text delta
+	EventReasoning    = "reasoning"     // streamed thinking, shown not stored
 	EventToolStart    = "tool_start"    // a tool call is being dispatched
 	EventToolResult   = "tool_result"   // a tool call finished
 	EventUsage        = "usage"         // token usage for one model round
@@ -217,6 +218,10 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		var calls []llm.ToolCall
 		for ev := range stream {
 			switch ev.Type {
+			case llm.ReasoningEvent:
+				// Thinking is for the UI; the answer is what the
+				// conversation keeps.
+				events <- Event{Kind: EventReasoning, Text: ev.Text}
 			case llm.TextEvent:
 				content += ev.Text
 				events <- Event{Kind: EventText, Text: ev.Text}

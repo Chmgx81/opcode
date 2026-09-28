@@ -75,6 +75,10 @@ type streamChunk struct {
 		Delta struct {
 			Content   string         `json:"content"`
 			ToolCalls []wireToolCall `json:"tool_calls"`
+			// Reasoning deltas: OpenRouter's "reasoning" field, or the
+			// DeepSeek-compatible "reasoning_content".
+			Reasoning        string `json:"reasoning"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -201,6 +205,13 @@ func (p *OpenAICompat) consume(body io.ReadCloser, events chan<- ChatEvent) {
 			continue
 		}
 		choice := chunk.Choices[0]
+		r := choice.Delta.Reasoning
+		if r == "" {
+			r = choice.Delta.ReasoningContent
+		}
+		if r != "" {
+			events <- ChatEvent{Type: ReasoningEvent, Text: r}
+		}
 		if choice.Delta.Content != "" {
 			events <- ChatEvent{Type: TextEvent, Text: choice.Delta.Content}
 		}

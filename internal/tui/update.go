@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -615,10 +616,18 @@ func (m *Model) answerTrust(trusted bool) {
 // handleEvent maps orchestrator events to timeline entries.
 func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 	switch ev.Kind {
+	case orchestrator.EventReasoning:
+		if m.reasoning.Len() == 0 {
+			m.reasoningSince = time.Now()
+		}
+		m.reasoning.WriteString(ev.Text)
+
 	case orchestrator.EventText:
+		m.finishReasoning()
 		m.stream.WriteString(ev.Text)
 
 	case orchestrator.EventToolStart:
+		m.finishReasoning()
 		m.finishStream()
 		m.add(entry{kind: entryTool, tool: ev.ToolCall.Name, text: ev.ToolCall.Arguments})
 
@@ -634,10 +643,12 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 		m.add(entry{kind: entryCompaction, text: ev.Text})
 
 	case orchestrator.EventTurnComplete:
+		m.finishReasoning()
 		m.finishStream()
 		m.turnEnded()
 
 	case orchestrator.EventError:
+		m.finishReasoning()
 		m.finishStream()
 		if ev.Err == nil {
 			m.turnEnded()
@@ -666,7 +677,8 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 func (m *Model) addResultEntry(ev orchestrator.Event) {
 	res := strings.ReplaceAll(strings.TrimSpace(ev.ToolResult), "\n", " ⏎ ")
 	e := entry{kind: entryResult, tool: ev.ToolCall.Name, summary: res, full: ev.ToolResult}
-	if ev.ToolCall.Name == "edit_file" {
+	switch ev.ToolCall.Name {
+	case "edit_file":
 		var a struct {
 			Path string `json:"path"`
 			Old  string `json:"old"`
@@ -674,6 +686,16 @@ func (m *Model) addResultEntry(ev orchestrator.Event) {
 		}
 		if err := json.Unmarshal([]byte(ev.ToolCall.Arguments), &a); err == nil {
 			e.path, e.old, e.new = a.Path, a.Old, a.New
+		}
+	case "write_file":
+		// A write is a diff against the empty file: the content
+		// renders as added lines so code edits read as code edits.
+		var a struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(ev.ToolCall.Arguments), &a); err == nil {
+			e.path, e.full = a.Path, a.Content
 		}
 	}
 	m.add(e)
@@ -919,6 +941,23 @@ func (m *Model) resumeSession(path, label string) {
 	m.add(entry{kind: entryDim, text: dimStyle.Render(m.opt.Model + " · " + m.opt.Mode)})
 	m.add(entry{kind: entryOK, text: fmt.Sprintf("resumed %s — %d messages in context", label, n)})
 	m.showToast("resumed " + label)
+}
+
+// finishReasoning closes the thinking block: a collapsed "thought
+// for Ns" entry — the reasoning text stays available under ctrl+r.
+func (m *Model) finishReasoning() {
+	if m.reasoning.Len() == 0 {
+		return
+	}
+	d := time.Since(m.reasoningSince).Round(time.Second)
+	e := entry{
+		kind: entryReasoning,
+		text: m.reasoning.String(),
+		dur:  d.String(),
+	}
+	m.reasoning.Reset()
+	m.reasoningSince = time.Time{}
+	m.add(e)
 }
 
 // finishStream flushes the accumulated assistant text into the

@@ -156,6 +156,7 @@ const (
 	entryCompaction
 	entrySubagent
 	entryPlan
+	entryReasoning
 )
 
 type entry struct {
@@ -168,6 +169,7 @@ type entry struct {
 	full     string // full result text (expansion)
 	summary  string // collapsed one-liner
 	subTitle string // subagent label
+	dur      string // reasoning: how long the model thought (preformatted)
 
 	// Markdown cache (entryAssistant): rendered once per width so View
 	// doesn't re-run glamour on every frame.
@@ -207,6 +209,12 @@ type Model struct {
 	// todos is the model's live task list (rendered as a panel at
 	// the transcript tail — state, not history).
 	todos []tools.Todo
+
+	// reasoning accumulates the model's thinking stream; it renders
+	// live (tail-windowed) while it arrives and collapses to a
+	// "thought for Ns" line once the answer starts.
+	reasoning      strings.Builder
+	reasoningSince time.Time
 
 	// streamRendered caches the in-flight stream's markdown render
 	// (invalidated by content length or width) so View's per-frame

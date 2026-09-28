@@ -47,7 +47,29 @@ func (m *Model) timelineView() []string {
 		out = append(out, "")
 		out = append(out, m.todosView()...)
 	}
+	// The model's thinking, live: a dim tail so the user sees the
+	// reasoning stream without it burying the transcript.
+	if s := strings.TrimSpace(m.reasoning.String()); s != "" {
+		out = append(out, "")
+		out = append(out, m.reasoningLiveView()...)
+	}
 	return collapseBlanks(out)
+}
+
+// reasoningLiveView shows the thinking stream as a dim italic tail —
+// the last few lines only; thinking is atmosphere, not content.
+func (m *Model) reasoningLiveView() []string {
+	head := dimStyle.Render(GlyphThought + " thinking…")
+	lines := strings.Split(strings.TrimRight(m.reasoning.String(), "\n"), "\n")
+	const keep = 3
+	if len(lines) > keep {
+		lines = lines[len(lines)-keep:]
+	}
+	out := []string{head}
+	for _, l := range lines {
+		out = append(out, dimStyle.Italic(true).Render("  "+l))
+	}
+	return out
 }
 
 // todosView renders the model's live task list: a count header, then
@@ -166,6 +188,30 @@ func (m *Model) renderEntry(e *entry) []string {
 		return wrapAll(infoStyle.Render("… ")+e.text, w)
 	case entrySubagent:
 		return wrapAll(dimStyle.Render(e.subTitle)+e.text, w)
+	case entryReasoning:
+		// Collapsed: one dim line — the thinking is atmosphere.
+		// ctrl+r (the results toggle) expands the text, windowed.
+		head := dimStyle.Render(GlyphThought) + dimStyle.Render(
+			fmt.Sprintf(" thought for %s · %d chars", e.dur, len(e.text)))
+		if !m.expandResults {
+			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
+		}
+		out := []string{head}
+		const rows = 12
+		lines := strings.Split(strings.TrimRight(e.text, "\n"), "\n")
+		if len(lines) > rows {
+			extra := len(lines) - rows
+			lines = lines[:rows]
+			for _, l := range lines {
+				out = append(out, dimStyle.Italic(true).Render("  "+l))
+			}
+			return append(out, dimStyle.Italic(true).Render(
+				fmt.Sprintf("  … %d more lines", extra)))
+		}
+		for _, l := range lines {
+			out = append(out, dimStyle.Italic(true).Render("  "+l))
+		}
+		return out
 	case entryPlan:
 		// The presented plan: a labeled markdown block in the
 		// transcript; the decision line follows below it.
@@ -180,6 +226,30 @@ func (m *Model) renderEntry(e *entry) []string {
 // hunk with colored − / + lines either way.
 func (m *Model) renderResult(e entry, w int) []string {
 	prefix := dimStyle.Render("  " + GlyphBranch + " ")
+	if e.tool == "write_file" && e.path != "" && e.full != "" {
+		lines := strings.Split(strings.TrimRight(e.full, "\n"), "\n")
+		head := prefix + dimStyle.Render(fmt.Sprintf("wrote %s ", e.path)) +
+			okStyle.Render(fmt.Sprintf("%s%d", GlyphAdded, len(lines)))
+		if !m.expandResults {
+			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
+		}
+		out := []string{head}
+		const rows = 10
+		l := lexerFor(e.path)
+		shown := lines
+		extra := 0
+		if len(shown) > rows {
+			extra = len(shown) - rows
+			shown = shown[:rows]
+		}
+		for _, src := range shown {
+			out = append(out, okStyle.Render(strings.Repeat(" ", 5)+GlyphAdded+" ")+highlightLine(src, l))
+		}
+		if extra > 0 {
+			out = append(out, dimStyle.Render(fmt.Sprintf("      … %d more lines", extra)))
+		}
+		return out
+	}
 	if e.tool == "edit_file" && e.path != "" {
 		adds, dels := diffCounts(e.old, e.new)
 		head := prefix + dimStyle.Render(fmt.Sprintf("updated %s ", e.path)) +
@@ -483,7 +553,7 @@ func (m *Model) helpView(w int) string {
 		dimStyle.Render("  alt+enter    queue a follow-up while working"),
 		dimStyle.Render("  esc          interrupt the turn"),
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
-		dimStyle.Render("  ctrl+r       expand / collapse tool results"),
+		dimStyle.Render("  ctrl+r       expand / collapse results & thinking"),
 		dimStyle.Render("  ! command    run a shell command directly"),
 		dimStyle.Render("  @path        attach a file's contents"),
 		dimStyle.Render("  /            command palette"),
