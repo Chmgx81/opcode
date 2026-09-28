@@ -916,3 +916,35 @@ func TestEscClosesPalette(t *testing.T) {
 		t.Errorf("esc cleared a plain draft: %q", v)
 	}
 }
+
+func TestInterruptClearsQueue(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// A queued follow-up plus a real interruption: esc must stop
+	// everything, not fire the queue the moment it lands.
+	m.queue = []string{"follow-up one", "follow-up two"}
+	m.working = true
+	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventError, Err: orchestrator.ErrCancelled})
+	if len(m.queue) != 0 {
+		t.Errorf("queue survived the interrupt: %v", m.queue)
+	}
+	tr := m.transcript()
+	if !strings.Contains(tr, "turn interrupted") {
+		t.Errorf("interrupt note missing: %s", tr)
+	}
+	if !strings.Contains(tr, "cleared 2 queued follow-ups") {
+		t.Errorf("queue-clear note missing: %s", tr)
+	}
+	if m.working {
+		t.Error("interrupt must end the turn")
+	}
+	// A clean completion still drains the queue (existing behavior,
+	// guarded here so the fix can't overreach).
+	m.queue = []string{"follow-up"}
+	m.working = true
+	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventTurnComplete})
+	if len(m.queue) != 0 {
+		t.Errorf("clean completion must still drain the queue: %v", m.queue)
+	}
+}
