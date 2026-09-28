@@ -1258,3 +1258,51 @@ Spec: [docs/specs/phase19-reasoning-diff.md](docs/specs/phase19-reasoning-diff.m
 2. write_file diffs against an empty before-state: writes are new or
    whole-file replacements, so every line is an addition.
 3. `0s` durations render honestly — fast thoughts are normal.
+
+# Phase 20 — Codex-aligned restyle (status: complete, live-verified)
+
+Spec: [docs/specs/phase20-codex-restyle.md](docs/specs/phase20-codex-restyle.md)
+
+## Built
+
+- **The palette**, studied from Codex's source (`codex-rs/tui/src/style.rs`)
+  rather than screenshots: ChatGPT-blue accent `#63A8F8` (their
+  `UI_ACCENT`), neutral measured grays for secondary text (`#999999`,
+  their 60% foreground blend) and borders, a white-16%-blend fill
+  `#292929` for user message blocks, muted amber `#C4A767` for
+  warnings (their dark value), and a real success-green token
+  (Codex status uses terminal green). Markdown, diffs, and syntax
+  highlighting all derive from the same Hex tokens, so the one
+  swap restyled everything.
+- **Codex's shapes**: user entries get the `› ` bold-dim prefix inside
+  the shaded block (their `history_prompt_style`); prompt titles went
+  bold-neutral (amber stays on the attention box border); the working
+  line is now `Verb (0s • esc to interrupt • ↓ Nk tokens)` (their
+  status-indicator parenthesized segment); footer hints read
+  `? for shortcuts · / commands` with the key glyphs in accent.
+- **Light theme** mirrors Codex's light values: `#1C64C8` accent
+  (their `LIGHT_BG_ACCENT_RGB`), `#F2F2F2` fill (their 4% black
+  blend), `#8B6214` amber.
+- **Kept tilde's own**: the `~` brand glyph, the gerund pool
+  (Codex says plain "Working"), tab cycling, ctrl+r. A design-language
+  adoption, not a clone — no behavior changed.
+
+## Verified for real
+
+- All eleven packages; the render tests that pin exact SGR codes were
+  moved to the new values (moved, not deleted — the placeholder-dim,
+  no-background-highlight, panel-fill, light-fill, and
+  accent-deepening assertions all still assert).
+- **PTY, live**: dark and `TILDE_THEME=light` sessions against the
+  scripted fixture — the user block renders shaded with `›`, the
+  working line shows the parenthesized segment, hints show accent
+  keys, the write diff shows green `+1`; light shows dark ink on the
+  light fill with the deep accent.
+
+## Phase 20 assumptions
+
+1. Termenv quantizes truecolor one step in this environment
+   (`#292929` renders as 40;40;40) — the pinned SGRs assert what
+   actually renders.
+2. ChatGPT blue as accent is "match Codex" done honestly; tilde's
+   name and `~` glyph keep it a distinct product.

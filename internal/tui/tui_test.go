@@ -757,7 +757,7 @@ func TestFreshViewShowsBannerAndBrand(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	view := stripANSI(m.View())
-	for _, want := range []string{"▄", "tilde " + version, "test-model", "? help · / commands"} {
+	for _, want := range []string{"▄", "tilde " + version, "test-model", "? for shortcuts", "/ commands"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("fresh view missing %q:\n%s", want, view)
 		}
@@ -788,7 +788,7 @@ func TestComposerResizesWithTerminal(t *testing.T) {
 			t.Errorf("hints leaked into the placeholder: %q", l)
 		}
 	}
-	if !strings.Contains(view, "? help · / commands") {
+	if !strings.Contains(view, "? for shortcuts") || !strings.Contains(view, "/ commands") {
 		t.Errorf("footer hints missing:\n%s", view)
 	}
 }
@@ -832,8 +832,11 @@ func TestTranscriptHierarchy(t *testing.T) {
 	// The placeholder: dim, and carrying no background rectangle — the
 	// textarea's stock focused CursorLine paints one and it reads as a
 	// selection highlight on any terminal whose floor isn't pure black.
-	const dimSGR = "38;2;121;139;147"   // HexDim #7A8B94 (termenv rounds one step)
-	const accentSGR = "38;2;34;211;238" // HexAccent #22D3EE in truecolor
+	const dimSGR = "38;2;153;153;153"   // HexDim #999999 (measured blend)
+	const accentSGR = "38;2;99;168;248" // HexAccent #63A8F8 in truecolor
+	// The echoed query sits in the shaded panel (termenv renders
+	// #292929 one step down; the panel-fill SGR reflects that).
+	const panelFillSGR = "48;2;40;40;40" // HexDeep2 #292929 user panel
 	// The cursor block overlays the placeholder's first character, so
 	// probe for a tail fragment rather than the whole string.
 	view := m.View()
@@ -849,28 +852,30 @@ func TestTranscriptHierarchy(t *testing.T) {
 	if !strings.Contains(placeholderLine, dimSGR) {
 		t.Errorf("placeholder not dim:\n%q", placeholderLine)
 	}
-	if strings.Contains(placeholderLine, "40m") || strings.Contains(placeholderLine, "48;") {
+	if strings.Contains(placeholderLine, "48;") {
 		t.Errorf("placeholder carries a background highlight:\n%q", placeholderLine)
 	}
 
-	// The echoed query renders at full weight behind the accent prompt,
-	// matching the reference apps; the agent's answer does the same.
+	// The echoed query sits in Codex's shaded block behind a bold-dim
+	// › prefix — separation by fill, not by colored text; the agent's
+	// answer renders at full weight with no dimming.
 	m.entries = []entry{
 		{kind: entryUser, text: "hello query"},
 		{kind: entryAssistant, text: "answer text"},
 	}
 	user := strings.Join(m.renderEntry(&m.entries[0]), "")
 	assistant := strings.Join(m.renderEntry(&m.entries[1]), "")
-	if !strings.Contains(user, accentSGR) {
-		t.Errorf("user query missing accent prompt:\n%q", user)
+	if !strings.Contains(user, panelFillSGR) {
+		t.Errorf("user query missing panel fill:\n%q", user)
 	}
-	for _, line := range []struct{ name, s string }{
-		{"user query", user},
-		{"assistant output", assistant},
-	} {
-		if strings.Contains(line.s, dimSGR) {
-			t.Errorf("%s must not be dim:\n%q", line.name, line.s)
-		}
+	if !strings.Contains(user, GlyphUser) {
+		t.Errorf("user query missing the › prefix:\n%q", user)
+	}
+	if !strings.Contains(assistant, "answer text") {
+		t.Errorf("assistant output missing:\n%q", assistant)
+	}
+	if strings.Contains(assistant, dimSGR) {
+		t.Errorf("assistant output must not be dim:\n%q", assistant)
 	}
 }
 
@@ -991,7 +996,7 @@ func TestEditDiffHighlightsSyntax(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	// The keyword keeps its accent color even inside the removed line;
 	// the marker still carries the verdict.
-	if !strings.Contains(joined, "38;2;34;211;238") { // HexAccent
+	if !strings.Contains(joined, "38;2;99;168;248") { // HexAccent #63A8F8
 		t.Errorf("keyword not highlighted in the diff:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "func main() {") {
@@ -1140,7 +1145,7 @@ func TestWorkingLineGerundAndUserPanel(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	panel := m.renderEntry(&entry{kind: entryUser, text: "hello"})
 	joined := strings.Join(panel, "\n")
-	if !strings.Contains(joined, "48;2;6;34;43") { // HexDeep2 #06222B
+	if !strings.Contains(joined, "48;2;40;40;40") { // HexDeep2 #292929 (termenv rounds one step)
 		t.Errorf("user entry lacks the background panel:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "hello") {
@@ -1293,16 +1298,17 @@ func TestLightThemeAdaptation(t *testing.T) {
 	defer func() {
 		// The dark branch of adaptTheme is a no-op by design, so restore
 		// the dark values explicitly.
-		HexAccent, HexAccent2 = "#22D3EE", "#0891B2"
-		HexDeep, HexDeep2 = "#0B3A47", "#06222B"
-		HexText, HexDim = "#E6F2F5", "#7A8B94"
-		HexDanger, HexWarning, HexInfo = "#F87171", "#FBBF24", "#93C5FD"
+		HexAccent, HexAccent2 = "#63A8F8", "#3E82D6"
+		HexDeep, HexDeep2 = "#404040", "#292929"
+		HexText, HexDim = "#E8E8E8", "#999999"
+		HexSuccess, HexDanger = "#3FB950", "#F87171"
+		HexWarning, HexInfo = "#C4A767", "#8FBFE8"
 		refreshTokens()
 	}()
 
 	adaptTheme(false)
 
-	if HexAccent != "#0E7490" || HexText != "#1B2A32" || HexDeep2 != "#E4EDF1" {
+	if HexAccent != "#1C64C8" || HexText != "#1A1A1A" || HexDeep2 != "#F2F2F2" {
 		t.Errorf("light palette not applied: accent=%s text=%s fill=%s",
 			HexAccent, HexText, HexDeep2)
 	}
@@ -1313,12 +1319,12 @@ func TestLightThemeAdaptation(t *testing.T) {
 	// The user panel renders with the LIGHT fill, and the body text is
 	// dark ink — the legibility failure class this exists to prevent.
 	panel := strings.Join(m_renderUserPanel("hello"), "\n")
-	if !strings.Contains(panel, "48;2;227;237;241") { // #E4EDF1 (termenv rounds one step)
+	if !strings.Contains(panel, "48;2;242;242;242") { // #F2F2F2
 		t.Errorf("user panel lacks the light fill:\n%q", panel)
 	}
 	// The composer's accent prompt uses the deepened light accent.
 	prompt := accentStyle.Render("~ ")
-	if !strings.Contains(prompt, "38;2;14;116;144") { // #0E7490
+	if !strings.Contains(prompt, "38;2;28;100;200") { // #1C64C8
 		t.Errorf("accent not deepened for light background: %q", prompt)
 	}
 }
@@ -1335,7 +1341,7 @@ func TestFooterFitsNarrowTerminals(t *testing.T) {
 	// Wide terminal: the full mode line with both hints.
 	m.width = 80
 	view := m.View()
-	for _, want := range []string{"(tab to cycle)", "? help · / commands"} {
+	for _, want := range []string{"(tab to cycle)", "? for shortcuts", "/ commands"} {
 		if !strings.Contains(stripANSI(view), want) {
 			t.Errorf("wide footer missing %q:\n%s", want, view)
 		}

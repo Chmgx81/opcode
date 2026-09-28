@@ -5,12 +5,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Palette — tilde's identity in one place. The brand is an ice-cyan
-// stack: one electric cyan for action and attention, a grounded deep
-// cyan for secondary accents, two dark teals for panels and depth, and
-// the near-black terminal floor. Every rendered color (UI, markdown,
-// diffs) pulls from these values so the look stays consistent and
-// swappable here.
+// Palette — Codex's design language (studied from codex-rs/tui):
+// one ChatGPT-blue accent for keys and emphasis, neutral measured
+// grays for secondary text and borders, a white-blend fill for user
+// message blocks, muted amber for attention. Every rendered color
+// (UI, markdown, diffs) pulls from these values so the look stays
+// consistent and swappable here.
 //
 // These are the DARK defaults — the common terminal. adaptTheme swaps
 // in a light-legible set when the terminal reports a light background
@@ -18,18 +18,19 @@ import (
 // light tints, and accents deepen for contrast on white (Codex's
 // theme-adaptive approach at tilde's scale).
 var (
-	HexAccent  = "#22D3EE" // electric cyan: prompts, active markers
-	HexAccent2 = "#0891B2" // grounded cyan: secondary emphasis
-	HexDeep    = "#0B3A47" // dark teal: panel borders
-	HexDeep2   = "#06222B" // darkest teal: subtle fills
+	HexAccent  = "#63A8F8" // ChatGPT blue 200: keys, emphasis, selection
+	HexAccent2 = "#3E82D6" // deeper blue: secondary emphasis, headings
+	HexDeep    = "#404040" // neutral gray: panel borders
+	HexDeep2   = "#292929" // white 16% blend: user panel, code blocks
 	HexFloor   = "#020202" // terminal floor
-	HexText    = "#E6F2F5" // near-white body text (cool-tinted)
+	HexText    = "#E8E8E8" // near-white body text (neutral)
 
 	// Semantic colors.
+	HexSuccess = "#3FB950" // success notes, additions (terminal green)
 	HexDanger  = "#F87171" // errors, denials, removals
-	HexWarning = "#FBBF24" // caution, truncation, numbers
-	HexInfo    = "#93C5FD" // neutral notices, links
-	HexDim     = "#7A8B94" // muted text, hints (cool gray)
+	HexWarning = "#C4A767" // muted amber: caution, attention boxes
+	HexInfo    = "#8FBFE8" // neutral notices, links
+	HexDim     = "#999999" // secondary text (60% measured blend)
 )
 
 // adaptTheme re-skins the palette for the terminal's actual
@@ -41,15 +42,16 @@ func adaptTheme(dark bool) {
 	if dark {
 		return
 	}
-	HexAccent = "#0E7490" // cyan-700: legible on white
-	HexAccent2 = "#155E75"
-	HexDeep = "#A8C4CE"  // light panel borders
-	HexDeep2 = "#E4EDF1" // light fills (the user panel, code blocks)
-	HexText = "#1B2A32"  // dark ink
+	HexAccent = "#1C64C8" // Codex's light accent: legible on white
+	HexAccent2 = "#27558F"
+	HexDeep = "#B8B8B8"  // light panel borders
+	HexDeep2 = "#F2F2F2" // light fills (4% black blend)
+	HexText = "#1A1A1A"  // dark ink
+	HexSuccess = "#1A7F37"
 	HexDanger = "#B91C1C"
-	HexWarning = "#A16207"
+	HexWarning = "#8B6214"
 	HexInfo = "#1D4ED8"
-	HexDim = "#5A6B74"
+	HexDim = "#666666"
 	refreshTokens()
 	// Glamour renderers embed the style config at creation; drop the
 	// cache so post-adapt renders pick up the swapped palette.
@@ -61,7 +63,7 @@ func adaptTheme(dark bool) {
 // Design tokens derived from the palette; refreshTokens (re)builds
 // them so adaptTheme's swap reaches every style.
 var (
-	Accent, Accent2, Deep, Deep2, Floor, Danger, Warning, Info, Dim lipgloss.Color
+	Accent, Accent2, Deep, Deep2, Floor, Success, Danger, Warning, Info, Dim lipgloss.Color
 )
 
 func init() { refreshTokens() }
@@ -74,6 +76,7 @@ func refreshTokens() {
 	Deep = lipgloss.Color(HexDeep)
 	Deep2 = lipgloss.Color(HexDeep2)
 	Floor = lipgloss.Color(HexFloor)
+	Success = lipgloss.Color(HexSuccess)
 	Danger = lipgloss.Color(HexDanger)
 	Warning = lipgloss.Color(HexWarning)
 	Info = lipgloss.Color(HexInfo)
@@ -85,10 +88,12 @@ func refreshTokens() {
 	infoStyle = lipgloss.NewStyle().Foreground(Info)
 	warnStyle = lipgloss.NewStyle().Foreground(Warning)
 	dangerStyle = lipgloss.NewStyle().Foreground(Danger)
-	okStyle = lipgloss.NewStyle().Foreground(Accent)
+	okStyle = lipgloss.NewStyle().Foreground(Success)
 	errorStyle = dangerStyle
 	resultStyle = dimStyle
-	promptStyle = lipgloss.NewStyle().Foreground(Warning).Bold(true)
+	// Prompt titles are bold neutral (Codex's shape); amber stays on
+	// the attention box border, not the words.
+	promptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexText)).Bold(true)
 	steerStyle = warnStyle
 	queuedStyle = dimStyle
 	toolNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexText)).Bold(true)
@@ -117,6 +122,7 @@ func refreshTokens() {
 // system rather than an assortment.
 const (
 	GlyphPrompt  = "~" // the composer prompt: the product's own name
+	GlyphUser    = "›" // transcript user message prefix (Codex's shape)
 	GlyphBullet  = "●" // assistant / tool activity marker
 	GlyphBranch  = "└" // tool result, indented under its call
 	GlyphCaret   = "▹" // palette / list selection

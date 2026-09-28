@@ -10,9 +10,9 @@ import (
 )
 
 // Assistant markdown, rendered with glamour through the brand palette
-// (Section 12's one-place reskin rule): green headings, muted-green
-// links and inline code, a dark-green code panel with syntax tokens
-// tinted toward the brand.
+// (Section 12's one-place reskin rule): blue headings, soft-blue links
+// and inline code, a neutral dark code panel with syntax tokens tinted
+// toward the brand.
 //
 // A finished assistant entry renders once per width and is cached on
 // the entry (see renderEntry): View runs every frame and re-rendering
