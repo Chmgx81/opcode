@@ -9,7 +9,9 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"tilde/internal/llm"
 	"tilde/internal/tools"
@@ -20,17 +22,22 @@ const (
 	EventText         = "text"          // streamed text delta
 	EventToolStart    = "tool_start"    // a tool call is being dispatched
 	EventToolResult   = "tool_result"   // a tool call finished
+	EventUsage        = "usage"         // token usage for one model round
 	EventTurnComplete = "turn_complete" // the model stopped calling tools
 	EventError        = "error"
 )
 
+// ErrCancelled is the turn error surfaced when the user cancels a run.
+var ErrCancelled = errors.New("turn cancelled")
+
 // Event is one thing that happened during a turn. UIs render these;
 // nothing else leaks out.
 type Event struct {
-	Kind       string
+	Kind       string       // one of the Event* kinds
 	Text       string       // EventText
 	ToolCall   llm.ToolCall // EventToolStart, EventToolResult
 	ToolResult string       // EventToolResult
+	Usage      llm.Usage    // EventUsage
 	Err        error        // EventError
 }
 
@@ -52,6 +59,12 @@ type Orchestrator struct {
 	Gate     *tools.Gate
 
 	history []llm.Message
+
+	steerMu sync.Mutex
+	// pendingSteer holds steering messages typed mid-turn (spec 3.1):
+	// folded into history at the next round boundary — after the current
+	// tool call finishes — never mid-round.
+	pendingSteer []string
 }
 
 func New(provider llm.Provider, model, system string, registry *tools.Registry, gate *tools.Gate) *Orchestrator {
@@ -64,6 +77,24 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 	}
 }
 
+// Steer queues a steering message for the in-flight turn. It is appended
+// to history as a user message before the next model request, so the
+// model sees it as soon as the current tool call is done.
+func (o *Orchestrator) Steer(text string) {
+	o.steerMu.Lock()
+	defer o.steerMu.Unlock()
+	o.pendingSteer = append(o.pendingSteer, text)
+}
+
+// drainSteer returns and clears pending steering messages.
+func (o *Orchestrator) drainSteer() []string {
+	o.steerMu.Lock()
+	defer o.steerMu.Unlock()
+	steers := o.pendingSteer
+	o.pendingSteer = nil
+	return steers
+}
+
 // Send runs one full turn for a user message and streams events until the
 // turn is complete, failed, or ctx is cancelled. The channel closes when
 // the turn ends.
@@ -73,6 +104,9 @@ func (o *Orchestrator) Send(ctx context.Context, userText string) <-chan Event {
 		defer close(events)
 		o.history = append(o.history, llm.Message{Role: "user", Content: userText})
 		if err := o.runTurn(ctx, events); err != nil {
+			if ctx.Err() != nil {
+				err = ErrCancelled
+			}
 			events <- Event{Kind: EventError, Err: err}
 		}
 	}()
@@ -84,6 +118,14 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		if round >= MaxToolRounds {
 			return fmt.Errorf("stopped after %d tool rounds without a final answer; the model may be stuck in a loop", MaxToolRounds)
 		}
+		if ctx.Err() != nil {
+			return ErrCancelled
+		}
+		// Steering checkpoint: between rounds is the moment the spec
+		// promises — the previous tool call has finished.
+		for _, steer := range o.drainSteer() {
+			o.history = append(o.history, llm.Message{Role: "user", Content: steer})
+		}
 		req := llm.ChatRequest{
 			Model:    o.Model,
 			System:   o.System,
@@ -92,6 +134,9 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		}
 		stream, err := o.Provider.StreamChat(ctx, req)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ErrCancelled
+			}
 			return err
 		}
 
@@ -104,6 +149,8 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 				events <- Event{Kind: EventText, Text: ev.Text}
 			case llm.ToolCallEvent:
 				calls = append(calls, ev.Call)
+			case llm.UsageEvent:
+				events <- Event{Kind: EventUsage, Usage: ev.Usage}
 			case llm.ErrorEvent:
 				return ev.Err
 			}
@@ -125,7 +172,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			result, err := o.dispatch(ctx, call)
 			if err != nil {
 				if ctx.Err() != nil {
-					return ctx.Err()
+					return ErrCancelled
 				}
 				// Tool failures go back to the model as the tool
 				// result; it can correct itself. Only harness-level
