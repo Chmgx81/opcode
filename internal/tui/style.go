@@ -99,10 +99,6 @@ func refreshTokens() {
 	toolNameStyle = lipgloss.NewStyle().Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
 
-	boxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(Deep).
-		Padding(0, 1)
 	promptBoxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(Warning).
@@ -122,7 +118,8 @@ func refreshTokens() {
 // ASCII fallback set is a listed follow-up; today the Unicode forms
 // are the product's minimum requirement.)
 const (
-	GlyphBrand   = "~" // the product's own name, in the header
+	GlyphBrand   = "~" // the product's own name: header and composer prompt
+	GlyphShell   = "!" // the composer's shell-mode prompt
 	GlyphPrompt  = "❯" // composer prompt, picker filter, selection
 	GlyphUser    = "❯" // user-message block prefix (fg.muted per 2.3)
 	GlyphBullet  = "●" // assistant / tool activity marker
@@ -151,5 +148,5 @@ var (
 	accentStyle, accent2Style, dimStyle, subtleStyle, infoStyle, warnStyle,
 	dangerStyle, okStyle, resultStyle, promptStyle,
 	steerStyle, queuedStyle, toolNameStyle, boldStyle,
-	boxStyle, promptBoxStyle, paletteStyle, helpStyle lipgloss.Style
+	promptBoxStyle, paletteStyle, helpStyle lipgloss.Style
 )

@@ -372,8 +372,9 @@ func New(opt Options) *Model {
 	ta.SetHeight(1)
 	// The textarea's own width defaults to 40 columns — placeholder and
 	// typed text wrap there no matter how wide the terminal is. Size it
-	// to the composer box's content width (terminal minus box chrome);
-	// the first WindowSizeMsg corrects it for the real terminal.
+	// to the bare prompt line's width (terminal minus the prompt and a
+	// right margin); the first WindowSizeMsg corrects it for the real
+	// terminal.
 	ta.SetWidth(72)
 	ta.ShowLineNumbers = false
 	ta.Focus()
@@ -387,17 +388,22 @@ func New(opt Options) *Model {
 		pasteAt:    map[string]string{},
 		subStreams: map[string]*strings.Builder{},
 	}
-	// Identity block: logo, name and version, model and mode, working
-	// directory, then startup notes — stacked lines that scroll away.
+	// The reference header: the logo at the left, the identity block
+	// beside it — version, model and mode, working directory — then
+	// startup notes below. All of it scrolls away with the transcript.
+	var logo []string
 	for _, line := range strings.Split(strings.TrimRight(banner, "\n"), "\n") {
-		m.entries = append(m.entries, entry{kind: entryDim, text: accentStyle.Render(line)})
+		logo = append(logo, accentStyle.Render(line))
 	}
-	m.entries = append(m.entries, entry{kind: entryDim, text: ""})
-	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render(GlyphBrand + " tilde " + version)})
-	m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Model + " · " + opt.Mode)})
+	info := []string{boldStyle.Render(GlyphBrand + " tilde " + version)}
+	info = append(info, dimStyle.Render(opt.Model+" · "+opt.Mode))
 	if opt.Cwd != "" {
-		m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Cwd)})
+		info = append(info, dimStyle.Render(opt.Cwd))
 	}
+	header := lipgloss.JoinHorizontal(lipgloss.Top,
+		strings.Join(logo, "\n"), "   ", strings.Join(info, "\n"))
+	m.entries = append(m.entries, entry{kind: entryDim, text: header})
+	m.entries = append(m.entries, entry{kind: entryDim, text: ""})
 	for _, note := range opt.StartupNotes {
 		m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(note)})
 	}

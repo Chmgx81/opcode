@@ -29,7 +29,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		// The composer wraps at its own width, not the terminal's —
 		// keep it sized to the box: terminal minus border+padding.
-		m.composer.SetWidth(maxInt(msg.Width-8, 10))
+		m.composer.SetWidth(maxInt(msg.Width-2, 10))
 		m.resizeComposer()
 		return m, nil
 
