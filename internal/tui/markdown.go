@@ -142,11 +142,11 @@ func mdRenderer(width int) (*glamour.TermRenderer, error) {
 func renderMarkdown(text string, width int) []string {
 	r, err := mdRenderer(maxInt(width-4, 20))
 	if err != nil {
-		return renderAssistant(text, width)
+		return wrapAll(text, width)
 	}
 	out, err := r.Render(text)
 	if err != nil {
-		return renderAssistant(text, width)
+		return wrapAll(text, width)
 	}
 	lines := strings.Split(strings.Trim(out, "\n"), "\n")
 	var body []string

@@ -1024,3 +1024,50 @@ Spec: [docs/specs/phase13-plan-mode.md](docs/specs/phase13-plan-mode.md)
    untolerable ambiguity beats convenience.
 3. The allowlist applies to subagents too (shared gate), which is
    intended: same trust boundary.
+
+---
+
+# Phase 15 — Streaming Markdown, Reduced Motion, Terminal Title (status: complete, live-verified)
+
+Borrowed from the Codex TUI audit (phase 14's comparison), in priority
+order — items 1, 2, and half of 4 of the borrow list.
+
+## Built
+
+- **Streaming markdown (the flush "pop" is gone)**: the in-flight
+  stream renders through the same glamour renderer as finished
+  entries, cached on the Model and invalidated by content length or
+  width — so View's per-frame pass costs nothing, and the flushed
+  entry is byte-identical to the last streamed frame (finishStream now
+  normalizes with the same TrimSpace the stream view uses, and resets
+  the cache). Codex's newline-gated markdown_stream taken to its
+  conclusion. renderAssistant and its fence-box renderer are deleted —
+  the plain fallback for a glamour failure is now wrapAll.
+- **Reduced motion** (config.json `"animations": false`): Codex's
+  MotionMode at tilde's scale. The spinner becomes a static ●, the
+  mode toast appears without the glyph burst and schedules no ticks.
+  Information is preserved; only motion is removed. Their
+  screen-reader probe that seeds and persists this default is noted as
+  a future item.
+- **Terminal title** (tea.SetWindowTitle "tilde — <cwd>"): OSC 2 in
+  Init, like the reference apps' window titles.
+
+## Verified for real
+
+- All eleven packages; new tests: the no-pop guarantee (flushed render
+  byte-identical to the streamed render, asserted with %q), the stream
+  cache populating on render and invalidating on width change, and
+  reduced motion (no tick cmd, toastAnim 0, toast still set, zero
+  spinner frames on the working line).
+- **PTY**: terminal title escape observed live (OSC 2 "tilde — /tmp/
+  feelproj"); streamed text visible mid-turn against the slow fixture
+  (rendered as it arrives); a second session with animations:false
+  showed the static working line `● Thinking… (esc to interrupt · 0s
+  · ↓ 0 tokens)` with no spinner frames and no toast burst while the
+  toast still communicated the mode switch.
+
+## Deferred (from the audit's borrow list)
+
+3. Theme-adaptive fills (probe the terminal background, alpha-blend) —
+   next pass. Then: footer-hint width fitting, external editor, screen
+   reader detection seeding the animations default.

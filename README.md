@@ -98,6 +98,9 @@ go install github.com/Chmgx81/tilde/cmd/tilde@latest   # via Go
 tilde --help · tilde --version · tilde --continue     # resume latest
 ```
 
+Reduced motion: `{"animations": false}` in config.json — the spinner
+and toast animations become static glyphs, the information stays.
+
 Everything is recorded honestly in [PROGRESS.md](PROGRESS.md) — what
 was verified live, what wasn't, and what is deferred. The architecture
 and per-phase specs live in [docs/specs/](docs/specs/).

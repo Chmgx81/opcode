@@ -34,10 +34,11 @@ func (m *Model) timelineView() []string {
 		}
 		out = append(out, m.renderEntry(e)...)
 	}
-	// In-flight assistant text.
+	// In-flight assistant text: rendered as markdown live, identical
+	// to what the flushed entry will show.
 	if s := strings.TrimSpace(m.stream.String()); s != "" {
 		out = append(out, "")
-		out = append(out, renderAssistant(s, m.termWidth())...)
+		out = append(out, m.renderStream(s, m.termWidth())...)
 	}
 	return collapseBlanks(out)
 }
@@ -166,49 +167,19 @@ func (m *Model) renderResult(e entry, w int) []string {
 	return []string{prefix + resultStyle.Render(truncate(e.summary, m.termWidth()-14)) + hint}
 }
 
-// renderAssistant renders assistant text with light structure: fenced
-// code blocks become boxed monospace, everything else wraps plainly.
-func renderAssistant(text string, w int) []string {
-	var out []string
-	var fence []string
-	flushFence := func() {
-		if len(fence) == 0 {
-			return
-		}
-		box := fenceStyle.Width(maxInt(w-6, 20))
-		for _, l := range strings.Split(box.Render(strings.Join(fence, "\n")), "\n") {
-			out = append(out, l)
-		}
-		fence = nil
+// renderStream renders the in-flight assistant text as markdown, the
+// same renderer the flushed entry uses — the stream IS the finished
+// look, so completing a message never reflows it (the reference
+// products' newline-gated streaming, taken to its conclusion). The
+// render caches on the Model and re-renders only when content or
+// width changed, so View's per-frame pass costs nothing.
+func (m *Model) renderStream(s string, w int) []string {
+	if m.streamRenderedLen != len(s) || m.streamRenderedW != w {
+		m.streamRendered = renderMarkdown(s, w)
+		m.streamRenderedLen = len(s)
+		m.streamRenderedW = w
 	}
-	for _, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
-			if len(fence) > 0 {
-				flushFence()
-			} else {
-				fence = fence[:0]
-				_ = fence
-			}
-			continue
-		}
-		if fence != nil {
-			fence = append(fence, line)
-			continue
-		}
-		if trimmed == "" {
-			out = append(out, "")
-			continue
-		}
-		// Headings get weight; list markers stay as typed.
-		if strings.HasPrefix(trimmed, "#") {
-			out = append(out, wrapAll(boldStyle.Render(trimmed), w)...)
-			continue
-		}
-		out = append(out, wrapAll(line, w)...)
-	}
-	flushFence()
-	return out
+	return m.streamRendered
 }
 
 // userPanel paints the user's echoed query with the deep-fill
@@ -293,7 +264,11 @@ func (m *Model) composerView() []string {
 		if verb == "" {
 			verb = "Thinking…"
 		}
-		left := accentStyle.Render(m.spinner.View()) + " " +
+		sp := m.spinner.View()
+		if !m.opt.Animations {
+			sp = GlyphBullet
+		}
+		left := accentStyle.Render(sp) + " " +
 			accentStyle.Render(verb) + dimStyle.Render(
 			fmt.Sprintf(" (esc to interrupt · %s · ↓ %s tokens)",
 				elapsed, humanCount(tokens)))

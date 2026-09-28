@@ -373,6 +373,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		ProviderName: providerName,
 		BaseURL:      providerCfg.BaseURL,
 		AuditPath:    auditPath,
+		Animations:   cfg.Animations == nil || *cfg.Animations,
 		ShellAllow:   shellAllow,
 		Skills:       &skillManager,
 		MCPNames: func() []string {

@@ -912,10 +912,13 @@ func (m *Model) resumeSession(path, label string) {
 }
 
 // finishStream flushes the accumulated assistant text into the
-// transcript.
+// transcript. The entry text is normalized exactly as the stream view
+// was (TrimSpace), so the flushed entry renders byte-identical to the
+// last streamed frame — no reflow "pop" at the round boundary.
 func (m *Model) finishStream() {
-	if s := strings.TrimRight(m.stream.String(), "\n"); strings.TrimSpace(s) != "" {
+	if s := strings.TrimSpace(m.stream.String()); s != "" {
 		m.add(entry{kind: entryAssistant, text: s})
 	}
 	m.stream.Reset()
+	m.streamRendered, m.streamRenderedLen, m.streamRenderedW = nil, 0, 0
 }
