@@ -754,11 +754,16 @@ func permTitle(tool string) string {
 }
 
 // permTierWords is the tier badge in plain words, never the internal
-// tier string.
-func permTierWords(tool string) string {
+// tier string. A shell escape ({"sandbox": false}) is named for what
+// it is: the one class of command that runs without the kernel
+// write-confinement.
+func permTierWords(tool, args string) string {
 	switch tool {
 	case "run_shell":
-		return "Runs a command"
+		if tools.ShellEscaped(args) {
+			return "Runs a command without the sandbox"
+		}
+		return "Runs a command (sandboxed)"
 	case "write_file", "edit_file":
 		return "Changes files"
 	default:
@@ -796,7 +801,7 @@ func (m *Model) permDialogView(req *permRequest, w int) string {
 	}
 	var rows []string
 	rows = append(rows, promptStyle.Render(permTitle(req.tool))+" "+
-		dimStyle.Render("· "+permTierWords(req.tool)))
+		dimStyle.Render("· "+permTierWords(req.tool, req.args)))
 	rows = append(rows, "")
 	for _, l := range wrapAll(permLiteral(req.tool, req.args), w-8) {
 		rows = append(rows, l)

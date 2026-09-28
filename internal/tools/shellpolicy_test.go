@@ -1,9 +1,6 @@
 package tools
 
-import (
-	"context"
-	"testing"
-)
+import "testing"
 
 func TestShellAllowlistMatching(t *testing.T) {
 	a := NewShellAllowlist([]string{"git status", "ls", "go test", ""})
@@ -53,55 +50,4 @@ func TestShellAllowlistFailsClosed(t *testing.T) {
 	if NewShellAllowlist([]string{"'"}) != nil {
 		t.Error("a lone unterminated quote must be dropped, yielding nil")
 	}
-}
-
-func TestShellPolicyDecideComposesWithModes(t *testing.T) {
-	allow := NewShellAllowlist([]string{"git status"})
-	shell := RunShell{}
-	safeArgs := `{"command": "git status --short"}`
-	riskyArgs := `{"command": "rm -rf /"}`
-	wireArgs := `{"path": "x", "content": "y"}`
-
-	promptCalled := false
-	ask := ShellPolicyDecide(ModeAskEveryTime, func(Tool, string) bool {
-		promptCalled = true
-		return false
-	}, allow)
-
-	// Safe command: allowed without consulting the prompt.
-	promptCalled = false
-	if !ask(shell, safeArgs) || promptCalled {
-		t.Error("safe command must auto-allow without prompting")
-	}
-	// Risky command: the prompt decides (fail closed when it denies).
-	promptCalled = false
-	if ask(shell, riskyArgs) || !promptCalled {
-		t.Error("risky command must consult the prompt and honor a denial")
-	}
-	// Non-shell tools are untouched by the allowlist.
-	promptCalled = false
-	if ask(WriteFile{}, wireArgs) || !promptCalled {
-		t.Error("write_file must still prompt in ask mode")
-	}
-
-	// The mode's posture dominates: read-only and plan deny even safe
-	// shell calls, with no prompt.
-	ro := ShellPolicyDecide(ModeReadOnly, func(Tool, string) bool { return true }, allow)
-	if ro(shell, safeArgs) {
-		t.Error("read-only must deny even allowlisted shell commands")
-	}
-	plan := ShellPolicyDecide(ModePlan, func(Tool, string) bool { return true }, allow)
-	if plan(shell, safeArgs) {
-		t.Error("plan must deny even allowlisted shell commands")
-	}
-
-	// Nil allowlist behaves exactly like PolicyDecide.
-	base := ShellPolicyDecide(ModeAskEveryTime, func(Tool, string) bool { return true }, nil)
-	promptCalled = false
-	if !base(shell, safeArgs) {
-		t.Error("nil allowlist defers to the prompt")
-	}
-
-	// A real RunShell executes through the composed gate end to end.
-	_ = context.Background()
 }

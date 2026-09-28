@@ -117,9 +117,11 @@ func TestRunProviderErrorSurfaces(t *testing.T) {
 }
 
 func TestRunDenialIsVisible(t *testing.T) {
-	// The headless wiring uses PolicyDecide(mode, nil) — with nobody to
-	// ask, ask-every-time denies action-tier calls and the denial is
-	// printed as the tool result, not swallowed.
+	// The headless wiring uses PolicyDecide(mode, nil) — with nobody
+	// to ask, read-only denies action-tier calls and the denial is
+	// printed as the tool result, not swallowed. (Ask mode would
+	// auto-run this write: /tmp is inside the sandbox's writable
+	// roots — see TestRunBoundedWriteRuns.)
 	dir := t.TempDir()
 	target := filepath.Join(dir, "out.txt")
 	p := &scriptedProvider{rounds: [][]llm.ChatEvent{
@@ -130,7 +132,7 @@ func TestRunDenialIsVisible(t *testing.T) {
 	}}
 	var reg tools.Registry
 	reg.Register(tools.WriteFile{})
-	gate := &tools.Gate{Decide: tools.PolicyDecide(tools.ModeAskEveryTime, nil)}
+	gate := &tools.Gate{Decide: tools.PolicyDecide(tools.ModeReadOnly, nil)}
 	orch := orchestrator.New(p, "m", "s", &reg, gate)
 
 	var buf bytes.Buffer
@@ -142,5 +144,34 @@ func TestRunDenialIsVisible(t *testing.T) {
 	}
 	if _, err := os.Stat(target); err == nil {
 		t.Error("the denied tool executed anyway")
+	}
+}
+
+// TestRunBoundedWriteRuns: ask mode's Phase 30 posture — a write
+// inside the sandbox's writable roots runs headless (nobody to ask,
+// none needed: the path is bounded) while the escape fails closed.
+func TestRunBoundedWriteRuns(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "out.txt")
+	p := &scriptedProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "write_file",
+			Arguments: fmt.Sprintf(`{"path": %q, "content": "x"}`, target)}}},
+		{{Type: llm.TextEvent, Text: "done"}},
+	}}
+	var reg tools.Registry
+	reg.Register(tools.WriteFile{})
+	gate := &tools.Gate{Decide: tools.PolicyDecide(tools.ModeAsk, nil)}
+	orch := orchestrator.New(p, "m", "s", &reg, gate)
+
+	var buf bytes.Buffer
+	if err := Run(context.Background(), orch, "write it", Options{Out: &buf}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "x" {
+		t.Errorf("bounded write did not run: %v", err)
+	}
+	if strings.Contains(buf.String(), "permission denied") {
+		t.Errorf("bounded write was denied: %q", buf.String())
 	}
 }

@@ -1,17 +1,18 @@
 package tools
 
 import (
-	"encoding/json"
 	"strings"
 )
 
-// ShellAllowlist is execpolicy-lite: user-configured command prefixes
-// that are safe enough to run without prompting even in ask mode
-// (`git status`, `go test`, ...). Matching is token-wise prefix: the
-// command's first tokens must equal the configured tokens verbatim —
-// "git status" matches "git status --short" but not "git push", and no
-// shell metacharacter can smuggle past it (any parse ambiguity fails
-// closed to "not safe").
+// ShellAllowlist is the matcher behind the TUI's session-scoped
+// "don't ask again" grants: command prefixes the user approved
+// once. (Config-driven safe_commands was removed in Phase 30 —
+// sandboxed commands auto-run in ask mode, so a per-command
+// allowlist had nothing left to do.) Matching is token-wise
+// prefix: the command's first tokens must equal the configured
+// tokens verbatim — "git status" matches "git status --short" but
+// not "git push", and no shell metacharacter can smuggle past it
+// (any parse ambiguity fails closed to "not safe").
 type ShellAllowlist struct {
 	prefixes [][]string
 }
@@ -71,17 +72,6 @@ func (a *ShellAllowlist) Allows(command string) bool {
 	return false
 }
 
-// shellCommand extracts the command from run_shell's args JSON.
-func shellCommand(args string) (string, error) {
-	var a struct {
-		Command string `json:"command"`
-	}
-	if err := json.Unmarshal([]byte(args), &a); err != nil {
-		return "", err
-	}
-	return a.Command, nil
-}
-
 // shellWords splits a command into shell words with single/double
 // quoting. An unterminated quote yields nil — a command we cannot
 // tokenize exactly is a command we cannot vouch for.
@@ -128,28 +118,4 @@ func shellWords(s string) []string {
 		out = append(out, cur.String())
 	}
 	return out
-}
-
-// ShellPolicyDecide extends PolicyDecide with the allowlist: a
-// matching shell command runs without consulting the prompt (the gate
-// still logs it). The mode's posture dominates — read-only and plan
-// deny action-tier calls outright, allowlist or not, and a nil
-// allowlist behaves exactly like PolicyDecide.
-func ShellPolicyDecide(mode string, prompt func(Tool, string) bool, allow *ShellAllowlist) func(Tool, string) bool {
-	base := PolicyDecide(mode, prompt)
-	if allow == nil {
-		return base
-	}
-	return func(tool Tool, args string) bool {
-		switch NormalizeMode(mode) {
-		case ModeReadOnly, ModePlan:
-			return base(tool, args) // the posture is the promise: no bypass
-		}
-		if _, ok := tool.(RunShell); ok {
-			if cmd, err := shellCommand(args); err == nil && allow.Allows(cmd) {
-				return true
-			}
-		}
-		return base(tool, args)
-	}
 }

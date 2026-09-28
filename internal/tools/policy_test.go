@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -20,28 +22,32 @@ func TestDecisionMatrix(t *testing.T) {
 	allow := func(Tool, string) bool { promptCalled = true; return true }
 	denyPrompt := func(Tool, string) bool { promptCalled = true; return false }
 
+	// fakeTool is not a bounded action, so in ask mode it prompts —
+	// the bounded auto-run cells are covered by
+	// TestAskModeBoundedActions below.
 	cases := []struct {
 		mode string
 		tier Tier
-		want string // "allow", "deny", "prompt-allow", "prompt-deny"
+		want string // "allow", "deny", "prompt"
 	}{
 		// Read-Only tools always run, in every mode.
 		{ModeReadOnly, TierReadOnly, "allow"},
-		{ModeAskEveryTime, TierReadOnly, "allow"},
+		{ModeAsk, TierReadOnly, "allow"},
 		{ModeAutoAcceptSafe, TierReadOnly, "allow"},
 		{ModeFullAuto, TierReadOnly, "allow"},
 		// Draft-Only tools always run: they propose, they don't apply.
 		{ModeReadOnly, TierDraftOnly, "allow"},
-		{ModeAskEveryTime, TierDraftOnly, "allow"},
+		{ModeAsk, TierDraftOnly, "allow"},
 		{ModeAutoAcceptSafe, TierDraftOnly, "allow"},
 		{ModeFullAuto, TierDraftOnly, "allow"},
-		// Plan mode: read and draft (present_plan) run, actions deny.
+		// Plan mode: read and draft (present_plan) run, actions prompt.
 		{ModePlan, TierReadOnly, "allow"},
 		{ModePlan, TierDraftOnly, "allow"},
-		{ModePlan, TierActionAllowed, "deny"},
-		// Action-Allowed: the mode actually bites here.
-		{ModeReadOnly, TierActionAllowed, "deny"},
-		{ModeAskEveryTime, TierActionAllowed, "prompt"},
+		{ModePlan, TierActionAllowed, "prompt"},
+		// Action-Allowed: the mode actually bites here. read-only
+		// prompts too — the model may propose, the user decides.
+		{ModeReadOnly, TierActionAllowed, "prompt"},
+		{ModeAsk, TierActionAllowed, "prompt"},
 		{ModeAutoAcceptSafe, TierActionAllowed, "prompt"},
 		{ModeFullAuto, TierActionAllowed, "allow"},
 		// Unknown mode fails closed to prompting.
@@ -76,54 +82,123 @@ func TestDecisionMatrix(t *testing.T) {
 }
 
 func TestPolicyNilPromptFailsClosed(t *testing.T) {
-	// No one to ask: deny, never silently allow.
-	decide := PolicyDecide(ModeAskEveryTime, nil)
-	if decide(fakeTool{TierActionAllowed}, `{}`) {
-		t.Error("nil prompt must deny action-tier calls")
+	// No one to ask: deny, never silently allow — in every mode
+	// that prompts.
+	for _, mode := range []string{ModeAsk, ModeReadOnly, ModePlan, "unknown"} {
+		decide := PolicyDecide(mode, nil)
+		if decide(fakeTool{TierActionAllowed}, `{}`) {
+			t.Errorf("nil prompt must deny action-tier calls in mode %s", mode)
+		}
+		if !decide(fakeTool{TierReadOnly}, `{}`) {
+			t.Errorf("nil prompt must still allow read-tier calls in mode %s", mode)
+		}
+		if !decide(fakeTool{TierDraftOnly}, `{}`) {
+			t.Errorf("nil prompt must still allow draft-tier calls in mode %s", mode)
+		}
 	}
-	if !decide(fakeTool{TierReadOnly}, `{}`) {
-		t.Error("nil prompt must still allow read-tier calls")
+}
+
+func TestAskModeBoundedActions(t *testing.T) {
+	promptCalled := false
+	prompt := func(Tool, string) bool { promptCalled = true; return true }
+	decide := PolicyDecide(ModeAsk, prompt)
+
+	dir := t.TempDir() // inside os.TempDir — a writable root
+
+	// An in-root write is bounded: it runs without prompting.
+	promptCalled = false
+	args, _ := json.Marshal(map[string]string{"path": filepath.Join(dir, "out.txt")})
+	if !decide(WriteFile{}, string(args)) {
+		t.Fatal("in-root write denied in ask mode")
 	}
-	if !decide(fakeTool{TierDraftOnly}, `{}`) {
-		t.Error("nil prompt must still allow draft-tier calls")
+	if promptCalled {
+		t.Error("in-root write prompted — the path bound makes it safe")
 	}
-	// Even in read-only mode (deny cell), a nil prompt changes nothing.
-	if decide(fakeTool{TierActionAllowed}, `{}`) {
-		t.Error("read-only mode must deny action-tier calls")
+
+	// A write outside every writable root is unbounded: it prompts.
+	promptCalled = false
+	args, _ = json.Marshal(map[string]string{"path": "/etc/tilde-should-not-write.txt"})
+	if !decide(WriteFile{}, string(args)) || !promptCalled {
+		t.Error("out-of-root write must prompt in ask mode")
+	}
+
+	// The same bound applies to edits.
+	promptCalled = false
+	args, _ = json.Marshal(map[string]string{"path": filepath.Join(dir, "edit.txt"), "old": "a", "new": "b"})
+	if !decide(EditFile{}, string(args)) {
+		t.Fatal("in-root edit denied in ask mode")
+	}
+	if promptCalled {
+		t.Error("in-root edit prompted — the path bound makes it safe")
+	}
+
+	// A lexical in-root path that resolves outside (symlink) must
+	// not auto-run: the parent's symlinks are resolved first. The
+	// link's target must be outside every writable root — pointing
+	// it at another temp dir would still be bounded.
+	outside := "/var"
+	if _, err := os.Stat(outside); err != nil {
+		t.Skip("/var unavailable")
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	promptCalled = false
+	args, _ = json.Marshal(map[string]string{"path": filepath.Join(link, "out.txt")})
+	if !decide(WriteFile{}, string(args)) || !promptCalled {
+		t.Error("symlinked write path auto-ran; the resolved target is outside the roots")
+	}
+
+	// A relative in-root path (no prefix) is bounded too.
+	promptCalled = false
+	if !decide(WriteFile{}, `{"path": "local.txt"}`) {
+		t.Fatal("relative in-cwd write denied in ask mode")
+	}
+	if promptCalled {
+		t.Error("relative in-cwd write prompted")
+	}
+
+	// A shell call in tests runs with no Landlock ruleset installed,
+	// so it is unbounded and prompts — the sandbox must be credited
+	// only when it is actually enforced.
+	promptCalled = false
+	if !decide(RunShell{}, `{"command": "ls"}`) || !promptCalled {
+		t.Error("shell call without an active sandbox must prompt in ask mode")
+	}
+}
+
+func TestShellEscaped(t *testing.T) {
+	if !ShellEscaped(`{"command": "ls", "sandbox": false}`) {
+		t.Error(`{"sandbox": false} must read as an escape`)
+	}
+	if ShellEscaped(`{"command": "ls", "sandbox": true}`) {
+		t.Error(`{"sandbox": true} is sandboxed`)
+	}
+	if ShellEscaped(`{"command": "ls"}`) {
+		t.Error("absent sandbox means sandboxed (the default)")
+	}
+	if !ShellEscaped(`not json`) {
+		t.Error("unparsable args read as an escape — fail closed")
 	}
 }
 
 func TestModeAllowsTool(t *testing.T) {
-	read := ReadFile{}
-	write := WriteFile{}
-
-	for _, mode := range []string{ModeAskEveryTime, ModeAutoAcceptSafe, ModeFullAuto, "unknown"} {
-		if !ModeAllowsTool(mode, write) {
-			t.Errorf("mode %s must still offer action tools to the model", mode)
+	// Phase 30: offering is not permission. Every mode offers every
+	// tier; the gate is the single enforcement point.
+	tools := []Tool{ReadFile{}, ListDir{}, WriteFile{}, EditFile{}, RunShell{}}
+	for _, mode := range append(append([]string{}, Modes...), "unknown") {
+		for _, tool := range tools {
+			if !ModeAllowsTool(mode, tool) {
+				t.Errorf("mode %s must offer %s — the gate, not the tool list, is the posture", mode, tool.Name())
+			}
 		}
-		if !ModeAllowsTool(mode, read) {
-			t.Errorf("mode %s must offer read tools", mode)
-		}
-	}
-	if ModeAllowsTool(ModeReadOnly, write) {
-		t.Error("read-only mode must not offer action-tier tools at all")
-	}
-	if !ModeAllowsTool(ModeReadOnly, read) {
-		t.Error("read-only mode must offer read-tier tools")
-	}
-	// list_dir is read-tier: read-only and plan modes can explore
-	// project structure, not just read files they already know.
-	if !ModeAllowsTool(ModeReadOnly, ListDir{}) {
-		t.Error("read-only mode must offer list_dir")
-	}
-	if !ModeAllowsTool(ModePlan, ListDir{}) {
-		t.Error("plan mode must offer list_dir")
 	}
 }
 
 func TestModeInstructionAndNormalization(t *testing.T) {
-	if NormalizeMode("ask") != ModeAskEveryTime {
-		t.Error(`"ask" must normalize to ask-every-time`)
+	if NormalizeMode("ask") != ModeAsk {
+		t.Error(`"ask" is the canonical spelling`)
 	}
 	for _, mode := range Modes {
 		if !ValidMode(mode) {
@@ -141,18 +216,17 @@ func TestModeInstructionAndNormalization(t *testing.T) {
 }
 
 func TestLegacyModeAliases(t *testing.T) {
-	// The removed fourth mode and the Phase 1 spelling must keep old
-	// configs working — always toward the more restrictive posture.
-	if m := NormalizeMode(ModeAutoAcceptSafe); m != ModeAskEveryTime {
-		t.Errorf("auto-accept-safe-ops = %q, want ask-every-time", m)
-	}
-	if m := NormalizeMode("ask"); m != ModeAskEveryTime {
-		t.Errorf("ask = %q, want ask-every-time", m)
+	// The Phase 2 spelling and the removed fourth mode must keep old
+	// configs working, mapping onto ask.
+	for _, legacy := range []string{ModeAskEveryTime, ModeAutoAcceptSafe} {
+		if m := NormalizeMode(legacy); m != ModeAsk {
+			t.Errorf("%s = %q, want ask", legacy, m)
+		}
 	}
 	if ValidMode(ModeAutoAcceptSafe) {
 		t.Error("auto-accept-safe-ops is not a real mode anymore")
 	}
 	if len(Modes) != 4 {
-		t.Errorf("Modes = %v, want exactly four (read-only, plan, ask-every-time, full-auto)", Modes)
+		t.Errorf("Modes = %v, want exactly four (read-only, plan, ask, full-auto)", Modes)
 	}
 }

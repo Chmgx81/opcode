@@ -83,7 +83,7 @@ exceeds the terminal; the dialog/composer tail is never trimmed.
 
 ```
    ▄▄▄▄▄▄▄      ~ tilde v0.2.1
-▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · ask-every-time
+▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · ask
 ▀▀         ▀███▄  /home/you/project
                ▀█▄▄▄▄▄▄▄█▀
                  ▀▀▀▀▀▀▀
@@ -117,7 +117,7 @@ I'll add a token-bucket limiter on the route.               ← assistant prose 
 ──────────────────────────────────────────────────────────  ← rule, border color (amber in shell mode)
 ~ ask tilde anything…                                        ← the input, brand ~ prompt
 ──────────────────────────────────────────────────────────  ← rule
-› ask-every-time (tab to cycle)   ? for shortcuts · / commands
+› ask (tab to cycle)   ? for shortcuts · / commands
 ```
 
 Full-width rules frame the input — the findable frame without a

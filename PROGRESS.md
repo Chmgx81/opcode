@@ -1900,3 +1900,50 @@ no permission dialog. Pinned by TestListDir (entries, dir markers,
 empty dir, file-as-path and missing-path errors),
 TestListDirCapsHugeDirectories, and list_dir rows in TestToolTiers
 and TestModeAllowsTool.
+
+# The sandbox-aware gate (status: complete, live-verified)
+
+Phase 30 adopts Codex's core permission posture, verified in the
+codex-rs sources: the sandbox is the safety, approval is the
+exception. Until now ask mode prompted for every action call — even
+ones the Landlock sandbox already confined — and read-only/plan hid
+the action tools entirely, so the model couldn't even propose a
+write.
+
+The changes: ask-every-time is renamed to ask (its posture no longer
+asks every time; the name must not lie) with NormalizeMode mapping
+the old spellings so every config keeps working. Offering is not
+permission: every mode now offers every tier, and the gate is the
+single enforcement point. run_shell gained a real {"sandbox": false}
+opt-out — the README claimed it since Phase 21; it exists now, and
+it is the approval-triggering escape. In ask mode, bounded actions
+run without prompting: Landlock-confined shell commands (credited
+only when sandbox.Active() — where Landlock is unavailable every
+action prompts, never auto-runs a command it cannot confine) and
+write_file/edit_file targets inside the same writable roots, with
+the parent's symlinks resolved first so a lexical in-tree path
+pointing outside still asks. read-only and plan prompt for every
+action-tier call: the model can propose a write and the user
+approves it in place, no mode switch. The config safe_commands
+allowlist is removed — sandboxed commands auto-run in ask mode, so
+a per-command allowlist had nothing left to do; the session "don't
+ask again" grants survive (they cover escapes). The approval dialog
+names an escape for what it is ("Runs a command without the
+sandbox").
+
+Honest scope notes: headless in ask mode now runs bounded actions
+where it used to fail closed on everything — escapes still fail
+closed; spec'd in phase30-sandbox-gate.md. read-only shell commands
+prompt rather than running under a per-call empty ruleset (Codex's
+read-only sandbox) — that refinement is not built; noted in the
+phase spec's non-goals.
+
+Verified live in PTYs against scripted fixtures: ask mode ran a
+sandboxed echo>file with no dialog, then a {"sandbox": false} call
+opened exactly one dialog (named as an escape), approved, and ran;
+read-only mode proposed a write_file, the dialog appeared, approval
+wrote the file — no mode switch. Unit tests: the new decision
+matrix, bounded/escaping shell and write paths, the symlink
+resolution, the no-sandbox fail-closed, mode offering, legacy
+aliases, plus a headless bounded-write test. Full suite green
+across all 12 packages.

@@ -27,10 +27,6 @@ type Config struct {
 	// Animations disables animated UI (spinner, toast glyph burst)
 	// when false. Nil/absent means animated — the default.
 	Animations *bool `json:"animations"`
-	// SafeCommands are shell command prefixes that run without
-	// prompting even in ask mode (token-wise prefix match; see
-	// tools.ShellAllowlist). Empty means every shell call prompts.
-	SafeCommands []string `json:"safe_commands"`
 	// ContextWindow is the model's context size in tokens; 0 (the
 	// default) disables compaction. CompactionModel optionally names a
 	// cheaper model for the summarizer round (empty = the main model).
@@ -83,7 +79,7 @@ func LoadConfig(dir string) (Config, error) {
 	// at load time, not silently behave like something permissive.
 	cfg.PermissionMode = tools.NormalizeMode(cfg.PermissionMode)
 	if !tools.ValidMode(cfg.PermissionMode) {
-		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, plan, ask-every-time, full-auto; legacy: ask, auto-accept-safe-ops)",
+		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, plan, ask, full-auto; legacy: ask-every-time, auto-accept-safe-ops)",
 			cfg.PermissionMode)
 	}
 	return cfg, nil
