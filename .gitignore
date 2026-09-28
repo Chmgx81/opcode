@@ -1,0 +1,5 @@
+# built binary
+/tilde
+
+# editor/os noise
+.DS_Store
