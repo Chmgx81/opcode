@@ -24,7 +24,8 @@ jobs:
             ext=""
             if [ "$os" = "windows" ]; then ext=".exe"; name="${name}.exe"; fi
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
-              -trimpath -ldflags="-s -w" -o "dist/${name}" ./cmd/tilde
+              -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "dist/${name}" ./cmd/tilde
             if [ "$os" = "windows" ]; then
               (cd dist && zip -q "${name}.zip" "${name}" && rm "${name}")
             else

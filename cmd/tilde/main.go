@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/Chmgx81/tilde/internal/config"
@@ -39,7 +40,13 @@ func run() error {
 	jsonOut := flag.Bool("json", false, "headless: emit one JSON event object per line")
 	resume := flag.String("resume", "", "resume the session at this path")
 	cont := flag.Bool("continue", false, "resume the latest session")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("tilde %s\n", buildVersion())
+		return nil
+	}
 
 	userDir, err := config.UserDir()
 	if err != nil {
@@ -359,6 +366,23 @@ func run() error {
 	runErr := tui.Run(ui)
 	saveSession()
 	return runErr
+}
+
+// version is overridable at link time by the release pipeline
+// (-ldflags "-X main.version=v0.2.0"); a source build reports (devel).
+var version = "(devel)"
+
+// buildVersion prefers the linked-in version, then the module version
+// the toolchain recorded (go install sets it), then (devel).
+func buildVersion() string {
+	if version != "(devel)" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" &&
+		bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return version
 }
 
 func systemPrompt(userDir, cwd string) string {
