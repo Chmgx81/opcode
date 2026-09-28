@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // View implements tea.Model: identity block and timeline, a working
@@ -40,7 +42,52 @@ func (m *Model) timelineView() []string {
 		out = append(out, "")
 		out = append(out, m.renderStream(s, m.termWidth())...)
 	}
+	// The live task list — state at the tail, not history.
+	if len(m.todos) > 0 {
+		out = append(out, "")
+		out = append(out, m.todosView()...)
+	}
 	return collapseBlanks(out)
+}
+
+// todosView renders the model's live task list: a count header, then
+// the items — ✓ done, ▸ in progress, · pending — windowed so a long
+// list cannot eat the screen.
+func (m *Model) todosView() []string {
+	done := 0
+	for _, it := range m.todos {
+		if it.Status == tools.TodoDone {
+			done++
+		}
+	}
+	head := accentStyle.Render(GlyphBullet+" tasks") +
+		dimStyle.Render(fmt.Sprintf(" (%d/%d done)", done, len(m.todos)))
+	out := []string{head}
+
+	const rows = 8
+	shown, extra := m.todos, 0
+	if len(shown) > rows {
+		// Prioritize the live work: everything up to the in-progress
+		// item plus what follows, capped at the window.
+		cut := len(shown) - rows
+		shown, extra = shown[cut:], cut
+	}
+	for _, it := range shown {
+		var marker, text string
+		switch it.Status {
+		case tools.TodoDone:
+			marker, text = okStyle.Render(GlyphOK), dimStyle.Render(it.Content)
+		case tools.TodoInProgress:
+			marker, text = accentStyle.Render(GlyphDoing), it.Content
+		default:
+			marker, text = dimStyle.Render("·"), dimStyle.Render(it.Content)
+		}
+		out = append(out, "  "+marker+" "+text)
+	}
+	if extra > 0 {
+		out = append(out, dimStyle.Render(fmt.Sprintf("  … %d earlier tasks", extra)))
+	}
+	return out
 }
 
 // collapseBlanks trims runs of blank lines to a single blank and drops

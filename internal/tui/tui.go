@@ -204,6 +204,10 @@ type Model struct {
 	stream  strings.Builder
 	login   *loginFlow
 
+	// todos is the model's live task list (rendered as a panel at
+	// the transcript tail — state, not history).
+	todos []tools.Todo
+
 	// streamRendered caches the in-flight stream's markdown render
 	// (invalidated by content length or width) so View's per-frame
 	// pass costs nothing.
@@ -276,6 +280,9 @@ type editorDoneMsg struct {
 	path string
 	err  error
 }
+
+// todoMsg carries the model's current task list to the tea program.
+type todoMsg []tools.Todo
 
 func toastTick() tea.Cmd {
 	return tea.Tick(90*time.Millisecond, func(t time.Time) tea.Msg {
@@ -506,6 +513,16 @@ func (m *Model) showAnimatedToast(text string) tea.Cmd {
 	}
 	m.toastAnim = 0
 	return nil
+}
+
+// TodosChanged returns the callback tools.TodoList notifies through;
+// it delivers a copy of the list to the tea program.
+func (m *Model) TodosChanged() func(items []tools.Todo) {
+	return func(items []tools.Todo) {
+		if m.program != nil {
+			m.program.Send(todoMsg(items))
+		}
+	}
 }
 
 // SubagentSink returns the function the subagent wiring uses to report

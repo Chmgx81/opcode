@@ -1403,3 +1403,35 @@ func TestExternalEditorFlow(t *testing.T) {
 		t.Error("ctrl+e must not open an editor mid-turn")
 	}
 }
+
+func TestTodosPanelRenders(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	m.Update(todoMsg([]tools.Todo{
+		{Content: "read the config", Status: tools.TodoDone},
+		{Content: "fix the auth bug", Status: tools.TodoInProgress},
+		{Content: "write tests", Status: tools.TodoPending},
+	}))
+	view := stripANSI(m.View())
+	for _, want := range []string{"tasks (1/3 done)", "✓ read the config", "▸ fix the auth bug", "· write tests"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("panel missing %q:\n%s", want, view)
+		}
+	}
+
+	// The window: a long list shows the live tail, not the first rows.
+	var items []tools.Todo
+	for i := 0; i < 12; i++ {
+		items = append(items, tools.Todo{Content: "task", Status: tools.TodoDone})
+	}
+	items[11].Status = tools.TodoInProgress
+	m.Update(todoMsg(items))
+	view = stripANSI(m.View())
+	if !strings.Contains(view, "4 earlier tasks") {
+		t.Errorf("window note missing:\n%s", view)
+	}
+	if strings.Count(view, "✓ task") > 8 {
+		t.Error("window must cap the rendered rows")
+	}
+}

@@ -69,6 +69,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorDoneMsg:
 		return m, m.editorFinished(msg)
 
+	case todoMsg:
+		m.todos = msg
+		return m, nil
+
 	case orchestratorMsg:
 		return m.handleEvent(orchestrator.Event(msg)), nil
 

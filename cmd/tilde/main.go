@@ -227,6 +227,12 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	planTool := &tools.PresentPlan{}
 	registry.Register(planTool)
 
+	// todo_write (Draft-Only): the model's live task list. The shared
+	// state's OnChange is wired after the UI exists; headless keeps it
+	// nil (state updates, nothing to repaint).
+	todoList := &tools.TodoList{}
+	registry.Register(tools.TodoWrite{List: todoList})
+
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
 	orch.SkillsIndex = skillManager.Index()
@@ -403,6 +409,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// surface in the TUI and block the orchestrator until answered.
 	gate.Decide = tools.ShellPolicyDecide(cfg.PermissionMode, ui.Prompt(), shellAllow)
 	planTool.Approve = ui.PlanApprove()
+	todoList.OnChange = ui.TodosChanged()
 
 	// Subagent progress flows into the transcript as labeled lines.
 	sink := ui.SubagentSink()

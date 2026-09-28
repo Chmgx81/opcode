@@ -1165,3 +1165,50 @@ Borrow list items 4 and the accessibility seed, from the Codex audit.
 OSC 8 hyperlinks (glamour emits no link anchors to post-process — a
 fragile hack, not built on purpose). The borrow list is otherwise
 exhausted.
+
+---
+
+# Phase 18 — Todos (status: complete, live-verified)
+
+Spec: [docs/specs/phase18-todos.md](docs/specs/phase18-todos.md)
+
+## Built
+
+- **`todo_write`** (Draft-Only — updating a plan changes nothing):
+  full-replacement semantics; the model sends the complete list every
+  update, so there is nothing to merge, no IDs, no stale state.
+  Items: content + pending/in_progress/done. Validation: empty lists
+  and empty contents error, unknown statuses error, and a 50-item
+  bound rejects a list that stopped being a plan. The description
+  carries the contract (3+ steps, one in_progress, full list) — no
+  system-prompt bloat.
+- **Shared state with an observer**: tools.TodoList (mutex'd) owned by
+  main; the TUI sets OnChange to a tea.Msg sender (bubbletea only
+  paints on messages, so the notify must Send); headless leaves it
+  nil. OnChange receives a copy, never the shared slice — pinned by
+  a test that mutates the notification and asserts state integrity.
+- **The live panel**: rendered at the transcript tail whenever the
+  list is non-empty — state, not history, like the mode line. Header
+  `● tasks (1/2 done)`; items `✓ done`, `▸ in progress`, `· pending`
+  (a new glyph joins the vocabulary); windowed to the live tail with
+  an "… N earlier tasks" note. The tool result reports the summary so
+  the model sees what the user sees.
+
+## Verified for real
+
+- All eleven packages; new tests: tool validation matrix and the
+  copy-not-shared-slice guarantee; panel rendering (all three glyphs,
+  counts, windowing cap).
+- **PTY, live**: a scripted model called todo_write twice mid-turn —
+  the panel showed `▸` on the live item after the first call and
+  `✓/▸` with updated counts after the second, the tool calls sat in
+  the timeline, and the turn completed.
+
+## Phase 18 assumptions
+
+1. The list is session state, not persisted — sessions store
+   conversation, and a stale cross-session list would lie.
+2. Full-replacement over incremental updates: the model is the only
+   writer, and Claude Code's contract is proven at scale.
+3. The tail window keeps the in-progress item visible; a 50-item list
+   is rejected rather than rendered.
