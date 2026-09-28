@@ -31,8 +31,9 @@ echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.tilde/config.json   # 1. an
 tilde                                                                   # 2. run it in a project
 ```
 
-No key yet? Start tilde and run `/login` (masked input, takes effect
-immediately; `/login <provider>` stores a key for another provider).
+No key yet? Start tilde and run `/login` — it lists every provider to
+configure; `/login <provider>` skips the picker. Keys are masked,
+stored 0600, and take effect immediately.
 ## Providers
 
 Built in — name one in models.json and it works:
@@ -116,7 +117,10 @@ executable where your shell will find it.
 | **Ctrl+R** | expand / collapse tool results & thinking |
 | **?** | everything else |
 
-`/model` switches models at runtime. `/sessions` resumes one.
+`/model` switches models at runtime. `/models` browses every
+provider's models — fetched live from the provider, never a cached
+list — and switching provider + model applies without a restart.
+`/sessions` resumes one.
 Typing `@` opens a live file picker (type to filter, enter to attach);
 `!` turns the composer amber — shell mode, Enter runs it directly, no
 model round trip. Big pastes collapse to a token.

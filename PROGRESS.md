@@ -1567,3 +1567,56 @@ Spec: [docs/specs/phase25-providers.md](docs/specs/phase25-providers.md)
    remaining honest check.
 2. Bare model names (e.g. `claude-sonnet-4.5`) are the user's to
    set; per-provider model catalogs are future work.
+
+# Phase 26 — Live model catalog, /login + /models pickers (status: complete, live-verified)
+
+Spec: [docs/specs/phase26-model-catalog.md](docs/specs/phase26-model-catalog.md)
+
+## Built
+
+- **The abstraction** (`internal/llm/models.go`):
+  `FetchModels(ctx, api, baseURL, key)` — both wire shapes:
+  OpenAI-compatible `GET {base}/models` (Bearer) and Anthropic's
+  `GET {base}/v1/models` (x-api-key, `display_name` carried). Sorted
+  by id; every browse is a fresh fetch, so the list is accurate, not
+  a hardcoded snapshot.
+- **`/models`**: step 1 lists every provider — the catalog plus
+  models.json customs, each row honest about whether its models can
+  be fetched right now ("enter to browse models" vs "no key —
+  /login <name>"; local servers need no key). Selecting fetches
+  off the UI goroutine; arrival opens the model picker (a stale
+  arrival — the user moved on — is a dim note, never a surprise
+  picker); selecting a model switches provider + model through the
+  existing rebuild (main's switchModel now falls back to the catalog
+  for providers models.json doesn't list; the TUI refreshes its
+  BaseURL/API state so a later /login re-key keeps the protocol).
+- **`/login`** (bare): the same provider list as its picker;
+  selecting starts the masked key capture. `/login <provider>`
+  unchanged.
+- **Wiring**: Options gains `KeyFor` (the credential chain, injected
+  from main); picker items carry their own action ("fetch" /
+  "login") because the picker closes before selection dispatches —
+  and pickerSelect returns a Cmd so the fetch actually starts.
+
+## Verified for real
+
+- All twelve packages; new tests: both fetch wire shapes, the
+  provider picker's contents and key hints, arrival → model picker →
+  switchModel routing, error and stale-arrival handling, the login
+  picker starting the masked flow, and the fetch seam. Existing
+  login tests moved to the explicit form (bare /login now opens the
+  picker — the moved tests still assert the same flow).
+- **PTY, live**: a fixture serving `/v1/models` + chat — `/models`
+  opened the provider picker, filtered to the fixture, fetched its
+  model list, switched to the fetched model, and the next turn
+  answered on it ("round trip on the switched model" in the log).
+  (An earlier all-empty result was a fixture bug — a NameError in
+  its POST handler — not a product bug; found by probing the
+  fixture directly.)
+
+## Phase 26 assumptions
+
+1. Model metadata stays id/display-name; pricing and context windows
+   come when a provider's models endpoint justifies them.
+2. Two-step browse (provider → models) over a parallel fetch-all:
+   the latter needs a key for every provider and fires 15 requests.
