@@ -226,8 +226,15 @@ var commands = []command{
 func New(opt Options) *Model {
 	ta := textarea.New()
 	ta.Placeholder = "ask tilde anything…"
-	// The placeholder must read as a hint, not as typed text: dim it
-	// with the design token, not the textarea's brighter default.
+	// Strip the textarea's stock look, which reads as a highlight: the
+	// default focused CursorLine paints a black background rectangle
+	// (visible on any terminal whose floor isn't pure #000000), and the
+	// stock prompt is bright white. The placeholder itself is a hint
+	// and dims with the design token.
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Prompt = accentStyle
+	ta.BlurredStyle.Prompt = accentStyle
 	ta.FocusedStyle.Placeholder = dimStyle
 	ta.BlurredStyle.Placeholder = dimStyle
 	ta.Prompt = GlyphPrompt + " "
