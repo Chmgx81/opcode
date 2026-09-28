@@ -1552,3 +1552,56 @@ func TestLoginLogoutNamedProvider(t *testing.T) {
 		t.Errorf("named logout entry missing: %s", tr)
 	}
 }
+
+// TestBlockBreathingSpace pins the spacing rhythm: a blank line
+// before user turns, answers, tool groups, and reasoning receipts —
+// but never between an action and its own result, nor inside a run
+// of tool calls.
+func TestBlockBreathingSpace(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.entries = []entry{
+		{kind: entryUser, text: "do it"},
+		{kind: entryTool, tool: "read_file"},
+		{kind: entryResult, tool: "read_file"},
+		{kind: entryResult, tool: "read_file"}, // second result stays tight
+		{kind: entryTool, tool: "run_shell"},   // same tool group: no blank
+		{kind: entryAssistant, text: "done"},
+		{kind: entryReasoning, text: "hm", dur: "1s"},
+		{kind: entryUser, text: "next"},
+	}
+	lines := m.timelineView()
+	blankAfter := func(i int) bool { return i+1 < len(lines) && strings.TrimSpace(stripANSI(lines[i+1])) == "" }
+	// Locate markers in the rendered lines.
+	find := func(substr string) int {
+		for i, l := range lines {
+			if strings.Contains(stripANSI(l), substr) {
+				return i
+			}
+		}
+		return -1
+	}
+	user1 := find("do it")
+	tool1 := find("read_file")
+	ans := find("done")
+	think := find("thought for")
+	user2 := find("next")
+	if user1 < 0 || tool1 < 0 || ans < 0 || think < 0 || user2 < 0 {
+		t.Fatalf("markers missing:\n%s", strings.Join(lines, "\n"))
+	}
+	// The user turn opens a block: blank after its line.
+	if !blankAfter(user1) {
+		t.Errorf("no blank between user block and the tool group:\n%s", strings.Join(lines, "\n"))
+	}
+	// Inside the tool group: action and results are tight.
+	if blankAfter(tool1) {
+		t.Errorf("blank inside the tool group (action → result must be tight):\n%s", strings.Join(lines, "\n"))
+	}
+	// Answers and reasoning receipts open blocks.
+	if !blankAfter(ans) {
+		t.Errorf("no blank before the reasoning receipt:\n%s", strings.Join(lines, "\n"))
+	}
+	if !blankAfter(think) {
+		t.Errorf("no blank between the receipt and the next user turn:\n%s", strings.Join(lines, "\n"))
+	}
+}
