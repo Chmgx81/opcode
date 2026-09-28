@@ -568,6 +568,17 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   response rendered as styled markdown — bullet, code panel, no raw
   fence markers left.
 
+## Found and fixed during verification
+
+- **Composer wrapped at 40 columns on any terminal** (user-reported
+  from a live run): bubbles' textarea defaults its internal wrap width
+  to 40 and never saw the terminal size, so the placeholder spilled
+  onto two lines and long typed lines would have wrapped at 40 too.
+  The composer now sizes itself from WindowSizeMsg (terminal minus box
+  chrome minus prompt), and the placeholder was shortened to fit a
+  60-column terminal. Regression test pins both: composer width after
+  a resize event, and the placeholder unwrapped at width 70.
+
 ## Phase 8 assumptions
 
 1. Model switching is refused mid-turn rather than racing an in-flight
