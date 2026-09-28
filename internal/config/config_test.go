@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 func writeFile(t *testing.T, path, content string, mode os.FileMode) {
@@ -116,5 +116,29 @@ func TestLoadConfigModeNormalizationAndValidation(t *testing.T) {
 		`{"model": "m", "permission_mode": "yolo"}`, 0o600)
 	if _, err := LoadConfig(dir); err == nil {
 		t.Error("unknown mode must fail at load time, not fail open later")
+	}
+}
+
+func TestLoadConfigCompactionKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.json"),
+		`{"model": "m", "context_window": 128000, "compaction_model": "cheap/sum"}`, 0o600)
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.ContextWindow != 128000 || cfg.CompactionModel != "cheap/sum" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	// Default is 0 (disabled).
+	writeFile(t, filepath.Join(dir, "config.json"), `{"model": "m"}`, 0o600)
+	cfg, err = LoadConfig(dir)
+	if err != nil || cfg.ContextWindow != 0 {
+		t.Errorf("default context_window = %d err = %v", cfg.ContextWindow, err)
+	}
+	// Negative is rejected loudly.
+	writeFile(t, filepath.Join(dir, "config.json"), `{"model": "m", "context_window": -5}`, 0o600)
+	if _, err := LoadConfig(dir); err == nil {
+		t.Error("negative context_window must fail at load")
 	}
 }
