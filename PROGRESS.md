@@ -1749,3 +1749,31 @@ The reference screenshot's layout, applied literally.
    selection, where it already lives.
 2. The header's first line can fall to frame-fitting trim on very
    short terminals — everything scrolls anyway.
+
+# Codex source audit (status: complete — reference docs)
+
+Three parallel subagent audits of the Codex CLI source tree
+(/home/chmgx81/Desktop/codex, ~100 crates, ~4,900 Rust files),
+preserved as reference docs:
+
+- docs/reference/codex-tui-audit.md — the TUI: rendering model
+  (inline scrollback as persistence layer, two-region streaming
+  with table holdback, pointer-keyed transcript anchors), the
+  full default keymap, terminal probing, accessibility, and the
+  bottom-pane/app architecture. Static audit; nothing executed.
+- docs/reference/codex-core-audit.md — the session/turn
+  lifecycle, the Op/event protocol, tool exposure lattice,
+  approvals, compaction (three implementations, one lifecycle),
+  world-state assembly, and the config schema.
+- docs/reference/codex-features-audit.md — everything outside
+  tui/core: the sandbox stack (bwrap+seccomp, Seatbelt, Windows
+  restricted token, network policy proxy with MITM), MCP+OAuth,
+  app-server protocol, hooks, skills/plugins, Guardian, the
+  daemon, and the CLI surface.
+- docs/reference/codex-adoption.md — the synthesis: what tilde
+  adopts (prioritized, honest scoping), what it deliberately
+  does not, and a sequencing suggestion. Top of the list:
+  canonicalized approval matching, sandbox-denial readability,
+  a reasoning-effort knob, /doctor, composer history, and the
+  inline scrollback + block-commit streaming phase the TUI/UX
+  spec already mandates.
