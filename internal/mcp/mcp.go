@@ -17,7 +17,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -209,8 +208,9 @@ func (c *Client) start(ctx context.Context) error {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	// Own process group: a hung server is killed with its children,
-	// and the TUI's Ctrl+C never reaches it directly.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// and the TUI's Ctrl+C never reaches it directly. (No-op on
+	// Windows; see procsys_windows.go.)
+	setProcGroup(cmd)
 	// Servers log to stderr; Phase 4 has no debug view, so discard it.
 	cmd.Stderr = nil
 
@@ -413,10 +413,10 @@ func (c *Client) stopLocked() error {
 	if c.stdin != nil {
 		_ = c.stdin.Close()
 	}
-	// Negative pid: kill the whole group (Setpgid put the server in
-	// its own group).
+	// Kill the whole process group (Setpgid put the server in its own
+	// group; a no-op on Windows).
 	if c.cmd.Process != nil {
-		_ = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
+		killProcGroup(c.cmd.Process.Pid)
 	}
 	err := c.cmd.Wait()
 	c.cmd = nil
