@@ -153,3 +153,52 @@ func runKeyCommand(command string) (string, error) {
 	}
 	return key, nil
 }
+
+// WriteAuthKey stores a provider credential in the user-level auth.json,
+// creating the directory (0700) and file (0600) per Section 3.10. Other
+// providers' entries are preserved. /login in the TUI writes through
+// here so a user never has to hand-edit JSON.
+func WriteAuthKey(dir, provider, key string) error {
+	auth, _, err := LoadAuth(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if auth == nil {
+		auth = AuthConfig{}
+	}
+	auth[provider] = key
+	if err := os.MkdirAll(dir, authDirMode); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	if err := os.Chmod(dir, authDirMode); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(auth, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "auth.json"), data, authFileMode)
+}
+
+// RemoveAuthKey deletes one provider's stored credential. It reports
+// whether anything was actually there, so /logout can say so plainly
+// instead of pretending. This only touches what tilde stored: it does
+// not unset environment variables or revoke anything at the provider.
+func RemoveAuthKey(dir, provider string) (bool, error) {
+	auth, _, err := LoadAuth(dir)
+	if err != nil {
+		return false, err
+	}
+	if auth == nil {
+		return false, nil
+	}
+	if _, ok := auth[provider]; !ok {
+		return false, nil
+	}
+	delete(auth, provider)
+	data, err := json.MarshalIndent(auth, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(filepath.Join(dir, "auth.json"), data, authFileMode)
+}
