@@ -31,12 +31,19 @@ func (m *Model) View() string {
 // what glamour or the greeting emit around them.
 func (m *Model) timelineView() []string {
 	var out []string
+	// Breathing space: one blank line before every top-level block —
+	// a user turn, an answer, a tool group, a receipt — while an
+	// action and its own result stay tight. collapseBlanks trims any
+	// doubling, so entries may be added freely.
+	prevKind := entryKind(-1)
+	prevSub := ""
 	for i := range m.entries {
 		e := &m.entries[i]
-		if e.kind == entryUser || e.kind == entryAssistant || e.kind == entryPlan {
+		if blankBefore(e, prevKind, prevSub) {
 			out = append(out, "")
 		}
 		out = append(out, m.renderEntry(e)...)
+		prevKind, prevSub = e.kind, e.subTitle
 	}
 	// In-flight assistant text: rendered as markdown live, identical
 	// to what the flushed entry will show.
@@ -56,6 +63,24 @@ func (m *Model) timelineView() []string {
 		out = append(out, m.reasoningLiveView()...)
 	}
 	return collapseBlanks(out)
+}
+
+// blankBefore decides whether a blank line separates this entry
+// from the previous one. The rhythm: user turns, answers, plans,
+// reasoning receipts, and compaction notes open fresh blocks; a
+// tool group opens one when it follows anything but tool activity;
+// subagent lines group by title. Results never add space above
+// themselves — they belong to the action above them.
+func blankBefore(e *entry, prev entryKind, prevSub string) bool {
+	switch e.kind {
+	case entryUser, entryAssistant, entryPlan, entryReasoning, entryCompaction:
+		return true
+	case entryTool:
+		return prev != entryTool && prev != entryResult
+	case entrySubagent:
+		return prev != entrySubagent || prevSub != e.subTitle
+	}
+	return false
 }
 
 // reasoningLiveView shows the thinking stream as a dim italic tail —

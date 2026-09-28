@@ -1788,3 +1788,17 @@ with a mockup, keys, behavior rules — plus the short honest
 "not yet built" list. Earlier log entries above still cite the
 old filenames; both point there now. Codex's handling of every
 one of these sections lives in docs/reference/codex-*.md.
+
+# Breathing space (status: complete, live-verified)
+
+The transcript gets the reference products' spacing rhythm, in
+blankBefore: one blank line before every top-level block — user
+turns, answers, plans, reasoning receipts, compaction notes, tool
+groups (when they follow anything but tool activity), and subagent
+groups (by title) — while an action and its own result stay tight,
+as do consecutive calls inside one tool group. collapseBlanks
+keeps the rhythm from doubling. Pinned by
+TestBlockBreathingSpace (block opens get air, action → result is
+tight); PTY shows the blank lines between assistant text, the
+tool group, and the dialog. The spec's Behavior rules now state
+the rhythm.

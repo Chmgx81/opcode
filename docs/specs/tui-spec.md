@@ -199,6 +199,13 @@ Slash commands: `/help /models /model /mode /skills /mcp
 
 ## 5. Behavior rules that matter
 
+**Breathing space.** One blank line before every top-level block: a
+user turn, an answer, a tool group, a reasoning receipt, a
+compaction note, the todo panel. Zero inside a block — an action
+and its `⎿` result stay tight, and consecutive tool calls in one
+group stay tight. `collapseBlanks` guarantees the rhythm never
+doubles, so entries can be appended freely.
+
 - **Paste** collapses ≥ 4 lines / ~1000 chars to a `[paste N]`
   token; content re-expands on submit. A paste never submits.
 - **Images** ride as `[Image #N]` tokens; sent as multimodal
