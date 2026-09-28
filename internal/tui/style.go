@@ -2,25 +2,39 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Design tokens — tilde's own identity. The brand is a deep-forest
-// green stack (not Claude's coral): one electric green for action and
-// attention, a grounded green for secondary accents, two dark greens
-// for panels and depth, near-black for the terminal floor. Everything
-// the UI renders pulls from here so the look stays consistent and
-// swappable in one place.
-var (
-	// Brand greens.
-	Accent  = lipgloss.Color("#16DB65") // electric green: prompts, active markers
-	Accent2 = lipgloss.Color("#058C42") // grounded green: secondary emphasis
-	Deep    = lipgloss.Color("#04471C") // deep forest: panel borders
-	Deep2   = lipgloss.Color("#0D2818") // darkest green: subtle fills
-	Floor   = lipgloss.Color("#020202") // terminal floor
+// Palette — tilde's identity in one place. The brand is an ice-cyan
+// stack: one electric cyan for action and attention, a grounded deep
+// cyan for secondary accents, two dark teals for panels and depth, and
+// the near-black terminal floor. Every rendered color (UI, markdown,
+// diffs) pulls from these constants so the look stays consistent and
+// swappable here.
+const (
+	HexAccent  = "#22D3EE" // electric cyan: prompts, active markers
+	HexAccent2 = "#0891B2" // grounded cyan: secondary emphasis
+	HexDeep    = "#0B3A47" // dark teal: panel borders
+	HexDeep2   = "#06222B" // darkest teal: subtle fills
+	HexFloor   = "#020202" // terminal floor
+	HexText    = "#E6F2F5" // near-white body text (cool-tinted)
 
 	// Semantic colors.
-	Danger  = lipgloss.Color("#F87171") // errors, denials
-	Warning = lipgloss.Color("#FBBF24") // caution, truncation
-	Info    = lipgloss.Color("#7DD3FC") // neutral notices
-	Dim     = lipgloss.Color("#5B6B60") // muted text, hints (green-tinted gray)
+	HexDanger  = "#F87171" // errors, denials, removals
+	HexWarning = "#FBBF24" // caution, truncation, numbers
+	HexInfo    = "#93C5FD" // neutral notices, links
+	HexDim     = "#7A8B94" // muted text, hints (cool gray)
+)
+
+// Design tokens derived from the palette.
+var (
+	Accent  = lipgloss.Color(HexAccent)
+	Accent2 = lipgloss.Color(HexAccent2)
+	Deep    = lipgloss.Color(HexDeep)
+	Deep2   = lipgloss.Color(HexDeep2)
+	Floor   = lipgloss.Color(HexFloor)
+
+	Danger  = lipgloss.Color(HexDanger)
+	Warning = lipgloss.Color(HexWarning)
+	Info    = lipgloss.Color(HexInfo)
+	Dim     = lipgloss.Color(HexDim)
 )
 
 // Glyph vocabulary — a small, fixed set so the timeline reads as a
@@ -56,7 +70,7 @@ var (
 	promptStyle   = lipgloss.NewStyle().Foreground(Warning).Bold(true)
 	steerStyle    = warnStyle
 	queuedStyle   = dimStyle
-	toolNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E7EFE9")).Bold(true)
+	toolNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexText)).Bold(true)
 	boldStyle     = lipgloss.NewStyle().Bold(true)
 	codeStyle     = lipgloss.NewStyle().Foreground(Accent2)
 	fenceStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(Deep).Padding(0, 1)

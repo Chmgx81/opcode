@@ -803,3 +803,53 @@ persistent left-column session sidebar.
    matches the reference apps' muscle memory.
 3. The diff highlighter degrades to plain lines for unknown languages
    and on tokenise failure — content is never at risk.
+
+---
+
+# Phase 11 — Toasts Only, Ice-Cyan Palette, Repo Identity (status: complete, live-verified)
+
+## Built
+
+- **Mode switches no longer write transcript lines** (user-reported:
+  tab-mashing stacked a "✓ mode switched" line per keypress). The
+  animated toast announces, the mode line under the composer persists,
+  the transcript stays a conversation. The screenshot's phantom
+  "duplicate" line was the toast rendering with the same ✓ glyph as
+  transcript entries — visually indistinguishable; removing the
+  entries fixed both the spam and the ambiguity.
+- **Logic audit of the switch path found one real bug**: Tab during
+  the /login prompt cycled permission modes while the user typed a
+  secret. Tab/shift+tab are now swallowed in the login flow. The rest
+  checked clean: pickers swallow Tab (filter keys), the allow-all
+  session grant resets on every switch, rebuildGate re-wires the
+  prompt closure, and an unknown current mode fails into ask.
+- **Ice-cyan palette** (user asked to replace the greens): accent
+  #22D3EE (electric cyan), secondary #0891B2, panels #0B3A47 /
+  #06222B, floor unchanged, dim now a cool gray #7A8B94, notices
+  moved to blue #93C5FD so they no longer collide with a cyan accent.
+  The hexes are now named constants in style.go and markdown.go pulls
+  from them — the whole product (UI, markdown, diffs) reskins from
+  one place, which this change exercised end to end.
+- **Repo identity**: About description and ten topics set via gh
+  (coding-agent, terminal, go, llm, ai-agent, tui, bubbletea, cli,
+  mcp, openai).
+
+## Verified for real
+
+- All eleven packages; new assertions: mode switches add nothing to
+  the transcript, and the tab-during-login swallow.
+- PTY: five rapid tabs produced exactly one transient toast (its
+  animation frame and settled frame) and zero persistent lines —
+  versus one permanent line per press before; the mode line landed on
+  read-only and the toast expired.
+- The cyan accent renders live (ANSI256 on xterm-256color); color
+  assertions in the hierarchy/diff tests updated to the new tokens
+  and pass under forced truecolor.
+
+## Phase 11 assumptions
+
+1. The ice-cyan direction is a recommendation, deliberately not the
+   green it replaces and not Claude's coral; one file (style.go)
+   reskins everything if the user wants another family.
+2. Toast lifetime stays 4 seconds; mode switches are still visible in
+   the working-status context because the mode line is always on.

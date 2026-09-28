@@ -480,6 +480,11 @@ func TestTabCyclesModes(t *testing.T) {
 	if m.opt.Mode != tools.ModeAskEveryTime {
 		t.Errorf("second shift+tab = %q, want ask-every-time", m.opt.Mode)
 	}
+	// Mode changes announce via the transient toast only — a line per
+	// keypress buried the conversation (user-reported).
+	if tr := m.transcript(); strings.Contains(tr, "mode switched") {
+		t.Errorf("mode switches must not write transcript lines:\n%s", tr)
+	}
 }
 
 func TestCtrlRTogglesResultExpansion(t *testing.T) {
@@ -818,8 +823,8 @@ func TestTranscriptHierarchy(t *testing.T) {
 	// The placeholder: dim, and carrying no background rectangle — the
 	// textarea's stock focused CursorLine paints one and it reads as a
 	// selection highlight on any terminal whose floor isn't pure black.
-	const dimSGR = "38;2;91;107;96"     // #5B6B60 in truecolor
-	const accentSGR = "38;2;22;219;101" // #16DB65 in truecolor
+	const dimSGR = "38;2;121;139;147"   // HexDim #7A8B94 (termenv rounds one step)
+	const accentSGR = "38;2;34;211;238" // HexAccent #22D3EE in truecolor
 	// The cursor block overlays the placeholder's first character, so
 	// probe for a tail fragment rather than the whole string.
 	view := m.View()
@@ -977,7 +982,7 @@ func TestEditDiffHighlightsSyntax(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	// The keyword keeps its accent color even inside the removed line;
 	// the marker still carries the verdict.
-	if !strings.Contains(joined, "38;2;22;219;101") { // accent #16DB65
+	if !strings.Contains(joined, "38;2;34;211;238") { // HexAccent
 		t.Errorf("keyword not highlighted in the diff:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "func main() {") {
