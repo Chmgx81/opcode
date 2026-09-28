@@ -602,6 +602,19 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   asserts the placeholder line and the user line carry the dim SGR and
   the assistant line does not; PTY run confirmed the same codes live
   (59 for query text, 194/41 for the answer, 59 for the placeholder).
+- **Fourth pass, corrected against the actual reference screenshots**:
+  two reversals of the third pass. (1) The "highlight" on the
+  placeholder was not its foreground at all — it was bubbles' default
+  focused CursorLine painting a black background rectangle over the
+  whole line, visible on any terminal whose floor isn't pure #000000,
+  plus a bright-white stock prompt (color 7). Both focus states now use
+  a clean CursorLine, the accent prompt, and the Dim placeholder — the
+  rectangle is gone entirely. (2) The dim user query was wrong: the
+  reference (Screenshot From 2026-09-28 08-11-31) renders the user
+  message at full weight, no dim. Queries are bright again behind the
+  accent prompt, matching the reference; agent output stays bright.
+  TestTranscriptHierarchy pins all three: dim placeholder with no
+  background SGR, accent+bright query, no dim on the answer.
 
 ## Phase 8 assumptions
 

@@ -814,7 +814,7 @@ func TestComposerGrowsWithContent(t *testing.T) {
 	}
 }
 
-func TestUserQueryDimAssistantBright(t *testing.T) {
+func TestTranscriptHierarchy(t *testing.T) {
 	// Force a real color profile so style assertions can see SGR codes;
 	// restore the ambient profile for the rest of the suite.
 	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
@@ -823,8 +823,11 @@ func TestUserQueryDimAssistantBright(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 
-	// The rendered placeholder carries the dim token (empty composer).
-	const dimSGR = "38;2;91;107;96" // #5B6B60 in truecolor
+	// The placeholder: dim, and carrying no background rectangle — the
+	// textarea's stock focused CursorLine paints one and it reads as a
+	// selection highlight on any terminal whose floor isn't pure black.
+	const dimSGR = "38;2;91;107;96"     // #5B6B60 in truecolor
+	const accentSGR = "38;2;22;219;101" // #16DB65 in truecolor
 	// The cursor block overlays the placeholder's first character, so
 	// probe for a tail fragment rather than the whole string.
 	view := m.View()
@@ -840,18 +843,27 @@ func TestUserQueryDimAssistantBright(t *testing.T) {
 	if !strings.Contains(placeholderLine, dimSGR) {
 		t.Errorf("placeholder not dim:\n%q", placeholderLine)
 	}
+	if strings.Contains(placeholderLine, "40m") || strings.Contains(placeholderLine, "48;") {
+		t.Errorf("placeholder carries a background highlight:\n%q", placeholderLine)
+	}
 
-	// Hierarchy: the echoed query is dim, the agent's answer is not.
+	// The echoed query renders at full weight behind the accent prompt,
+	// matching the reference apps; the agent's answer does the same.
 	m.entries = []entry{
 		{kind: entryUser, text: "hello query"},
 		{kind: entryAssistant, text: "answer text"},
 	}
 	user := strings.Join(m.renderEntry(&m.entries[0]), "")
 	assistant := strings.Join(m.renderEntry(&m.entries[1]), "")
-	if !strings.Contains(user, dimSGR) {
-		t.Errorf("user query not dim:\n%q", user)
+	if !strings.Contains(user, accentSGR) {
+		t.Errorf("user query missing accent prompt:\n%q", user)
 	}
-	if strings.Contains(assistant, dimSGR) {
-		t.Errorf("assistant output must not be dim:\n%q", assistant)
+	for _, line := range []struct{ name, s string }{
+		{"user query", user},
+		{"assistant output", assistant},
+	} {
+		if strings.Contains(line.s, dimSGR) {
+			t.Errorf("%s must not be dim:\n%q", line.name, line.s)
+		}
 	}
 }
