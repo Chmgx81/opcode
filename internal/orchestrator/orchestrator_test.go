@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"tilde/internal/llm"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // fakeProvider replays scripted rounds of events and records every
@@ -505,5 +505,153 @@ func TestSkillsIndexComposedIntoSystemPrompt(t *testing.T) {
 	}
 	if strings.Contains(p.gotRequests[1].System, "- deploy") {
 		t.Error("stale skills index still present")
+	}
+}
+
+func TestCompactionTriggersOnThreshold(t *testing.T) {
+	dir := t.TempDir()
+	// Round 1 answers with usage that crosses 75% of a 1000-token
+	// window; the scripted provider's next request must then start
+	// with the recap instead of the original history.
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 800, CompletionTokens: 1}}},
+		{{Type: llm.TextEvent, Text: "answer two"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.ContextWindow = 1000
+
+	// Seed enough history that compaction has something to summarize.
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "q4"},
+	})
+
+	events := drain(t, orch.Send(context.Background(), "go"))
+	var compacted bool
+	for _, ev := range events {
+		if ev.Kind == EventCompaction {
+			compacted = true
+		}
+	}
+	if !compacted {
+		t.Fatalf("no compaction event; events = %+v", events)
+	}
+	// Request order: [0] round 1, [1] the summarizer, [2] the
+	// post-compaction round, which must start with the recap.
+	if len(p.gotRequests) < 3 {
+		t.Fatalf("got %d requests, want round1 + summarizer + round2", len(p.gotRequests))
+	}
+	if !strings.Contains(p.gotRequests[1].System, "Summarize") {
+		t.Errorf("request 1 should be the summarizer round: %q", p.gotRequests[1].System)
+	}
+	req := p.gotRequests[2]
+	if !strings.Contains(req.Messages[0].Content, "Context recap") {
+		t.Errorf("post-compaction request does not start with the recap: %+v", req.Messages[0])
+	}
+	if len(req.Messages) != 1+keepRecent {
+		t.Errorf("post-compaction history = %d messages, want recap + %d", len(req.Messages), keepRecent)
+	}
+}
+
+func TestCompactionUsesConfiguredModel(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 900}}},
+		{{Type: llm.TextEvent, Text: "the summary"}},
+		{{Type: llm.TextEvent, Text: "final"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.ContextWindow = 1000
+	orch.CompactionModel = "cheap/summarizer"
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "go"},
+	})
+	drain(t, orch.Send(context.Background(), "go"))
+
+	// The summarizer round is request index 1 and must use the cheap
+	// model with the summarizer system prompt.
+	sumReq := p.gotRequests[1]
+	if sumReq.Model != "cheap/summarizer" {
+		t.Errorf("summarizer model = %q, want cheap/summarizer", sumReq.Model)
+	}
+	if !strings.Contains(sumReq.System, "Summarize") {
+		t.Errorf("summarizer prompt missing: %q", sumReq.System)
+	}
+	// The recap carries the summarizer's output.
+	if !strings.Contains(p.gotRequests[2].Messages[0].Content, "the summary") {
+		t.Errorf("recap does not contain the summary: %q", p.gotRequests[2].Messages[0].Content)
+	}
+}
+
+func TestCompactionDisabledByDefault(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 99999}}},
+		{{Type: llm.TextEvent, Text: "done"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "go"},
+	})
+	events := drain(t, orch.Send(context.Background(), "go"))
+	for _, ev := range events {
+		if ev.Kind == EventCompaction {
+			t.Error("compaction ran with ContextWindow 0 — it must be opt-in")
+		}
+	}
+	// 5 seeded + the user message + assistant + tool result = 8,
+	// untouched.
+	if len(p.gotRequests[1].Messages) != 8 {
+		t.Errorf("history was modified without compaction enabled: %d messages", len(p.gotRequests[1].Messages))
+	}
+}
+
+func TestCompactionFailureIsNotFatal(t *testing.T) {
+	dir := t.TempDir()
+	// The summarizer round errors; the turn must continue.
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 800}}},
+		{{Type: llm.ErrorEvent, Err: fmt.Errorf("summarizer down")}},
+		{{Type: llm.TextEvent, Text: "carried on"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "go"},
+	})
+	events := drain(t, orch.Send(context.Background(), "go"))
+
+	var skipped, completed bool
+	for _, ev := range events {
+		if ev.Kind == EventError && strings.Contains(ev.Err.Error(), "compaction skipped") {
+			skipped = true
+		}
+		if ev.Kind == EventTurnComplete {
+			completed = true
+		}
+	}
+	if !skipped {
+		t.Error("compaction failure not reported")
+	}
+	if !completed {
+		t.Error("the turn died on a compaction failure — it must continue uncompacted")
 	}
 }

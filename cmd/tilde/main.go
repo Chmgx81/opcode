@@ -11,15 +11,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"tilde/internal/config"
-	"tilde/internal/llm"
-	"tilde/internal/mcp"
-	"tilde/internal/orchestrator"
-	"tilde/internal/skills"
-	"tilde/internal/subagent"
-	"tilde/internal/tools"
-	"tilde/internal/trust"
-	"tilde/internal/tui"
+	"github.com/Chmgx81/tilde/internal/config"
+	"github.com/Chmgx81/tilde/internal/headless"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/mcp"
+	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/session"
+	"github.com/Chmgx81/tilde/internal/skills"
+	"github.com/Chmgx81/tilde/internal/subagent"
+	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/trust"
+	"github.com/Chmgx81/tilde/internal/tui"
 )
 
 func main() {
@@ -33,6 +35,10 @@ func run() error {
 	// --trust (or TILDE_TRUST=1) pre-approves the project's executable
 	// surface without prompting: the CI/headless posture (Section 7).
 	preTrust := flag.Bool("trust", false, "trust the current project's executable surface without prompting")
+	prompt := flag.String("p", "", "headless: run one turn with this prompt and exit")
+	jsonOut := flag.Bool("json", false, "headless: emit one JSON event object per line")
+	resume := flag.String("resume", "", "resume the session at this path")
+	cont := flag.Bool("continue", false, "resume the latest session")
 	flag.Parse()
 
 	userDir, err := config.UserDir()
@@ -178,9 +184,35 @@ func run() error {
 		Gate:     gate,
 	}, Emitter: spawnEmitter})
 
-	orch := orchestrator.New(provider, cfg.Model, systemPrompt(cwd), &registry, gate)
+	orch := orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
 	orch.SkillsIndex = skillManager.Index()
+	orch.ContextWindow = cfg.ContextWindow
+	orch.CompactionModel = cfg.CompactionModel
+
+	// Session persistence (Section 3.7): --resume/--continue seeds
+	// the orchestrator's history from a saved session; every run saves
+	// its tree on exit with credentials redacted.
+	var resumeNote string
+	if *resume != "" || *cont {
+		var s *session.Session
+		var path string
+		var err error
+		if *resume != "" {
+			s, err = session.Load(*resume)
+			path = *resume
+		} else {
+			s, path, err = session.Latest(session.Dir(userDir))
+			if s == nil && err == nil {
+				return fmt.Errorf("no saved sessions in %s", session.Dir(userDir))
+			}
+		}
+		if err != nil {
+			return err
+		}
+		orch.Seed(s.History())
+		resumeNote = fmt.Sprintf("resumed session %s (%d messages)", filepath.Base(path), len(s.History()))
+	}
 
 	// If the project has an unapproved executable surface, the TUI asks
 	// first. Granting persists the decision and re-discovers skills into
@@ -208,6 +240,41 @@ func run() error {
 		}
 	}
 
+	// saveSession snapshots the conversation into the tree-structured
+	// session file, credentials redacted (Section 3.7).
+	saveSession := func() {
+		s := session.FromHistory(cfg.Model, cfg.PermissionMode, orch.History())
+		if err := s.Save(session.NewFile(userDir), []string{key.Value}); err != nil {
+			fmt.Fprintf(os.Stderr, "tilde: could not save session: %v\n", err)
+		}
+	}
+
+	// Headless (Section 3.9): one turn, no UI. Permissions fail closed
+	// with nobody to ask; use full-auto for unattended automation.
+	if *prompt != "" {
+		gate.Decide = tools.PolicyDecide(cfg.PermissionMode, nil)
+		if resumeNote != "" && !*jsonOut {
+			fmt.Fprintf(os.Stderr, "~ %s\n", resumeNote)
+		}
+		spawnEmitter.Set(func(ev subagent.Event) {
+			if *jsonOut {
+				fmt.Printf("{\"kind\":\"subagent\",\"title\":%q,\"event\":%q,\"text\":%q}\n",
+					ev.Title, ev.Kind, ev.Text)
+			} else {
+				fmt.Fprintf(os.Stderr, "[subagent %s] %s %s\n", ev.Title, ev.Kind, ev.Text)
+			}
+		})
+		err := headless.Run(context.Background(), orch, *prompt, headless.Options{
+			JSON: *jsonOut,
+			Out:  os.Stdout,
+		})
+		saveSession()
+		return err
+	}
+
+	if resumeNote != "" {
+		startupNotes = append(startupNotes, resumeNote)
+	}
 	ui := tui.New(tui.Options{
 		Orch:         orch,
 		Model:        cfg.Model,
@@ -230,11 +297,19 @@ func run() error {
 		sink(ev.Title, ev.Kind, ev.Text, ev.Usage)
 	})
 
-	return tui.Run(ui)
+	runErr := tui.Run(ui)
+	saveSession()
+	return runErr
 }
 
-func systemPrompt(cwd string) string {
-	return "You are tilde, a terminal-based coding agent. You are working in: " + cwd + "\n" +
+func systemPrompt(userDir, cwd string) string {
+	p := "You are tilde, a terminal-based coding agent. You are working in: " + cwd + "\n" +
 		"Use the available tools to accomplish the user's request. Prefer the smallest set of\n" +
 		"actions that completes the task, and describe what you did when you finish."
+	// Hierarchical AGENTS.md context (Section 5, step 3): inert text,
+	// loaded regardless of project trust.
+	if ctx := config.AgentsContext(userDir, cwd); ctx != "" {
+		p += "\n\n" + ctx
+	}
+	return p
 }
