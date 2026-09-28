@@ -75,7 +75,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case orchestratorMsg:
-		return m.handleEvent(orchestrator.Event(msg)), nil
+		return m.handleEvent(orchestrator.Event(msg))
 
 	case modelsFetchedMsg:
 		m.handleModelsFetched(msg)
@@ -312,9 +312,27 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		// Prompt recall: ↑ walks back through submitted prompts,
+		// ↓ forward again — only from the composer's first/last
+		// line, so inside a multiline draft the arrows keep
+		// moving the cursor. The login prompt never recalls.
+		if m.login == nil && m.picker == nil {
+			d := -1
+			if msg.String() == "down" {
+				d = 1
+			}
+			if m.recallHistory(d) {
+				return m, nil
+			}
+		}
 	}
 
 	var cmd tea.Cmd
+	// Typing exits history recall: the next ↑ starts from the live
+	// draft again.
+	if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+		m.histIdx = len(m.hist)
+	}
 	m.composer, cmd = m.composer.Update(msg)
 	return m, cmd
 }
@@ -418,6 +436,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 			}
 		}
 	}
+	m.pushHistory(raw)
 	m.composer.SetValue("")
 	defer func() { m.pastes, m.pasteAt = nil, map[string]string{} }()
 
@@ -490,9 +509,161 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		return nil
 	}
 
+	// Commit everything before this turn's user entry to native
+	// scrollback: past turns, the greeting, and command output
+	// freeze above the live region and stop re-rendering per frame.
+	commit := m.commitEntries()
 	m.add(entry{kind: entryUser, text: text})
 	m.startTurn(text, m.pendingImages())
-	return tea.Batch(m.spinner.Tick, statusTick())
+	return tea.Batch(commit, m.spinner.Tick, statusTick())
+}
+
+// pushHistory records a submitted prompt in the recall history and
+// persists it. The stored text is the typed form — @mentions
+// re-expand at submit time, so recall gives back exactly what was
+// typed. Consecutive duplicates collapse; the list caps at 500.
+// Login keys never pass through here — secrets stay out of history
+// by construction.
+func (m *Model) pushHistory(text string) {
+	if text == "" {
+		return
+	}
+	if n := len(m.hist); n > 0 && m.hist[n-1] == text {
+		m.histIdx = n
+		return
+	}
+	m.hist = append(m.hist, text)
+	const maxHist = 500
+	if len(m.hist) > maxHist {
+		m.hist = m.hist[len(m.hist)-maxHist:]
+	}
+	m.histIdx = len(m.hist)
+	m.saveHistory()
+}
+
+// saveHistory rewrites history.jsonl under TILDE_HOME (0600 —
+// prompts can hold anything). Best-effort: a recall list that can't
+// be written is a nuisance, not a failure.
+func (m *Model) saveHistory() {
+	if m.opt.TildeHome == "" {
+		return
+	}
+	var b strings.Builder
+	for _, h := range m.hist {
+		line, err := json.Marshal(h)
+		if err != nil {
+			continue
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	_ = os.WriteFile(filepath.Join(m.opt.TildeHome, "history.jsonl"), []byte(b.String()), 0o600)
+}
+
+// loadHistory reads the persisted recall list. A missing file or a
+// corrupt line is skipped, never fatal — browsing must not break on
+// one bad write.
+func loadHistory(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		var s string
+		if json.Unmarshal([]byte(line), &s) == nil {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// recallHistory moves through the prompt history. ↑ walks back only
+// from the composer's first line, ↓ forward only from its last —
+// inside a multiline draft the arrows stay the cursor's. The live
+// draft is saved on first recall and restored when ↓ walks past the
+// newest entry.
+func (m *Model) recallHistory(delta int) bool {
+	if len(m.hist) == 0 {
+		return false
+	}
+	if delta < 0 {
+		if m.composer.Line() > 0 {
+			return false
+		}
+		if m.histIdx == 0 {
+			return false
+		}
+		if m.histIdx == len(m.hist) {
+			m.draftSave = m.composer.Value()
+		}
+		m.histIdx--
+	} else {
+		if m.composer.Line() < m.composer.LineCount()-1 {
+			return false
+		}
+		if m.histIdx >= len(m.hist) {
+			return false
+		}
+		m.histIdx++
+		if m.histIdx == len(m.hist) {
+			m.composer.SetValue(m.draftSave)
+			return true
+		}
+	}
+	m.composer.SetValue(m.hist[m.histIdx])
+	return true
+}
+
+// commitEntries prints the not-yet-committed transcript entries to
+// native scrollback (tea.Println) and freezes them out of the live
+// region. Without a running program there is nothing to print to —
+// committing would silently drop the content — so it stays a no-op
+// (tests, headless wiring). Returns the print command.
+func (m *Model) commitEntries() tea.Cmd {
+	if m.program == nil {
+		return nil
+	}
+	lines := m.commitLines(m.committed)
+	m.committed = len(m.entries)
+	if len(lines) == 0 {
+		return nil
+	}
+	// The trailing newline leaves one blank at the seam so the
+	// committed block and the live region keep the transcript's
+	// breathing rhythm.
+	return tea.Println(strings.Join(lines, "\n") + "\n")
+}
+
+// commitLines renders entries [from, len) with the same blank-line
+// rhythm timelineView pins, so what prints above the live region is
+// byte-identical to what the frame showed.
+func (m *Model) commitLines(from int) []string {
+	if from < 0 {
+		from = 0
+	}
+	if from >= len(m.entries) {
+		return nil
+	}
+	prevKind := entryKind(-1)
+	prevSub := ""
+	if from > 0 {
+		prevKind = m.entries[from-1].kind
+		prevSub = m.entries[from-1].subTitle
+	}
+	var out []string
+	for i := from; i < len(m.entries); i++ {
+		e := &m.entries[i]
+		if blankBefore(e, prevKind, prevSub) {
+			out = append(out, "")
+		}
+		out = append(out, m.renderEntry(e)...)
+		prevKind, prevSub = e.kind, e.subTitle
+	}
+	return collapseBlanks(out)
 }
 
 // notePlanVerdict records the plan decision in the transcript so the
@@ -670,8 +841,9 @@ func (m *Model) answerTrust(trusted bool) {
 	}
 }
 
-// handleEvent maps orchestrator events to timeline entries.
-func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
+// handleEvent maps orchestrator events to timeline entries. The
+// returned Cmd carries scrollback commits from turn boundaries.
+func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 	switch ev.Kind {
 	case orchestrator.EventReasoning:
 		if m.reasoning.Len() == 0 {
@@ -702,14 +874,13 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 	case orchestrator.EventTurnComplete:
 		m.finishReasoning()
 		m.finishStream()
-		m.turnEnded()
+		return m, m.turnEnded()
 
 	case orchestrator.EventError:
 		m.finishReasoning()
 		m.finishStream()
 		if ev.Err == nil {
-			m.turnEnded()
-			return m
+			return m, m.turnEnded()
 		}
 		if ev.Err == orchestrator.ErrCancelled {
 			// Interrupt means stop: queued follow-ups must not fire
@@ -724,9 +895,9 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 		} else {
 			m.add(entry{kind: entryErr, text: "error: " + ev.Err.Error()})
 		}
-		m.turnEnded()
+		return m, m.turnEnded()
 	}
-	return m
+	return m, nil
 }
 
 // addResultEntry stores a tool result with enough structure to render
@@ -758,16 +929,20 @@ func (m *Model) addResultEntry(ev orchestrator.Event) {
 	m.add(e)
 }
 
-func (m *Model) turnEnded() {
+func (m *Model) turnEnded() tea.Cmd {
 	m.working = false
 	m.cancel = nil
 	if len(m.queue) == 0 {
-		return
+		return nil
 	}
 	next := m.queue[0]
 	m.queue = m.queue[1:]
+	// The finished turn commits before the follow-up's entry joins
+	// the live region — each turn's block is frozen whole.
+	commit := m.commitEntries()
 	m.add(entry{kind: entryUser, text: dimStyle.Render("(follow-up) ") + next.text})
 	m.startTurn(next.text, next.images)
+	return tea.Batch(commit, m.spinner.Tick, statusTick())
 }
 
 // handleSubagent renders subagent progress as labeled timeline entries.
@@ -1004,6 +1179,7 @@ func (m *Model) resumeSession(path, label string) {
 		return
 	}
 	m.entries = nil
+	m.committed = 0
 	m.stream.Reset()
 	m.queue = nil
 	m.usage = llm.Usage{}

@@ -1822,3 +1822,45 @@ carries its own glyph — ○ read-only (nothing will run), ⏸ plan
 (everything proceeds, the reference product's own shape). The ~
 now means exactly one thing: the composer. Verified live by
 cycling all four modes with Tab in a PTY.
+
+# Scrollback commit + prompt history (status: complete, live-verified)
+
+The two complaints from the PTY session: past turns vanished from
+native scrollback (the frame repainted every tick and fit() trimmed
+the transcript with a "… N earlier lines" marker), and the composer
+had no ↑ recall.
+
+Scrollback: the transcript now commits per turn. A `committed`
+counter on the Model tracks entries already printed above the live
+region via tea.Println; submitInput commits everything before the
+new user entry, and turnEnded commits before a queued follow-up
+starts. commitLines() renders the not-yet-committed entries with the
+same blankBefore rhythm the live frame pins (one trailing newline
+keeps the seam breathing), timelineView skips committed entries, and
+fit()'s "… earlier lines" marker can now only ever refer to the
+current turn's own content. Committed text is frozen: ctrl+r
+expansion applies to the live region only. Without a running tea
+program (tests, headless) commitEntries is a no-op — there is no
+scrollback to print to, so committing would silently drop content.
+
+History: ↑/↓ recall submitted prompts. ↑ recalls only from the
+composer's first line and ↓ forward from its last (composer.Line /
+LineCount — bubbles v1.0.0 has no CursorOn* helpers), so inside a
+multiline draft the arrows still move the cursor. The live draft is
+saved on first recall and restored walking past the newest; typing
+resets the recall position. Prompts persist to history.jsonl under
+tilde's home — one JSON line each, 0600, capped at 500, consecutive
+duplicates collapse. Login keys bypass submitInput entirely, so
+secrets never enter history. Known edge: a recalled [paste N] token
+from an earlier session no longer expands — the typed form is what
+history keeps, visibly so.
+
+Verified live in a PTY against a text-only fixture (two 15-line
+turns): the full first turn sits in native scrollback after the
+second submit (no marker anywhere in the log), and ↑ recalled the
+previous prompt into the composer. history.jsonl holds both prompts
+at mode 600. Unit tests: history recall/draft/typing-reset/
+multiline-guard/persistence/cap, commit boundary rhythm, View
+skipping committed entries, the no-program no-op. Spec §3/§4/§5/§6
+updated in the same change; the not-yet list drops inline commit
+and composer history.

@@ -2,7 +2,7 @@
 
 > The one spec for everything the user sees. Replaces tui-ux-spec.md
 > and tui-design.md. What's here reflects **what is built today**
-> (Phases 0–28); the short "Not yet built" list at the end is the
+> (Phases 0–29); the short "Not yet built" list at the end is the
 > honest remainder. Codex's approaches live in
 > [docs/reference/](../reference/codex-adoption.md), not here.
 
@@ -69,11 +69,15 @@ or word rides along.
 
 ## 3. The Screen
 
-One frame, top to bottom: **scrollback** (greeting + transcript) →
-**live region** (working line, streaming tail) → **composer or
-dialog** → **footer**. Nothing exceeds the terminal; the transcript
-trims from the top with a `… N earlier lines` marker, and the
-dialog/composer tail is never trimmed.
+One frame, top to bottom: **scrollback** (committed turns) →
+**live region** (the current turn's entries, working line, streaming
+tail) → **composer or dialog** → **footer**. Finished turns commit
+to native scrollback at the next turn boundary (`tea.Println`):
+what's printed no longer redraws, and only the current turn can
+trip the `… N earlier lines` marker — past turns are in the
+terminal's own history, scrollable and searchable. Committed text is
+frozen: ctrl+r expansion applies to the live region only. Nothing
+exceeds the terminal; the dialog/composer tail is never trimmed.
 
 ### 3.1 Greeting (once, scrolls away)
 
@@ -185,9 +189,10 @@ store.
 | Key | Action |
 |---|---|
 | Enter | send — mid-turn: steer at the next round boundary |
+| ↑ / ↓ | recall a previous prompt (from the first/last line; inside a multiline draft the arrows move the cursor) |
 | Ctrl+J | newline |
 | Alt+Enter | queue a follow-up |
-| Ctrl+R | expand / collapse results & thinking |
+| Ctrl+R | expand / collapse results & thinking (live region only — committed text is frozen) |
 | Ctrl+V | attach the clipboard image (png/jpeg/gif/webp, sniffed) |
 | Ctrl+E | edit the draft in `$VISUAL`/`$EDITOR` |
 | Tab / Shift+Tab | cycle permission mode |
@@ -218,6 +223,11 @@ doubles, so entries can be appended freely.
   parts to OpenAI-compatible and Anthropic models.
 - **Reasoning** streams into a dim `△` tail, then collapses to
   one expandable line. Never stored in history.
+- **Prompt history** (↑ recall) persists to `history.jsonl` under
+  tilde's home (global, 500 entries, consecutive duplicates
+  collapse, 0600). Login keys never enter it. Recall stores the
+  typed form — a recalled `[paste N]` token from an earlier session
+  no longer expands, visibly so.
 - **Errors** always read as the provider's message, never a raw
   JSON dump; every error names the next step.
 - **Sandbox** (Linux): shell writes confined to the project dir,
@@ -231,16 +241,11 @@ doubles, so entries can be appended freely.
 
 ## 6. Not yet built (the honest list)
 
-1. **Inline commit rendering** — finished blocks committed to
-   native scrollback; only the live region redraws (the current
-   view re-renders windowed). The largest remaining change; see
-   codex-adoption.md items 10–12.
-2. **`safe/` sanitizer** — typed stripping of escape sequences
+1. **`safe/` sanitizer** — typed stripping of escape sequences
    from untrusted text.
-3. **Composer history** (↑ recall, persisted per project).
-4. **Transcript view** (`Ctrl+O` full-detail pager).
-5. **Type-ahead protection** on dialogs (~400 ms input guard).
-6. **ASCII glyph fallbacks** and a `--plain` screen-reader mode.
-7. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
+2. **Transcript view** (`Ctrl+O` full-detail pager).
+3. **Type-ahead protection** on dialogs (~400 ms input guard).
+4. **ASCII glyph fallbacks** and a `--plain` screen-reader mode.
+5. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.

@@ -116,6 +116,7 @@ executable where your shell will find it.
 | Key | |
 |---|---|
 | **Enter** | send — mid-turn: steer at the next round boundary |
+| **↑ / ↓** | recall a previous prompt (persists across sessions) |
 | **Ctrl+J** | newline |
 | **Ctrl+V** | attach the clipboard image — the model sees it |
 | **Ctrl+E** | edit the composer in `$VISUAL`/`$EDITOR` |

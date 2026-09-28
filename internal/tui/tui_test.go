@@ -945,7 +945,7 @@ func TestInterruptClearsQueue(t *testing.T) {
 	// everything, not fire the queue the moment it lands.
 	m.queue = []queued{{text: "follow-up one"}, {text: "follow-up two"}}
 	m.working = true
-	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventError, Err: orchestrator.ErrCancelled})
+	_, _ = m.handleEvent(orchestrator.Event{Kind: orchestrator.EventError, Err: orchestrator.ErrCancelled})
 	if len(m.queue) != 0 {
 		t.Errorf("queue survived the interrupt: %v", m.queue)
 	}
@@ -963,7 +963,7 @@ func TestInterruptClearsQueue(t *testing.T) {
 	// guarded here so the fix can't overreach).
 	m.queue = []queued{{text: "follow-up"}}
 	m.working = true
-	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventTurnComplete})
+	_, _ = m.handleEvent(orchestrator.Event{Kind: orchestrator.EventTurnComplete})
 	if len(m.queue) != 0 {
 		t.Errorf("clean completion must still drain the queue: %v", m.queue)
 	}
@@ -1232,7 +1232,7 @@ func TestStreamRendersAsMarkdownWithNoFlushPop(t *testing.T) {
 
 	// Deltas accumulate; the in-flight view renders markdown (heading
 	// styled, not plain).
-	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "## Done\n\n- one\n"})
+	_, _ = m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "## Done\n\n- one\n"})
 	lines := m.timelineView()
 	joined := stripANSI(strings.Join(lines, "\n"))
 	if !strings.Contains(joined, "Done") || !strings.Contains(joined, "one") {
@@ -1252,7 +1252,7 @@ func TestStreamRendersAsMarkdownWithNoFlushPop(t *testing.T) {
 	}
 
 	// The cache invalidates on growth and width change.
-	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "more"})
+	_, _ = m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "more"})
 	_ = m.timelineView() // the cache populates on render, not on the delta
 	if m.streamRenderedLen == 0 {
 		t.Error("stream cache not populated")
@@ -1459,7 +1459,7 @@ func TestReasoningRenderLifecycle(t *testing.T) {
 
 	// While thinking streams: a dim tail, not the full text dumped.
 	for i := 1; i <= 5; i++ {
-		m.handleEvent(orchestrator.Event{Kind: orchestrator.EventReasoning,
+		_, _ = m.handleEvent(orchestrator.Event{Kind: orchestrator.EventReasoning,
 			Text: fmt.Sprintf("step %d\n", i)})
 	}
 	live := stripANSI(strings.Join(m.timelineView(), "\n"))
@@ -1472,7 +1472,7 @@ func TestReasoningRenderLifecycle(t *testing.T) {
 
 	// The answer starts: the thinking collapses to one line with the
 	// duration; ctrl+r expands it again.
-	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "the answer"})
+	_, _ = m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "the answer"})
 	if m.reasoning.Len() != 0 {
 		t.Error("reasoning builder must drain on finish")
 	}
