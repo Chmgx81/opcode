@@ -464,7 +464,7 @@ func TestReadOnlyModeHidesActionTools(t *testing.T) {
 
 func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 	dir := t.TempDir()
-	for _, mode := range []string{tools.ModeAskEveryTime, tools.ModeAutoAcceptSafe, tools.ModeFullAuto} {
+	for _, mode := range []string{tools.ModeAskEveryTime, tools.ModeFullAuto} {
 		p := &fakeProvider{rounds: [][]llm.ChatEvent{
 			{{Type: llm.TextEvent, Text: "hi"}},
 		}}
@@ -478,6 +478,18 @@ func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 		if !strings.Contains(req.System, mode) {
 			t.Errorf("mode %s instruction missing from prompt: %q", mode, req.System)
 		}
+	}
+
+	// The removed auto-accept-safe-ops mode survives as a legacy alias
+	// that must present the ask-every-time posture, never anything wider.
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "hi"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.SetMode(tools.ModeAutoAcceptSafe)
+	drain(t, orch.Send(context.Background(), "go"))
+	if sys := p.gotRequests[0].System; !strings.Contains(sys, tools.ModeAskEveryTime) {
+		t.Errorf("legacy auto-accept-safe-ops must map to ask-every-time: %q", sys)
 	}
 }
 

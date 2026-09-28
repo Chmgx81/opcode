@@ -41,7 +41,34 @@ func run() error {
 	resume := flag.String("resume", "", "resume the session at this path")
 	cont := flag.Bool("continue", false, "resume the latest session")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	showHelp := flag.Bool("help", false, "show usage and exit")
+	flag.Usage = func() {
+		fmt.Fprint(os.Stderr, `tilde — a terminal coding agent
+
+Usage:
+  tilde [flags]              start the interactive TUI in this directory
+  tilde -p "prompt"          run one headless turn and exit
+
+Flags:
+  -p <prompt>    headless: run one turn with this prompt
+  --json         headless: emit one JSON event object per line
+  --resume PATH  resume the session at this path
+  --continue     resume the latest session
+  --trust        pre-approve the project's executable surface (CI posture)
+  --version      print the version and exit
+  --help         show this help and exit
+
+Everything is configured in ~/.tilde/ (config.json, models.json,
+auth.json). First run? Set a model, then start tilde in a project
+directory — see https://github.com/Chmgx81/tilde#quick-start
+`)
+	}
 	flag.Parse()
+
+	if *showHelp {
+		flag.Usage()
+		return nil
+	}
 
 	if *showVersion {
 		fmt.Printf("tilde %s\n", buildVersion())

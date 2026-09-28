@@ -3,31 +3,42 @@ package tools
 // Permission modes (Section 7). The mode sets the default posture across
 // tiers; the gate still checks each action's tier, so "read-only mode
 // can't touch your filesystem" is enforced per call, not hoped for.
+//
+// Three modes: look, ask, act. The old fourth mode,
+// auto-accept-safe-ops, behaved identically to ask-every-time in the
+// gate (drafts auto-run in every mode) — it survives only as a legacy
+// config alias.
 const (
-	ModeReadOnly       = "read-only"
-	ModeAskEveryTime   = "ask-every-time"
+	ModeReadOnly     = "read-only"
+	ModeAskEveryTime = "ask-every-time"
+	ModeFullAuto     = "full-auto"
+
+	// ModeAutoAcceptSafe is deprecated; NormalizeMode maps it to
+	// ask-every-time, the more restrictive direction.
 	ModeAutoAcceptSafe = "auto-accept-safe-ops"
-	ModeFullAuto       = "full-auto"
 )
 
 // Modes is the complete set, in display order.
-var Modes = []string{ModeReadOnly, ModeAskEveryTime, ModeAutoAcceptSafe, ModeFullAuto}
+var Modes = []string{ModeReadOnly, ModeAskEveryTime, ModeFullAuto}
 
 // NormalizeMode canonicalizes a configured mode name. The Phase 1
-// spelling "ask" maps to ask-every-time so existing configs keep
-// working; anything else unknown stays unknown (and fails closed in the
-// policy) rather than being silently coerced to something permissive.
+// spelling "ask" and the removed auto-accept-safe-ops map to
+// ask-every-time so existing configs keep working — always toward the
+// more restrictive posture; anything else unknown stays unknown (and
+// fails closed in the policy) rather than being silently coerced to
+// something permissive.
 func NormalizeMode(mode string) string {
-	if mode == "ask" {
+	switch mode {
+	case "ask", ModeAutoAcceptSafe:
 		return ModeAskEveryTime
 	}
 	return mode
 }
 
-// ValidMode reports whether mode is one of the four real modes.
+// ValidMode reports whether mode is one of the three real modes.
 func ValidMode(mode string) bool {
 	switch mode {
-	case ModeReadOnly, ModeAskEveryTime, ModeAutoAcceptSafe, ModeFullAuto:
+	case ModeReadOnly, ModeAskEveryTime, ModeFullAuto:
 		return true
 	}
 	return false
@@ -48,17 +59,15 @@ func ModeAllowsTool(mode string, t Tool) bool {
 // the model knows the posture it runs under (Section 3.2: mode
 // determines the system prompt).
 func ModeInstruction(mode string) string {
-	switch mode {
+	switch NormalizeMode(mode) {
 	case ModeReadOnly:
 		return "Permission mode is read-only: tools that modify state are not available. Do not attempt to write, edit, or run commands."
 	case ModeAskEveryTime:
 		return "Permission mode is ask-every-time: each call to a state-changing tool asks the user before running."
-	case ModeAutoAcceptSafe:
-		return "Permission mode is auto-accept-safe-ops: read-only operations run automatically; state-changing calls ask the user first."
 	case ModeFullAuto:
 		return "Permission mode is full-auto: tool calls run without prompting and are logged."
 	}
-	return "Permission mode is unknown: state-changing tool calls will ask the user."
+	return "Permission mode is unknown: state-changing tool calls will ask the user. Ask the user how to proceed if unsure."
 }
 
 // PolicyDecide returns a Gate.Decide function implementing the Phase 2

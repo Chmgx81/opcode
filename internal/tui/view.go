@@ -21,17 +21,64 @@ func (m *Model) View() string {
 	return strings.Join(m.fit(layers), "\n")
 }
 
-// timelineView renders the transcript entries.
+// timelineView renders the transcript entries. Every user query and
+// every finished answer opens with a blank line — conversation blocks
+// breathe — and collapseBlanks keeps that to a single gap no matter
+// what glamour or the greeting emit around them.
 func (m *Model) timelineView() []string {
 	var out []string
 	for i := range m.entries {
-		out = append(out, m.renderEntry(&m.entries[i])...)
+		e := &m.entries[i]
+		if e.kind == entryUser || e.kind == entryAssistant {
+			out = append(out, "")
+		}
+		out = append(out, m.renderEntry(e)...)
 	}
 	// In-flight assistant text.
 	if s := strings.TrimSpace(m.stream.String()); s != "" {
+		out = append(out, "")
 		out = append(out, renderAssistant(s, m.termWidth())...)
 	}
+	return collapseBlanks(out)
+}
+
+// collapseBlanks trims runs of blank lines to a single blank and drops
+// leading/trailing blanks. Glamour pads lines with styled spaces, so
+// blankness is measured after stripping ANSI.
+func collapseBlanks(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	isBlank := func(s string) bool { return strings.TrimSpace(stripANSI(s)) == "" }
+	for _, l := range lines {
+		if isBlank(l) && (len(out) == 0 || isBlank(out[len(out)-1])) {
+			continue
+		}
+		out = append(out, l)
+	}
+	for len(out) > 0 && isBlank(out[len(out)-1]) {
+		out = out[:len(out)-1]
+	}
 	return out
+}
+
+// stripANSI removes SGR escape sequences; used for blank-line
+// detection over styled renderer output.
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for _, r := range s {
+		if r == 0x1b {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // renderEntry maps one structured entry to view lines. Assistant text
@@ -89,11 +136,14 @@ func (m *Model) renderResult(e entry, w int) []string {
 			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
 		}
 		out := []string{head}
-		for _, l := range strings.Split(e.old, "\n") {
-			out = append(out, dangerStyle.Render(strings.Repeat(" ", 5)+GlyphDeleted+" "+l))
+		// Syntax-highlighted hunks: tokens carry language colors, the
+		// − / + markers and indent carry the verdict.
+		l := lexerFor(e.path)
+		for _, l2 := range strings.Split(e.old, "\n") {
+			out = append(out, dangerStyle.Render(strings.Repeat(" ", 5)+GlyphDeleted+" ")+highlightLine(l2, l))
 		}
-		for _, l := range strings.Split(e.new, "\n") {
-			out = append(out, okStyle.Render(strings.Repeat(" ", 5)+GlyphAdded+" "+l))
+		for _, l3 := range strings.Split(e.new, "\n") {
+			out = append(out, okStyle.Render(strings.Repeat(" ", 5)+GlyphAdded+" ")+highlightLine(l3, l))
 		}
 		return out
 	}
@@ -191,7 +241,12 @@ func (m *Model) floatingView() []string {
 		out = append(out, "", m.helpView(w))
 	}
 	if m.toast != "" && time.Since(m.toastAt) < 4*time.Second {
-		out = append(out, "", infoStyle.Render(GlyphOK+" "+m.toast))
+		glyph, style := GlyphOK, okStyle
+		if m.toastAnim > 0 {
+			glyph = toastFrames[len(toastFrames)-m.toastAnim]
+			style = accentStyle
+		}
+		out = append(out, "", style.Render(glyph+" "+m.toast))
 	}
 	return out
 }
@@ -329,7 +384,7 @@ func (m *Model) helpView(w int) string {
 		dimStyle.Render("  enter        send · ctrl+j  newline"),
 		dimStyle.Render("  alt+enter    queue a follow-up while working"),
 		dimStyle.Render("  esc          interrupt the turn"),
-		dimStyle.Render("  shift+tab    cycle permission mode"),
+		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
 		dimStyle.Render("  ctrl+r       expand / collapse tool results"),
 		dimStyle.Render("  ! command    run a shell command directly"),
 		dimStyle.Render("  @path        attach a file's contents"),
@@ -413,17 +468,26 @@ func truncate(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
-// diffCounts returns additions and removals between old and new.
-func diffCounts(old, new string) (int, int) {
-	oldLines := len(strings.Split(old, "\n"))
-	newLines := len(strings.Split(new, "\n"))
+// diffCounts counts changed lines: each replaced line is one removal
+// and one addition, plus the tail of whichever side grew.
+func diffCounts(old, new string) (adds, dels int) {
 	if old == new {
 		return 0, 0
 	}
-	if newLines > oldLines {
-		return newLines - oldLines, 0
+	o, n := strings.Split(old, "\n"), strings.Split(new, "\n")
+	for i := 0; i < len(o) && i < len(n); i++ {
+		if o[i] != n[i] {
+			adds++
+			dels++
+		}
 	}
-	return 0, oldLines - newLines
+	switch {
+	case len(n) > len(o):
+		adds += len(n) - len(o)
+	case len(o) > len(n):
+		dels += len(o) - len(n)
+	}
+	return adds, dels
 }
 
 func humanCount(n int) string {

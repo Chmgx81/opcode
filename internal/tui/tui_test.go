@@ -106,25 +106,6 @@ func (m *Model) transcript() string {
 	return stripANSI(strings.Join(out, "\n"))
 }
 
-func stripANSI(s string) string {
-	var b strings.Builder
-	inEsc := false
-	for _, r := range s {
-		if r == 0x1b {
-			inEsc = true
-			continue
-		}
-		if inEsc {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inEsc = false
-			}
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
 func keyMsg(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -469,25 +450,35 @@ func TestAssistantEntriesRenderMarkdown(t *testing.T) {
 	}
 }
 
-func TestShiftTabCyclesModes(t *testing.T) {
+func TestTabCyclesModes(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if m.opt.Mode != tools.ModeAutoAcceptSafe {
-		t.Errorf("first cycle = %q, want auto-accept-safe-ops", m.opt.Mode)
+	// Three modes, forward: ask -> full-auto -> read-only.
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.opt.Mode != tools.ModeFullAuto {
+		t.Errorf("first tab = %q, want full-auto", m.opt.Mode)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.opt.Mode != tools.ModeReadOnly {
-		t.Errorf("after three cycles = %q, want read-only", m.opt.Mode)
+		t.Errorf("second tab = %q, want read-only", m.opt.Mode)
 	}
 	if m.toast == "" {
 		t.Error("mode toast not set")
 	}
-	// The gate follows.
+	// The gate follows: read-only denies an action-tier call without
+	// consulting anyone.
 	if decide := m.opt.Orch.Gate.Decide; decide == nil || decide(tools.WriteFile{}, `{}`) {
 		t.Error("read-only gate must deny after cycling into it")
+	}
+	// Backward: read-only -> full-auto -> ask.
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.opt.Mode != tools.ModeFullAuto {
+		t.Errorf("shift+tab = %q, want full-auto", m.opt.Mode)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.opt.Mode != tools.ModeAskEveryTime {
+		t.Errorf("second shift+tab = %q, want ask-every-time", m.opt.Mode)
 	}
 }
 
@@ -532,7 +523,8 @@ func TestEditFileResultRendersDiff(t *testing.T) {
 	if !strings.Contains(tr, "updated main.go") {
 		t.Errorf("diff summary missing: %s", tr)
 	}
-	if !strings.Contains(tr, "+1") || !strings.Contains(tr, "−0") {
+	// One line replaced (−1 +1) plus one line added: +2 −1.
+	if !strings.Contains(tr, "+2") || !strings.Contains(tr, "−1") {
 		t.Errorf("add/remove counts missing: %s", tr)
 	}
 
@@ -946,5 +938,73 @@ func TestInterruptClearsQueue(t *testing.T) {
 	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventTurnComplete})
 	if len(m.queue) != 0 {
 		t.Errorf("clean completion must still drain the queue: %v", m.queue)
+	}
+}
+
+func TestConversationSpacing(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.entries = append(m.entries,
+		entry{kind: entryUser, text: "hello"},
+		entry{kind: entryAssistant, text: "answer"},
+		entry{kind: entryUser, text: "next question"},
+	)
+	lines := m.timelineView()
+	// Exactly one blank line between blocks, none doubled.
+	blanks := 0
+	for i, l := range lines {
+		if strings.TrimSpace(stripANSI(l)) == "" {
+			blanks++
+			if i > 0 && strings.TrimSpace(stripANSI(lines[i-1])) == "" {
+				t.Errorf("doubled blank at line %d:\n%v", i, lines)
+			}
+		}
+	}
+	if blanks < 3 {
+		t.Errorf("want a blank before each block, got %d of %d lines:\n%v", blanks, len(lines), lines)
+	}
+}
+
+func TestEditDiffHighlightsSyntax(t *testing.T) {
+	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	m := &Model{expandResults: true}
+	m.width = 80
+	e := entry{kind: entryResult, tool: "edit_file", path: "main.go",
+		old: "func main() {", new: "func main() error {"}
+	lines := m.renderResult(e, 80)
+	joined := strings.Join(lines, "\n")
+	// The keyword keeps its accent color even inside the removed line;
+	// the marker still carries the verdict.
+	if !strings.Contains(joined, "38;2;22;219;101") { // accent #16DB65
+		t.Errorf("keyword not highlighted in the diff:\n%q", joined)
+	}
+	if !strings.Contains(stripANSI(joined), "func main() {") {
+		t.Errorf("content lost to highlighting:\n%s", joined)
+	}
+}
+
+func TestAnimatedModeToast(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	cmd := m.setMode(tools.ModeFullAuto)
+	if m.toastAnim != len(toastFrames) {
+		t.Errorf("toastAnim = %d, want %d", m.toastAnim, len(toastFrames))
+	}
+	if cmd == nil {
+		t.Fatal("animated toast must return a driving Cmd")
+	}
+	// Each tick consumes a frame until the animation settles.
+	for i := 0; i < len(toastFrames); i++ {
+		model, next := m.Update(toastTickMsg{})
+		m = model.(*Model)
+		if i < len(toastFrames)-1 && next == nil {
+			t.Error("animation must keep ticking while frames remain")
+		}
+	}
+	if m.toastAnim != 0 {
+		t.Errorf("toastAnim after all frames = %d, want 0", m.toastAnim)
 	}
 }

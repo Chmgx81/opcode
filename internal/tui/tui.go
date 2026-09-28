@@ -195,13 +195,29 @@ type Model struct {
 	// help overlay ("?").
 	helpOpen bool
 
-	// toast is a transient status message above the composer.
-	toast   string
-	toastAt time.Time
+	// toast is a transient status message above the composer;
+	// toastAnim counts remaining animation frames while it plays.
+	toast     string
+	toastAt   time.Time
+	toastAnim int
 
 	// Subagent progress accumulation, flushed at boundaries.
 	subMu      sync.Mutex
 	subStreams map[string]*strings.Builder
+}
+
+// toastFrames is the glyph burst a mode switch plays: the diamond
+// blooms open then settles, a short readable transition rather than a
+// color flash.
+var toastFrames = []string{"◇", "◈", "◆", "◈", "◇", "◇"}
+
+// toastTickMsg drives the toast animation.
+type toastTickMsg time.Time
+
+func toastTick() tea.Cmd {
+	return tea.Tick(90*time.Millisecond, func(t time.Time) tea.Msg {
+		return toastTickMsg(t)
+	})
 }
 
 // Commands is the palette's source of truth; the desc renders in the
@@ -295,9 +311,11 @@ func (m *Model) Init() tea.Cmd {
 // script(1), CI, or any non-answering terminal that query fails and
 // everything renders without color. Falling back to $TERM keeps the
 // brand palette alive in those environments; a real terminal still
-// uses the query result.
+// uses the query result. NO_COLOR overrides all of it: when the user
+// asks for no color, no color — the fallback must not resurrect it.
 func Run(m *Model) error {
-	if lipgloss.ColorProfile() == termenv.Ascii {
+	if lipgloss.ColorProfile() == termenv.Ascii &&
+		os.Getenv("NO_COLOR") == "" {
 		term := os.Getenv("TERM")
 		switch {
 		case os.Getenv("COLORTERM") != "" || strings.Contains(term, "truecolor"):
@@ -372,6 +390,16 @@ func (m *Model) add(e entry) {
 func (m *Model) showToast(text string) {
 	m.toast = text
 	m.toastAt = time.Now()
+	m.toastAnim = 0
+}
+
+// showAnimatedToast sets the message and plays the glyph burst; the
+// returned Cmd drives the frames.
+func (m *Model) showAnimatedToast(text string) tea.Cmd {
+	m.toast = text
+	m.toastAt = time.Now()
+	m.toastAnim = len(toastFrames)
+	return toastTick()
 }
 
 // SubagentSink returns the function the subagent wiring uses to report
