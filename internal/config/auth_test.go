@@ -181,3 +181,91 @@ func TestLoadAuthMissingFileIsEmpty(t *testing.T) {
 		t.Errorf("warnings = %v, want none", warnings)
 	}
 }
+
+func TestWriteAuthKeyCreatesPrivateFileAndPreservesOthers(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteAuthKey(dir, "openrouter", "key-one"); err != nil {
+		t.Fatalf("WriteAuthKey: %v", err)
+	}
+	if err := WriteAuthKey(dir, "other", "key-two"); err != nil {
+		t.Fatalf("WriteAuthKey: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("auth.json mode = %v, want 0600", perm)
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+		t.Errorf("dir mode = %v, want 0700", perm)
+	}
+
+	auth, _, err := LoadAuth(dir)
+	if err != nil {
+		t.Fatalf("LoadAuth: %v", err)
+	}
+	if auth["openrouter"] != "key-one" || auth["other"] != "key-two" {
+		t.Errorf("auth = %v, both providers must be preserved", auth)
+	}
+}
+
+func TestRemoveAuthKey(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteAuthKey(dir, "openrouter", "key-one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAuthKey(dir, "other", "key-two"); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := RemoveAuthKey(dir, "openrouter")
+	if err != nil || !removed {
+		t.Fatalf("RemoveAuthKey: removed=%v err=%v", removed, err)
+	}
+	auth, _, err := LoadAuth(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := auth["openrouter"]; ok {
+		t.Error("openrouter key still present after /logout")
+	}
+	if auth["other"] != "key-two" {
+		t.Error("logout removed the wrong provider's key")
+	}
+
+	// Removing a key that was never stored is not an error.
+	removed, err = RemoveAuthKey(dir, "openrouter")
+	if err != nil || removed {
+		t.Errorf("second RemoveAuthKey: removed=%v err=%v, want false/nil", removed, err)
+	}
+
+	// auth.json keeps 0600 after the rewrite.
+	info, err := os.Stat(filepath.Join(dir, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("auth.json mode after logout = %v, want 0600", perm)
+	}
+}
+
+func TestRemoveAuthKeyMissingDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "never-created")
+	removed, err := RemoveAuthKey(dir, "openrouter")
+	if err != nil {
+		t.Fatalf("RemoveAuthKey on missing dir: %v", err)
+	}
+	if removed {
+		t.Error("removed = true with no auth.json at all")
+	}
+}
