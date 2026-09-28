@@ -628,6 +628,20 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   is untouched. Both paths regression-tested and PTY-verified
   live: /login + typed key + Esc left no auth.json, /mo + Esc cleared
   the composer.
+- **Full control sweep** (the "are all controls accurate" audit): a
+  PTY session against a deliberately slow SSE fixture drove the whole
+  key map through one live session — send, alt+enter queue while
+  working, Esc interrupt, shift+tab mode cycle, ctrl+r expand, ?
+  overlay open and close on any key, ! shell escape, /exit — all
+  verified against the rendered frames. The sweep caught one real
+  bug: interrupting a turn auto-fired the queued follow-ups the
+  moment Esc landed, because turnEnded drained the queue
+  unconditionally. Esc now clears the queue with a
+  "cleared N queued follow-ups" note; a clean completion still drains
+  it (both pinned by TestInterruptClearsQueue). Enter/steer, ctrl+j
+  newline, palette arrows, picker navigation, and @ attachment were
+  already covered by unit tests this session plus the earlier live
+  runs.
 
 ## Phase 8 assumptions
 

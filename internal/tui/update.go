@@ -535,6 +535,14 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 			return m
 		}
 		if ev.Err == orchestrator.ErrCancelled {
+			// Interrupt means stop: queued follow-ups must not fire
+			// the moment the user pressed esc. Clear them with a note
+			// instead of draining.
+			if n := len(m.queue); n > 0 {
+				m.queue = nil
+				m.add(entry{kind: entryDim,
+					text: fmt.Sprintf("cleared %d queued follow-up%s", n, plural(n))})
+			}
 			m.add(entry{kind: entryErr, text: "turn interrupted"})
 		} else {
 			m.add(entry{kind: entryErr, text: "error: " + ev.Err.Error()})
