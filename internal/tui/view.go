@@ -425,9 +425,15 @@ func (m *Model) composerView() []string {
 		masked := strings.Repeat("\u2022", len(m.composer.Value()))
 		composer = accentStyle.Render(GlyphBrand+" ") + masked
 	}
-	// The reference composer: a bare prompt line, no box — the prompt
-	// glyph (and its color, in shell mode) is the whole chrome.
-	out = append(out, composer)
+	// The composer sits between two full-width rules — the frame that
+	// makes the input findable without a box. The rules take the
+	// mode's color: border at rest, amber in shell mode.
+	rule := ruleStyle
+	if m.shellMode() {
+		rule = warnStyle
+	}
+	ruleLine := rule.Render(strings.Repeat("─", m.termWidth()))
+	out = append(out, ruleLine, composer, ruleLine)
 
 	// Mode line in the reference shape: "~ mode (tab to cycle)" then
 	// the minimal hints. Codex's footer fitting: candidates from
@@ -598,10 +604,10 @@ func (m *Model) fit(layers []string, protected int) []string {
 	if m.height <= 0 {
 		return layers
 	}
-	// Reserve rows for the composer (its live height + borders + the
-	// footer mode line + the status/blank line above it) so long
-	// transcripts trim, not the composer.
-	reserved := m.composer.Height() + 6
+	// Reserve rows for the composer (its live height + the two rules
+	// that frame it + the footer mode line + the status/blank line
+	// above it) so long transcripts trim, not the composer.
+	reserved := m.composer.Height() + 8
 	if m.working {
 		reserved += 2
 	}
