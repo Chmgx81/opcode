@@ -972,3 +972,55 @@ Spec: [docs/specs/phase13-plan-mode.md](docs/specs/phase13-plan-mode.md)
   plan.md is deferred.
 3. present_plan offered in every mode (drafts always are); outside
   plan mode the model is simply not instructed to use it.
+
+---
+
+# Phase 14 — Safe Shell Commands (execpolicy-lite) (status: complete, live-verified)
+
+## Built
+
+- **`safe_commands`** (config.json): shell command prefixes that run
+  without prompting in ask mode — the biggest usability gap vs. both
+  reference products ("read-only has no shell at all; ask prompts for
+  `ls`"). Borrowed from Codex's execpolicy at tilde's scale: a flat
+  token-prefix list instead of a Starlark rule engine.
+- **Matching is token-wise and fails closed** (`tools.ShellAllowlist`):
+  quote-aware tokenization ("git status" matches "git status --short"
+  but not "git push", case-sensitive), any shell metacharacter in any
+  token denies (`; | & $ \` < > ( )`) — found live in test review:
+  "git status $(whoami)" would have auto-run with command substitution
+  in it; the separator form "git status ; rm -rf /" matched the prefix
+  and needed the metachar check to catch it. Unterminated quotes
+  tokenize to nothing and deny. A whole-word quote is a DIFFERENT
+  command and correctly does not match.
+- **The mode's posture dominates**: ShellPolicyDecide checks
+  read-only/plan FIRST — allowlisted commands still deny there; the
+  allowlist widens nothing, it only narrows the prompt set in the
+  working modes. Nil allowlist behaves exactly like PolicyDecide.
+  Every gate rebuild (mode switch, /login, /logout) composes the same
+  allowlist, so the policy survives mode cycling. The gate still logs
+  allowlisted runs.
+
+## Verified for real
+
+- All eleven packages; new tests: the matching matrix (prefix, longer
+  command, same-token-different-arg, case, quoting, metachar
+  smuggling, substitution, pipe, redirection, whole-word quote),
+  fail-closed cases (unterminated quote, nil allowlist, all-invalid
+  input), and the composed policy (safe auto-allows without consulting
+  the prompt — asserted via promptCalled; risky prompts and honors
+  denial; read-only/plan deny even safe; nil = PolicyDecide).
+- **PTY, ask mode with safe_commands ["echo"]**: the model issued two
+  run_shell calls; `echo safe-ok` ran with zero permission prompts;
+  `touch risky.txt` prompted, was denied with n, and the file was never
+  created; the turn completed.
+
+## Phase 14 assumptions
+
+1. Prefix semantics over Codex's full rule language (no per-command
+   rationale fields, no Starlark) — a flat list is auditable and
+   matches tilde's config style.
+2. Metacharacter conservatism: a quoted metachar also denies —
+   untolerable ambiguity beats convenience.
+3. The allowlist applies to subagents too (shared gate), which is
+   intended: same trust boundary.

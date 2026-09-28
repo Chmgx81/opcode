@@ -23,6 +23,10 @@ const DefaultPermissionMode = "ask"
 type Config struct {
 	Model          string `json:"model"`
 	PermissionMode string `json:"permission_mode"`
+	// SafeCommands are shell command prefixes that run without
+	// prompting even in ask mode (token-wise prefix match; see
+	// tools.ShellAllowlist). Empty means every shell call prompts.
+	SafeCommands []string `json:"safe_commands"`
 	// ContextWindow is the model's context size in tokens; 0 (the
 	// default) disables compaction. CompactionModel optionally names a
 	// cheaper model for the summarizer round (empty = the main model).

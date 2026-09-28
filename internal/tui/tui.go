@@ -50,6 +50,11 @@ type Options struct {
 	BaseURL      string
 	AuditPath    string
 
+	// ShellAllow is the safe-command allowlist (config.json
+	// "safe_commands"). Gate rebuilds compose it in: matching shell
+	// commands skip the prompt; the mode's posture still dominates.
+	ShellAllow *tools.ShellAllowlist
+
 	// Skills and MCP managers back the /skills and /mcp commands.
 	Skills   *skills.Manager
 	MCPNames func() []string // connected server names + tool counts
