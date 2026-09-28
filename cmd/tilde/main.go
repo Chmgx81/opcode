@@ -177,12 +177,13 @@ func run() error {
 	// built.
 	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
 	spawnEmitter := &subagent.Emitter{}
-	registry.Register(subagent.SpawnTool{Runner: &subagent.Runner{
+	subRunner := &subagent.Runner{
 		Provider: provider,
 		Model:    cfg.Model,
 		Registry: &registry,
 		Gate:     gate,
-	}, Emitter: spawnEmitter})
+	}
+	registry.Register(subagent.SpawnTool{Runner: subRunner, Emitter: spawnEmitter})
 
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
@@ -249,6 +250,52 @@ func run() error {
 		}
 	}
 
+	// switchModel backs the TUI's /model picker: it rebuilds the
+	// provider for the new provider/model pair everywhere it lives —
+	// orchestrator, subagent runner, audit redactor — resolving the new
+	// provider's key the same way startup does.
+	switchModel := func(providerName, model string) error {
+		pc, ok := models.Providers[providerName]
+		if !ok {
+			return fmt.Errorf("provider %q is not in models.json", providerName)
+		}
+		if pc.BaseURL == "" {
+			return fmt.Errorf("provider %q has no base_url configured", providerName)
+		}
+		if model == "" {
+			return fmt.Errorf("no model given")
+		}
+		r := config.NewResolver(auth, pc)
+		k, hasKey, err := r.APIKey(providerName)
+		if err != nil {
+			return err
+		}
+		if !hasKey && pc.APIKeyEnv != "" &&
+			!strings.Contains(pc.BaseURL, "localhost") && !strings.Contains(pc.BaseURL, "127.0.0.1") {
+			return fmt.Errorf("no API key for provider %q (set %s, /login, or auth.json)",
+				providerName, pc.APIKeyEnv)
+		}
+		newProvider := llm.NewOpenAICompat(pc.BaseURL, k.Value)
+		orch.Provider = newProvider
+		orch.Model = model
+		subRunner.Provider = newProvider
+		subRunner.Model = model
+		// The redactor protects the stored key; the new key is a new
+		// secret to redact.
+		gate.Audit = tools.NewAuditLog(auditPath, tools.NewRedactor(k.Value))
+		return nil
+	}
+
+	// resumeSession re-seeds the orchestrator from a saved session.
+	resumeSession := func(path string) (int, error) {
+		s, err := session.Load(path)
+		if err != nil {
+			return 0, err
+		}
+		orch.Seed(s.History())
+		return len(s.History()), nil
+	}
+
 	// Headless (Section 3.9): one turn, no UI. Permissions fail closed
 	// with nobody to ask; use full-auto for unattended automation.
 	if *prompt != "" {
@@ -292,8 +339,12 @@ func run() error {
 			}
 			return names
 		},
-		PendingTrust: pending,
-		StartupNotes: startupNotes,
+		Models:             models,
+		SwitchModel:        switchModel,
+		SaveCurrentSession: saveSession,
+		ResumeSession:      resumeSession,
+		PendingTrust:       pending,
+		StartupNotes:       startupNotes,
 	})
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.

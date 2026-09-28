@@ -19,6 +19,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 
+	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
 	"github.com/Chmgx81/tilde/internal/skills"
@@ -51,6 +52,17 @@ type Options struct {
 	// Skills and MCP managers back the /skills and /mcp commands.
 	Skills   *skills.Manager
 	MCPNames func() []string // connected server names + tool counts
+
+	// Models backs the /model picker. SwitchModel rebuilds the provider
+	// and the model everywhere they live (orchestrator, subagent
+	// runner, audit redactor); the TUI stays free of wiring.
+	Models      config.ModelsConfig
+	SwitchModel func(provider, model string) error
+	// SaveCurrentSession persists the current conversation tree;
+	// ResumeSession loads another session and re-seeds the orchestrator.
+	// /sessions owns only the interaction.
+	SaveCurrentSession func()
+	ResumeSession      func(path string) (messages int, err error)
 
 	PendingTrust *TrustDecision
 	StartupNotes []string
@@ -130,6 +142,11 @@ type entry struct {
 	full     string // full result text (expansion)
 	summary  string // collapsed one-liner
 	subTitle string // subagent label
+
+	// Markdown cache (entryAssistant): rendered once per width so View
+	// doesn't re-run glamour on every frame.
+	rendered  []string
+	renderedW int
 }
 
 // Model is the Bubble Tea model. Pointer receiver so the gate's prompt
@@ -171,6 +188,10 @@ type Model struct {
 	// Command palette: open when the composer starts with "/".
 	paletteIdx int
 
+	// Overlay picker (/model, /sessions): filter-as-you-type list.
+	picker      *picker
+	pendingPick *pickerItem // selected item awaiting its command's action
+
 	// help overlay ("?").
 	helpOpen bool
 
@@ -194,7 +215,8 @@ var commands = []command{
 	{"/exit", "quit tilde"},
 	{"/help", "show keys and commands"},
 	{"/mode", "show or switch permission mode"},
-	{"/model", "show the active model and provider"},
+	{"/model", "pick or switch the model"},
+	{"/sessions", "browse and resume a saved session"},
 	{"/skills", "list available skills"},
 	{"/mcp", "list MCP servers and tools"},
 	{"/login", "store an API key (masked)"},

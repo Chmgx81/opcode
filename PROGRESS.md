@@ -510,3 +510,80 @@ streaming markdown beyond fence-boxing, kitty keyboard protocol
 Markdown streaming polish (glamour or hand-rolled), syntax
 highlighting (chroma), models picker over models.json, session
 browser over ~/.tilde/sessions, kitty protocol for shift+enter.
+
+---
+
+# Phase 8 — Markdown, Models Picker, Session Browser (status: complete, live-verified)
+
+## Built
+
+- **Assistant markdown** (`internal/tui/markdown.go`): glamour v1 with
+  a brand-themed StyleConfig — green headings, electric-green bullets,
+  accent-colored links and inline code, and a custom chroma registry
+  entry (not a stock theme) so syntax tokens carry the palette: keywords
+  electric green, strings sky, numbers amber, comments the dim
+  green-gray. Renderers are cached per wrap width; the rendered lines
+  cache on the transcript entry itself, so View's per-frame pass never
+  re-runs glamour. The in-flight stream keeps the cheap plain renderer;
+  the flushed entry upgrades in place. Any glamour failure falls back to
+  the plain renderer — a styling problem never costs content.
+- **Overlay picker** (`internal/tui/picker.go`): the shared interaction
+  behind /model and /sessions — type to filter (case-insensitive over
+  label + detail), arrows or ctrl+n/p to move, Enter to select, Esc to
+  close, list windowed to 12 rows around the selection.
+- **/model picker**: lists every provider and model from models.json
+  (the active one marked), or `/model <name>` switches directly when the
+  name is configured. Selecting runs the injected SwitchModel callback,
+  which (in cmd/tilde) resolves the new provider's key exactly as startup
+  does, rebuilds the OpenAI-compatible client, re-points the
+  orchestrator AND the subagent runner, and swaps the audit redactor for
+  the new key. Refused mid-turn (finish or interrupt first).
+- **/sessions browser**: lists ~/.tilde/sessions newest-first with
+  message count, model, and a preview of the first user message;
+  corrupt files are skipped, not fatal. Selecting saves the current
+  conversation, re-seeds the orchestrator from the chosen session, and
+  resets the transcript (usage counter included) with a resume note.
+- **Push repair**: the earlier "pushed" commits had silently failed —
+  git's credential helper pointed at /usr/bin/gh, absent in this
+  sandbox. Re-pushed the six pending commits with a gh-based helper.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all eleven packages, including new tests:
+  picker open/filter/select/cancel (select provably calls SwitchModel
+  with the right pair; Esc provably does not), /sessions against a real
+  saved session file (current conversation saved first, resume callback
+  receives the right path, preview text present), markdown render
+  content (heading, emphasis, link, code fence survive render), and the
+  per-entry render cache (same slice reused; a width change re-renders).
+- **PTY against the local scripted server**: markdown turn rendered
+  with ANSI256 brand colors (H1 green, bullets, code panel); the /model
+  picker filtered "second" to one match, Enter switched, and the NEXT
+  request's body provably carried second-model (the server answers with
+  the request's model name); /sessions listed two real saved sessions
+  newest-first and resuming reset the transcript with the
+  "resumed … 2 messages in context" note.
+- **Live OpenRouter** (`inclusionai/ling-3.0-flash-fin:free`): asked
+  the real model for a bullet list plus a tiny go code block; the
+  response rendered as styled markdown — bullet, code panel, no raw
+  fence markers left.
+
+## Phase 8 assumptions
+
+1. Model switching is refused mid-turn rather than racing an in-flight
+   request; it takes effect on the next request.
+2. A provider with no `models` list appears in the picker as a
+   provider-only entry that switches the provider and keeps the current
+   model (there is nothing better to do with no list).
+3. Resuming saves the current conversation first, but as its own new
+   session file (tree storage has no delete; a "move into" semantic is
+   out of scope).
+4. The subagent runner follows the parent's provider/model switch —
+   there is deliberately no independent subagent model picker yet.
+
+## Still deferred (updated list)
+
+LaTeX, image paste / vision, drag-and-drop, plan mode, todos, reasoning
+display, retry/handoff UI, multi-select questions, @-mention fuzzy file
+picker, MCP debug view, kitty keyboard protocol (true shift+enter),
+persistent left-column session sidebar.
