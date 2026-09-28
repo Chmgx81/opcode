@@ -27,7 +27,7 @@ import (
 )
 
 // version tracks the architecture doc revision.
-const version = "v0.2"
+const version = "v0.2.1"
 
 // The tilde logo, shown at the top of a fresh session; it scrolls away
 // with the transcript.
