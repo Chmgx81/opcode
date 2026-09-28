@@ -512,3 +512,24 @@ func TestViewWideContentWrapsNotOverflows(t *testing.T) {
 		t.Errorf("long result should wrap into several lines, got %d", n)
 	}
 }
+
+func TestFreshViewShowsBanner(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.width, m.height = 80, 24
+
+	view := m.View()
+	// The logo glyphs must be present on a fresh session, in the accent
+	// color, and every banner line must fit the terminal width.
+	if !strings.Contains(view, "▄") || !strings.Contains(view, "▀") {
+		t.Errorf("banner missing from fresh view:\n%s", view)
+	}
+	for i, l := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(l); w > 80 {
+			t.Errorf("line %d is %d cols wide: %q", i, w, l)
+		}
+	}
+	if len(strings.Split(view, "\n")) > 24 {
+		t.Errorf("fresh frame is %d rows, must fit 24", len(strings.Split(view, "\n")))
+	}
+}

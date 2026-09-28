@@ -10,6 +10,7 @@ package tui
 
 import (
 	"context"
+	_ "embed"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -20,6 +21,12 @@ import (
 	"tilde/internal/orchestrator"
 	"tilde/internal/tools"
 )
+
+// The tilde logo, shown at the top of a fresh session like the
+// reference apps' welcome screens; it scrolls away with the transcript.
+//
+//go:embed banner.txt
+var banner string
 
 // Options wires the TUI to the rest of the system. Everything here is
 // injected; the package never loads config itself.
@@ -88,11 +95,16 @@ func New(opt Options) *Model {
 
 	sp := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 
-	return &Model{
+	m := &Model{
 		opt:     opt,
 		input:   input,
 		spinner: sp,
 	}
+	for _, line := range strings.Split(strings.TrimRight(banner, "\n"), "\n") {
+		m.lines = append(m.lines, accentStyle.Render(line))
+	}
+	m.lines = append(m.lines, "")
+	return m
 }
 
 // Init implements tea.Model.
