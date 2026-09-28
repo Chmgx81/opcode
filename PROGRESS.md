@@ -588,6 +588,20 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   footer line under the box ("? help · / commands · ! shell · @
   files"), the shape of the reference apps' "? for shortcuts" footer.
   fit() now reserves the composer's live height instead of a constant.
+- **Placeholder brightness + query/answer hierarchy** (user-reported,
+  third pass, both from the Claude Code reference): the placeholder
+  rendered at the textarea's default gray-bright, brighter than a hint
+  should read; and user queries and assistant output rendered at the
+  same weight, so a conversation read flat. The placeholder now uses
+  the Dim token (FocusedStyle.Placeholder and BlurredStyle.Placeholder
+  — the textarea keeps two style states), and the echoed user query
+  renders dim behind the accent prompt while the agent's markdown stays
+  bright: what the user said recedes, what the agent answered leads —
+  the reference apps' exact hierarchy. The identity title moved off the
+  user-entry kind (it is not a query and must not dim). Regression test
+  asserts the placeholder line and the user line carry the dim SGR and
+  the assistant line does not; PTY run confirmed the same codes live
+  (59 for query text, 194/41 for the answer, 59 for the placeholder).
 
 ## Phase 8 assumptions
 

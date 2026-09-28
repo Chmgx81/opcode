@@ -777,7 +777,7 @@ func (m *Model) resumeSession(path, label string) {
 	m.stream.Reset()
 	m.queue = nil
 	m.usage = llm.Usage{}
-	m.add(entry{kind: entryUser, text: boldStyle.Render("tilde " + version)})
+	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("tilde " + version)})
 	m.add(entry{kind: entryDim, text: dimStyle.Render(m.opt.Model + " · " + m.opt.Mode)})
 	m.add(entry{kind: entryOK, text: fmt.Sprintf("resumed %s — %d messages in context", label, n)})
 	m.showToast("resumed " + label)

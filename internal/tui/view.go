@@ -41,7 +41,10 @@ func (m *Model) renderEntry(e *entry) []string {
 	w := m.termWidth()
 	switch e.kind {
 	case entryUser:
-		return wrapAll(accentStyle.Render(GlyphPrompt+" ")+e.text, w)
+		// Queries echo dim with the accent prompt — the reference
+		// apps' hierarchy: what the user said recedes, the agent's
+		// markdown stays bright and primary.
+		return wrapAll(accentStyle.Render(GlyphPrompt+" ")+dimStyle.Render(e.text), w)
 	case entryAssistant:
 		if e.rendered == nil || e.renderedW != w {
 			e.rendered = renderMarkdown(e.text, w)
