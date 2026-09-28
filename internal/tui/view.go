@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -14,13 +15,14 @@ import (
 // status line while a turn runs, the composer with a mode line under
 // it, and floating layers (palette, help) that fit the terminal.
 func (m *Model) View() string {
-	var layers []string
+	tl := m.timelineView()
+	fl := m.floatingView()
+	cl := m.composerView()
+	layers := append(append(tl, fl...), cl...)
 
-	layers = append(layers, m.timelineView()...)
-	layers = append(layers, m.floatingView()...)
-	layers = append(layers, m.composerView()...)
-
-	return strings.Join(m.fit(layers), "\n")
+	// The floating and composer layers are protected: the transcript
+	// trims from the front, the dialog and composer never do.
+	return strings.Join(m.fit(layers, len(fl)+len(cl)), "\n")
 }
 
 // timelineView renders the transcript entries. Every user query and
@@ -325,11 +327,7 @@ func (m *Model) floatingView() []string {
 					dimStyle.Render("it would be able to run: "+files+" — y trust, n/Esc decline")))
 	}
 	if m.awaitingPerm != nil {
-		out = append(out, "",
-			promptBoxStyle.Width(w-4).Render(
-				promptStyle.Render("allow?")+" "+toolNameStyle.Render(m.awaitingPerm.tool)+" "+
-					dimStyle.Render("(tier "+string(m.awaitingPerm.tier)+
-						") — y allow · a allow all action tools this session · n/Esc deny")))
+		out = append(out, "", m.permDialogView(m.awaitingPerm, w))
 	}
 	if m.awaitingPlan != nil {
 		out = append(out, "",
@@ -575,7 +573,7 @@ func (m *Model) helpView(w int) string {
 
 // fit trims rendered layers so the frame never exceeds the terminal
 // (bubbletea's inline renderer corrupts when it does).
-func (m *Model) fit(layers []string) []string {
+func (m *Model) fit(layers []string, protected int) []string {
 	if m.height <= 0 {
 		return layers
 	}
@@ -590,11 +588,27 @@ func (m *Model) fit(layers []string) []string {
 	if max < 1 {
 		max = 1
 	}
-	if len(layers) <= max {
+	// Count rendered ROWS, not layers: one layer may be a multi-row
+	// block (the approval dialog). The transcript trims from the
+	// front with a marker; the protected tail (open dialog, composer)
+	// is never dropped.
+	rows := 0
+	for _, l := range layers {
+		rows += strings.Count(l, "\n") + 1
+	}
+	if rows <= max {
 		return layers
 	}
-	dropped := len(layers) - max
-	out := make([]string, 0, max+1)
+	trimmable := len(layers) - protected
+	dropped := 0
+	for dropped < trimmable && rows > max {
+		rows -= strings.Count(layers[dropped], "\n") + 1
+		dropped++
+	}
+	if dropped == 0 {
+		return layers
+	}
+	out := make([]string, 0, len(layers)-dropped+1)
 	out = append(out, dimStyle.Render(fmt.Sprintf("… %d earlier lines", dropped)))
 	return append(out, layers[dropped:]...)
 }
@@ -686,4 +700,81 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// permTitle is the dialog's title in plain words (spec 9.1).
+func permTitle(tool string) string {
+	switch tool {
+	case "run_shell":
+		return "Bash command"
+	case "write_file":
+		return "Write file"
+	case "edit_file":
+		return "Edit file"
+	default:
+		return tool
+	}
+}
+
+// permTierWords is the tier badge in plain words, never the internal
+// tier string.
+func permTierWords(tool string) string {
+	switch tool {
+	case "run_shell":
+		return "Runs a command"
+	case "write_file", "edit_file":
+		return "Changes files"
+	default:
+		return "Uses an external service"
+	}
+}
+
+// permLiteral is the literal command or path the approval is about —
+// shown verbatim, never summarized (spec 3.3).
+func permLiteral(tool, args string) string {
+	var a struct {
+		Command string `json:"command"`
+		Path    string `json:"path"`
+	}
+	if json.Unmarshal([]byte(args), &a) == nil {
+		if a.Command != "" {
+			return a.Command
+		}
+		if a.Path != "" {
+			return a.Path
+		}
+	}
+	return args
+}
+
+// permDialogView renders the approval dialog (spec 9.1, the reference
+// product's shape): title, tier badge in plain words, the literal
+// command, the numbered options with the selection highlighted, and
+// the key hints. No is highlighted first — the safest default.
+func (m *Model) permDialogView(req *permRequest, w int) string {
+	opts := []string{
+		"Yes",
+		"Yes, and don't ask again for: " + req.scope,
+		"No",
+	}
+	var rows []string
+	rows = append(rows, promptStyle.Render(permTitle(req.tool))+" "+
+		dimStyle.Render("· "+permTierWords(req.tool)))
+	rows = append(rows, "")
+	for _, l := range wrapAll(permLiteral(req.tool, req.args), w-8) {
+		rows = append(rows, l)
+	}
+	rows = append(rows, "", dimStyle.Render("This command requires approval. Do you want to proceed?"), "")
+	for i, o := range opts {
+		marker := "  "
+		style := dimStyle
+		if i == req.sel {
+			marker = accentStyle.Render(GlyphPrompt + " ")
+			style = toolNameStyle
+		}
+		rows = append(rows, marker+style.Render(fmt.Sprintf("%d. %s", i+1, o)))
+	}
+	rows = append(rows, "",
+		dimStyle.Render("1-3 or arrows to choose · enter selects · y/a/n work · esc cancels"))
+	return promptBoxStyle.Width(w - 4).Render(strings.Join(rows, "\n"))
 }

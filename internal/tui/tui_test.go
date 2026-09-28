@@ -750,8 +750,13 @@ func TestViewLayoutFitsTerminal(t *testing.T) {
 			t.Errorf("line %d is %d cols wide: %q", i, w, stripANSI(l))
 		}
 	}
-	if !strings.Contains(view, "allow?") {
-		t.Errorf("permission prompt missing:\n%s", view)
+	if !strings.Contains(view, "Do you want to proceed?") {
+		t.Errorf("permission dialog missing:\n%s", view)
+	}
+	for _, want := range []string{"1. Yes", "don't ask again", "3. No"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("permission dialog missing %q:\n%s", want, view)
+		}
 	}
 }
 
