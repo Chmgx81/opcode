@@ -740,3 +740,66 @@ persistent left-column session sidebar.
   the installed release binary printed "tilde v0.2.1" — the
   -X main.version injection works in the real pipeline. Release
   v0.2.1 carries all five binaries.
+
+---
+
+# Phase 10 — Conversation Rhythm, Tab Modes, Diff Highlighting (status: complete, live-verified)
+
+## Built
+
+- **Conversation spacing**: every user query and every finished answer
+  opens with a blank line, and collapseBlanks (ANSI-aware, since
+  glamour pads lines with styled spaces) keeps it to exactly one gap —
+  blocks breathe; nothing doubles up against the greeting or glamour's
+  own margins.
+- **Three modes**: auto-accept-safe-ops is gone from the real set (it
+  was indistinguishable from ask-every-time in the gate — drafts
+  auto-run in every mode). Modes are read-only / ask-every-time /
+  full-auto; the old name survives as a legacy config alias that
+  normalizes to ask-every-time, always toward the restrictive
+  direction, and the config error message names the three real modes.
+- **Tab cycles modes** forward, shift+tab backward, across the three.
+  Mode switches announce with an **animated toast**: a diamond glyph
+  burst (◇ ◈ ◆ ◈ ◇, 90ms frames) driven by a toast tick, then settles
+  to the normal toast.
+- **Syntax-highlighted diffs**: edit_file hunks now token-color the
+  source (chroma, lexer matched from the file path, memoized; token
+  colors mirror the markdown registry) with − / + markers carrying
+  the verdict — caught live that the old line-count heuristic reported
+  +0 −0 for a same-line-count replacement; diffCounts now counts
+  replaced lines as one − and one + plus the growth tail.
+- **Accessibility / ease of use**: NO_COLOR is now honored (the
+  termenv fallback used to resurrect color over it), tilde has a real
+  --help (usage, flags, and a first-run pointer), and --version
+  already existed from Phase 9.
+- **README rewritten**: the banner was broken HTML (pre inside p —
+  GitHub mangles it); now a plain code block. The whole README trimmed
+  to ~100 lines — hero, one-liner install, quick start, the three
+  modes, one keys table, a compact beyond-the-loop section.
+
+## Verified for real
+
+- All eleven packages; new tests: conversation spacing (blank before
+  each block, never doubled), the three-mode cycle (tab forward,
+  shift+tab back, gate follows into read-only denial), legacy alias
+  normalization, animated toast frame consumption, diff highlighting
+  (accent SGR on a keyword inside a removed line, content intact),
+  and the corrected +/− counts.
+- **PTY, live against a scripted server doing a real write_file +
+  edit_file round**: blank lines between query/answer/tool blocks;
+  the hunk rendered token-colored live (− red, func bold accent, main
+  accent, braces dim); three tabs cycled full-auto → read-only →
+  ask-every-time with all three toast glyph frames observed in the
+  log; the edited file on disk really contained the change.
+- --help output, --version, and NO_COLOR (zero SGR codes in a PTY
+  run) all executed and checked.
+
+## Phase 10 assumptions
+
+1. Legacy configs naming auto-accept-safe-ops silently become
+   ask-every-time — restrictive direction; the config error names the
+   real modes for everything else.
+2. Tab is free (the composer does not use it); it cycles modes. This
+   matches the reference apps' muscle memory.
+3. The diff highlighter degrades to plain lines for unknown languages
+   and on tokenise failure — content is never at risk.

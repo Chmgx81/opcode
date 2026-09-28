@@ -45,6 +45,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case toastTickMsg:
+		if m.toastAnim > 0 {
+			m.toastAnim--
+			if m.toastAnim > 0 {
+				return m, toastTick()
+			}
+		}
+		return m, nil
+
 	case permRequestMsg:
 		m.awaitingPerm = msg.req
 		return m, nil
@@ -151,9 +160,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showToast("palette closed")
 		}
 		return m, nil
-	case "shift+tab":
-		m.cycleMode()
-		return m, nil
+	case "tab", "shift+tab":
+		dir := 1
+		if msg.String() == "shift+tab" {
+			dir = -1
+		}
+		return m, m.cycleMode(dir)
 	case "ctrl+r":
 		m.expandResults = !m.expandResults
 		if m.expandResults {
@@ -262,16 +274,17 @@ func (m *Model) expandPastes(text string) string {
 	return text
 }
 
-// cycleMode moves to the next permission mode (shift+tab).
-func (m *Model) cycleMode() {
+// cycleMode moves through the permission modes: tab forward, shift+tab
+// back. Both end in setMode, which drives the gate, the status bar, and
+// the animated toast.
+func (m *Model) cycleMode(dir int) tea.Cmd {
 	for i, mode := range tools.Modes {
 		if mode == m.opt.Mode {
-			next := tools.Modes[(i+1)%len(tools.Modes)]
-			m.setMode(next)
-			return
+			next := tools.Modes[(i+dir+len(tools.Modes))%len(tools.Modes)]
+			return m.setMode(next)
 		}
 	}
-	m.setMode(tools.ModeAskEveryTime)
+	return m.setMode(tools.ModeAskEveryTime)
 }
 
 // submitInput handles Enter / Alt+Enter. Large pastes and @ mentions
@@ -333,8 +346,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		m.logout()
 		return nil
 	case "/mode":
-		m.setMode(arg)
-		return nil
+		return m.setMode(arg)
 	case "/model":
 		m.handleModelCommand(arg)
 		return nil
@@ -456,22 +468,23 @@ func (m *Model) logout() {
 			". This does not unset environment variables or revoke the key at the provider."})
 }
 
-// setMode implements /mode and shift+tab: no argument shows the mode;
-// a valid name switches and resets any session allow-all grant.
-func (m *Model) setMode(arg string) {
+// setMode implements /mode, tab, and shift+tab: no argument shows the
+// mode; a valid name switches, resets any session allow-all grant, and
+// announces the change with an animated toast.
+func (m *Model) setMode(arg string) tea.Cmd {
 	if arg == "" {
 		m.add(entry{kind: entryDim,
-			text: "mode is " + m.opt.Mode + " — options: " + strings.Join(tools.Modes, ", ") + "; /mode <name> or shift+tab"})
-		return
+			text: "mode is " + m.opt.Mode + " — options: " + strings.Join(tools.Modes, ", ") + "; /mode <name> or tab"})
+		return nil
 	}
 	mode := tools.NormalizeMode(arg)
 	if !tools.ValidMode(mode) {
 		m.add(entry{kind: entryErr, text: "unknown mode " + arg + " — options: " + strings.Join(tools.Modes, ", ")})
-		return
+		return nil
 	}
 	if mode == m.opt.Mode {
 		m.showToast("mode is already " + mode)
-		return
+		return nil
 	}
 	m.opt.Orch.SetMode(mode)
 	m.rebuildGate(mode)
@@ -481,8 +494,8 @@ func (m *Model) setMode(arg string) {
 	if m.working {
 		note += " (takes effect for the next model request)"
 	}
-	m.showToast(note)
 	m.add(entry{kind: entryOK, text: note})
+	return m.showAnimatedToast(note)
 }
 
 func (m *Model) rebuildGate(mode string) {

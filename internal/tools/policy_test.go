@@ -127,3 +127,20 @@ func TestModeInstructionAndNormalization(t *testing.T) {
 		}
 	}
 }
+
+func TestLegacyModeAliases(t *testing.T) {
+	// The removed fourth mode and the Phase 1 spelling must keep old
+	// configs working — always toward the more restrictive posture.
+	if m := NormalizeMode(ModeAutoAcceptSafe); m != ModeAskEveryTime {
+		t.Errorf("auto-accept-safe-ops = %q, want ask-every-time", m)
+	}
+	if m := NormalizeMode("ask"); m != ModeAskEveryTime {
+		t.Errorf("ask = %q, want ask-every-time", m)
+	}
+	if ValidMode(ModeAutoAcceptSafe) {
+		t.Error("auto-accept-safe-ops is not a real mode anymore")
+	}
+	if len(Modes) != 3 {
+		t.Errorf("Modes = %v, want exactly three", Modes)
+	}
+}
