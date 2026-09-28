@@ -523,7 +523,7 @@ func (m *Model) listMcp() {
 // applyNewKey rebuilds the provider and the audit redactor so /login
 // and /logout take effect without a restart.
 func (m *Model) applyNewKey(provider, key string) {
-	m.opt.Orch.Provider = llm.NewOpenAICompat(m.opt.BaseURL, key)
+	m.opt.Orch.Provider = llm.New(m.opt.API, m.opt.BaseURL, key)
 	m.opt.Orch.Gate = &tools.Gate{
 		Decide: tools.ShellPolicyDecide(m.opt.Mode, m.Prompt(), m.opt.ShellAllow),
 		Audit:  tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),

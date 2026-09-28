@@ -33,15 +33,36 @@ tilde                                                                   # 2. run
 
 No key yet? Start tilde and run `/login` (masked input, takes effect
 immediately; `/login <provider>` stores a key for another provider).
-Non-default providers (Ollama, vLLM, anything OpenAI-compatible) go in
-`~/.tilde/models.json`.
+## Providers
 
-Keys resolve in order: the `auth.json` entry (`{"openrouter": "<key>"}`,
-or `{"openrouter": "!pass show openrouter"}` to fetch from a secret
+Built in — name one in models.json and it works:
+
+```json
+{"default_provider": "anthropic"}
+```
+
+| Provider | Endpoint | Key |
+|---|---|---|
+| `openrouter` (default) | openrouter.ai/api/v1 | `OPENROUTER_API_KEY` |
+| `anthropic` | Messages API, native client | `ANTHROPIC_API_KEY` |
+| `openai` | api.openai.com/v1 | `OPENAI_API_KEY` |
+| `mistral` | api.mistral.ai/v1 | `MISTRAL_API_KEY` |
+| `google` | Gemini OpenAI-compat | `GEMINI_API_KEY` |
+| `nvidia` | integrate.api.nvidia.com/v1 | `NVIDIA_API_KEY` |
+| `groq` · `deepseek` · `together` · `cerebras` · `xai` · `moonshot` · `fireworks` · `qwen` | OpenAI-compatible | `<NAME>_API_KEY` |
+| `ollama` | localhost:11434 | none |
+
+Everything not OpenAI-compatible goes through a native client
+(Anthropic today); the rest speak chat/completions. Custom endpoints
+and proxies still belong in models.json's `providers` block — an
+explicit entry always wins over the catalog, and an entry that names
+only a base URL merges the rest from it.
+
+Keys resolve in order: the `auth.json` entry (`{"anthropic": "<key>"}`,
+or `{"anthropic": "!pass show anthropic"}` to fetch from a secret
 manager at first use), then the environment — the provider's
 `api_key_env` if models.json names one, else the conventional
-`<PROVIDER>_API_KEY` (`DEEPSEEK_API_KEY`, `GROQ_API_KEY`,
-`OPENROUTER_API_KEY`, …). Credentials never load from a project-level
+`<PROVIDER>_API_KEY`. Credentials never load from a project-level
 `.tilde/`.
 
 ## The four modes

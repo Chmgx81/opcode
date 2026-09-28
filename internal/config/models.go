@@ -17,11 +17,14 @@ const (
 )
 
 // ProviderConfig is one entry of models.json. BaseURL is any
-// OpenAI-compatible chat/completions endpoint; APIKeyEnv names the
-// environment variable used as the credential fallback (empty means the
-// provider needs no key, e.g. a local server).
+// OpenAI-compatible chat/completions endpoint (or a Messages-API
+// endpoint when API is "anthropic"); APIKeyEnv names the
+// environment variable used as the credential fallback (empty means
+// the derived <NAME>_API_KEY rule, and for a local server it means
+// no key needed).
 type ProviderConfig struct {
 	BaseURL   string   `json:"base_url"`
+	API       string   `json:"api"` // "openai" (default) or "anthropic"
 	APIKeyEnv string   `json:"api_key_env"`
 	Models    []string `json:"models"`
 }
@@ -52,30 +55,56 @@ func LoadModels(dir string) (ModelsConfig, error) {
 	return mc, nil
 }
 
-// applyDefaults fills the default provider entry and selects the provider
-// to use: an explicit choice, else the sole configured provider, else
-// OpenRouter.
+// applyDefaults fills provider entries from the built-in catalog and
+// selects the provider to use: an explicit default_provider, else the
+// sole configured provider, else OpenRouter. An explicit providers
+// entry always wins over the catalog unless it is empty, in which case
+// the catalog fills in what the user left out.
 func (mc *ModelsConfig) applyDefaults(chosen string) {
 	if mc.Providers == nil {
 		mc.Providers = map[string]ProviderConfig{}
 	}
+	// Catalog merge: a named provider with no explicit settings (or
+	// one that names only some) gets the catalog's base URL, wire API,
+	// and credential rule for whatever it left empty.
+	for name, pc := range mc.Providers {
+		if cat, ok := lookup(name); ok {
+			if pc.BaseURL == "" {
+				pc.BaseURL = cat.BaseURL
+			}
+			if pc.API == "" {
+				pc.API = cat.API
+			}
+			if pc.APIKeyEnv == "" {
+				pc.APIKeyEnv = cat.APIKeyEnv
+			}
+			mc.Providers[name] = pc
+		}
+	}
+
+	switch {
+	case chosen != "":
+		if _, ok := mc.Providers[chosen]; !ok {
+			if cat, ok := lookup(chosen); ok {
+				mc.Providers[chosen] = cat
+			}
+		}
+		mc.DefaultProvider = chosen
+	case len(mc.Providers) == 1:
+		for name := range mc.Providers {
+			mc.DefaultProvider = name
+		}
+	default:
+		mc.DefaultProvider = DefaultProviderName
+	}
+
+	// The OpenRouter default must always exist as a usable entry.
 	if _, ok := mc.Providers[DefaultProviderName]; !ok {
 		mc.Providers[DefaultProviderName] = ProviderConfig{
 			BaseURL:   DefaultBaseURL,
 			APIKeyEnv: DefaultAPIKeyEnv,
 		}
 	}
-	if chosen != "" {
-		mc.DefaultProvider = chosen
-		return
-	}
-	if len(mc.Providers) == 1 {
-		for name := range mc.Providers {
-			mc.DefaultProvider = name
-		}
-		return
-	}
-	mc.DefaultProvider = DefaultProviderName
 }
 
 // Provider returns the config of the provider that requests go to.

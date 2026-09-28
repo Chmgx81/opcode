@@ -44,10 +44,11 @@ type Options struct {
 	Mode      string
 	Cwd       string
 	TildeHome string
-	// ProviderName + BaseURL let /login rebuild the LLM client with the
+	// ProviderName + BaseURL + API let /login rebuild the LLM client with the
 	// new key instead of needing a restart.
 	ProviderName string
 	BaseURL      string
+	API          string // wire type: "openai" or "anthropic"
 	AuditPath    string
 
 	// Animations turns off the spinner and toast glyph burst when

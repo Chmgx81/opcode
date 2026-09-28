@@ -10,6 +10,7 @@ package llm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 )
 
@@ -34,6 +35,11 @@ type ToolCall struct {
 type Image struct {
 	MimeType string
 	Data     []byte
+}
+
+// base64 returns the standard-encoding payload for wire formats.
+func (i Image) base64() string {
+	return base64.StdEncoding.EncodeToString(i.Data)
 }
 
 // Message is one node of the conversation. An assistant message may carry
@@ -61,6 +67,10 @@ type ChatRequest struct {
 	System   string // prepended as a system message
 	Messages []Message
 	Tools    []Tool
+	// MaxTokens caps the completion; 0 means the provider's default
+	// (Anthropic requires the field and uses 8192; OpenAI-compatible
+	// servers omit it when 0).
+	MaxTokens int
 }
 
 // Chat event kinds.

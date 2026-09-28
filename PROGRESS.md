@@ -1514,3 +1514,56 @@ Honest list, in build order (each is its own phase):
    names (cyan accent, green success, …) match what quantization
    produces. Verified by eyeball in a 256-color PTY; a forced
    16-color golden comes with the gallery phase.
+
+# Phase 25 — Built-in provider catalog + native Anthropic (status: complete, live-verified)
+
+Spec: [docs/specs/phase25-providers.md](docs/specs/phase25-providers.md)
+
+## Built
+
+- **The catalog** (`internal/config/providers.go`): openrouter
+  (default), openai, anthropic, mistral, google, nvidia, groq,
+  deepseek, together, cerebras, xai, moonshot, fireworks, qwen,
+  ollama — name one in `default_provider` and the base URL and
+  credential rule resolve with zero configuration. Explicit
+  providers entries always win; entries that name only part of a
+  catalog provider merge the rest. (The sole-provider selection bug
+  this exposed — the forced OpenRouter insert ran before the
+  sole-provider check — is fixed in the same pass.)
+- **A native Anthropic Messages client** (`internal/llm/anthropic.go`)
+  — the one catalog entry that is not OpenAI-compatible:
+  `/v1/messages` with `x-api-key` + `anthropic-version`, `system`
+  as a top-level param, required `max_tokens` (ChatRequest gained
+  the field; default 8192), `tool_use`/`tool_result` content blocks,
+  base64 `image` sources (Phase 22 carries over), and `input_schema`
+  tools. SSE mapping: `text_delta` → text, `thinking_delta` →
+  reasoning (Phase 19 works for Claude), `input_json_delta`
+  accumulates and emits the call at `content_block_stop`,
+  `message_start`/`message_delta` usage → UsageEvent, and errors
+  reuse the readable-body parser.
+- **Client selection**: `llm.New(api, baseURL, key)` switches on the
+  wire type; the three construction sites (startup, `/model`, and
+  `/login`'s live re-key) share it — the TUI's Options gained the
+  API field so the re-keyed client keeps the right protocol.
+
+## Verified for real
+
+- All twelve packages; new tests: catalog resolution (named
+  built-ins, explicit-wins, empty-entry merge, sole-provider
+  selection), and the Anthropic suite mirroring the OpenAI one —
+  wire format (system, max_tokens, tool_use/tool_result, image
+  sources, input_schema), text/tool/thinking/usage/error mapping,
+  and the readable HTTP error.
+- **PTY, live**: a scripted Messages-API fixture streamed thinking,
+  text, and a tool_use block through the real TUI — the thinking
+  collapsed to `△ thought for 0s`, write_file really wrote
+  `/tmp/anthproj/main.go`, and the second round completed.
+
+## Phase 25 assumptions
+
+1. The Messages wire details are from the documented API shape and
+   verified against scripted SSE, not against Anthropic's live
+   servers (no key here); the first live Claude session is the
+   remaining honest check.
+2. Bare model names (e.g. `claude-sonnet-4.5`) are the user's to
+   set; per-provider model catalogs are future work.
