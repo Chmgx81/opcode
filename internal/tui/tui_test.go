@@ -191,8 +191,15 @@ func TestAltEnterWhileWorkingQueuesFollowUp(t *testing.T) {
 		t.Fatalf("queue = %v", m.queue)
 	}
 
-	// Turn completes; the queue must drain into a new turn.
+	// Turn completes; the queue must drain into a new turn. The turn
+	// runs on its own goroutine, and this test injects the completion
+	// event directly (the pump drops events without a tea program), so
+	// give the goroutine a moment to append the assistant message
+	// first — in production the drain fires from the turn's own event,
+	// which is emitted only after that append, so the ordering there is
+	// guaranteed rather than timed.
 	close(block)
+	time.Sleep(200 * time.Millisecond)
 	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventTurnComplete}))
 	if !m.working {
 		t.Error("queued follow-up did not start a new turn")

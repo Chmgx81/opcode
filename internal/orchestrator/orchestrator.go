@@ -126,10 +126,15 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		for _, steer := range o.drainSteer() {
 			o.history = append(o.history, llm.Message{Role: "user", Content: steer})
 		}
+		// Copy: the request must be a snapshot. Handing out the live
+		// slice lets any later append (the next turn, a subagent)
+		// reach into a request that already went out.
+		msgs := make([]llm.Message, len(o.history))
+		copy(msgs, o.history)
 		req := llm.ChatRequest{
 			Model:    o.Model,
 			System:   o.System,
-			Messages: o.history,
+			Messages: msgs,
 			Tools:    o.toolDefs(),
 		}
 		stream, err := o.Provider.StreamChat(ctx, req)

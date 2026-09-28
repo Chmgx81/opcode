@@ -13,6 +13,8 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,6 +23,9 @@ import (
 	"tilde/internal/orchestrator"
 	"tilde/internal/tools"
 )
+
+// version tracks the architecture doc revision.
+const version = "v0.1"
 
 // The tilde logo, shown at the top of a fresh session like the
 // reference apps' welcome screens; it scrolls away with the transcript.
@@ -88,7 +93,7 @@ type Model struct {
 
 func New(opt Options) *Model {
 	input := textinput.New()
-	input.Prompt = "❯ "
+	input.Prompt = "~ "
 	input.PromptStyle = accentStyle
 	input.Placeholder = "type a message, /login, /logout, or /exit"
 	input.Focus()
@@ -100,8 +105,17 @@ func New(opt Options) *Model {
 		input:   input,
 		spinner: sp,
 	}
+	// Greeting block, in the reference welcome screens' shape: logo,
+	// app name and version, model and mode, working directory — stacked
+	// lines that scroll away with the transcript.
 	for _, line := range strings.Split(strings.TrimRight(banner, "\n"), "\n") {
 		m.lines = append(m.lines, accentStyle.Render(line))
+	}
+	m.lines = append(m.lines, "")
+	m.lines = append(m.lines, lipgloss.NewStyle().Bold(true).Render("tilde "+version))
+	m.lines = append(m.lines, dimStyle.Render(opt.Model+" · "+opt.Mode))
+	if opt.Cwd != "" {
+		m.lines = append(m.lines, dimStyle.Render(opt.Cwd))
 	}
 	m.lines = append(m.lines, "")
 	return m
