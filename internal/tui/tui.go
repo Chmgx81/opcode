@@ -50,6 +50,11 @@ type Options struct {
 	BaseURL      string
 	AuditPath    string
 
+	// Animations turns off the spinner and toast glyph burst when
+	// false (config.json "animations": false) — the reduced-motion
+	// posture, Codex's MotionMode at tilde's scale.
+	Animations bool
+
 	// ShellAllow is the safe-command allowlist (config.json
 	// "safe_commands"). Gate rebuilds compose it in: matching shell
 	// commands skip the prompt; the mode's posture still dominates.
@@ -199,6 +204,13 @@ type Model struct {
 	stream  strings.Builder
 	login   *loginFlow
 
+	// streamRendered caches the in-flight stream's markdown render
+	// (invalidated by content length or width) so View's per-frame
+	// pass costs nothing.
+	streamRendered    []string
+	streamRenderedLen int
+	streamRenderedW   int
+
 	// expandResults toggles ctrl+r result expansion.
 	expandResults bool
 
@@ -342,8 +354,12 @@ func New(opt Options) *Model {
 	return m
 }
 
-// Init implements tea.Model.
+// Init implements tea.Model. The terminal title carries the working
+// directory, like the reference apps' window titles.
 func (m *Model) Init() tea.Cmd {
+	if m.opt.Cwd != "" {
+		return tea.Batch(textarea.Blink, tea.SetWindowTitle("tilde — "+m.opt.Cwd))
+	}
 	return textarea.Blink
 }
 
@@ -454,12 +470,17 @@ func (m *Model) showToast(text string) {
 }
 
 // showAnimatedToast sets the message and plays the glyph burst; the
-// returned Cmd drives the frames.
+// returned Cmd drives the frames. Reduced motion skips the burst —
+// the toast appears, it just does not dance.
 func (m *Model) showAnimatedToast(text string) tea.Cmd {
 	m.toast = text
 	m.toastAt = time.Now()
-	m.toastAnim = len(toastFrames)
-	return toastTick()
+	if m.opt.Animations {
+		m.toastAnim = len(toastFrames)
+		return toastTick()
+	}
+	m.toastAnim = 0
+	return nil
 }
 
 // SubagentSink returns the function the subagent wiring uses to report

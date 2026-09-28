@@ -73,6 +73,7 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 		ProviderName: "openrouter",
 		BaseURL:      "http://example.test/v1",
 		AuditPath:    filepath.Join(dir, "audit.jsonl"),
+		Animations:   true,
 		Models: config.ModelsConfig{
 			DefaultProvider: "openrouter",
 			Providers: map[string]config.ProviderConfig{
@@ -1207,5 +1208,81 @@ func TestPlanApprovalLifecycle(t *testing.T) {
 	}
 	if tr := m.transcript(); !strings.Contains(tr, "plan declined") {
 		t.Errorf("decline note missing:\n%s", tr)
+	}
+}
+
+func TestStreamRendersAsMarkdownWithNoFlushPop(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.width = 80
+
+	// Deltas accumulate; the in-flight view renders markdown (heading
+	// styled, not plain).
+	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "## Done\n\n- one\n"})
+	lines := m.timelineView()
+	joined := stripANSI(strings.Join(lines, "\n"))
+	if !strings.Contains(joined, "Done") || !strings.Contains(joined, "one") {
+		t.Fatalf("stream not rendered:\n%s", joined)
+	}
+	streamed := strings.Join(m.renderStream(strings.TrimSpace(m.stream.String()), m.termWidth()), "\n")
+
+	// Flushing must produce a byte-identical render — the guarantee
+	// that a completed message never reflows.
+	m.finishStream()
+	if len(m.entries) == 0 {
+		t.Fatal("flush produced no entry")
+	}
+	flushed := strings.Join(m.renderEntry(&m.entries[len(m.entries)-1]), "\n")
+	if flushed != streamed {
+		t.Errorf("flush reflowed the message:\nstream:\n%q\nflushed:\n%q", streamed, flushed)
+	}
+
+	// The cache invalidates on growth and width change.
+	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventText, Text: "more"})
+	_ = m.timelineView() // the cache populates on render, not on the delta
+	if m.streamRenderedLen == 0 {
+		t.Error("stream cache not populated")
+	}
+	m.width = 60
+	_ = m.timelineView()
+	if m.streamRenderedW != 60 {
+		t.Errorf("width change not picked up: %d", m.streamRenderedW)
+	}
+}
+
+func TestReducedMotion(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.opt.Animations = false
+
+	// The toast appears but does not animate: no frames, no tick cmd.
+	cmd := m.setMode(tools.ModeFullAuto)
+	if cmd != nil {
+		t.Error("reduced motion must not schedule animation ticks")
+	}
+	if m.toastAnim != 0 {
+		t.Errorf("toastAnim = %d, want 0", m.toastAnim)
+	}
+	if m.toast == "" {
+		t.Error("the toast itself must still show")
+	}
+
+	// The working line shows a static glyph, not spinner frames.
+	m.working = true
+	m.workingVerb = "Thinking…"
+	m.workingSince = time.Now()
+	var status string
+	for _, l := range m.composerView() {
+		if strings.Contains(stripANSI(l), "Thinking…") {
+			status = l
+		}
+	}
+	if status == "" {
+		t.Fatal("working line missing")
+	}
+	for _, frame := range []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"} {
+		if strings.Contains(status, frame) {
+			t.Errorf("reduced motion rendered spinner frame %q", frame)
+		}
 	}
 }

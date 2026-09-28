@@ -23,6 +23,9 @@ const DefaultPermissionMode = "ask"
 type Config struct {
 	Model          string `json:"model"`
 	PermissionMode string `json:"permission_mode"`
+	// Animations disables animated UI (spinner, toast glyph burst)
+	// when false. Nil/absent means animated — the default.
+	Animations *bool `json:"animations"`
 	// SafeCommands are shell command prefixes that run without
 	// prompting even in ask mode (token-wise prefix match; see
 	// tools.ShellAllowlist). Empty means every shell call prompts.

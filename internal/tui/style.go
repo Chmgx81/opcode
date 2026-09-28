@@ -73,7 +73,6 @@ var (
 	toolNameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexText)).Bold(true)
 	boldStyle     = lipgloss.NewStyle().Bold(true)
 	codeStyle     = lipgloss.NewStyle().Foreground(Accent2)
-	fenceStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(Deep).Padding(0, 1)
 
 	boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
