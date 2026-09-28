@@ -121,6 +121,18 @@ func (m *Manager) Connect(ctx context.Context, cfg Config) ([]Tool, []string) {
 	return allTools, notes
 }
 
+// Notes describes the connected servers (name and tool count), for the
+// TUI's /mcp command and startup display.
+func (m *Manager) Notes() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []string
+	for name, c := range m.clients {
+		out = append(out, fmt.Sprintf("%s · %d tools", name, len(c.Tools())))
+	}
+	return out
+}
+
 // Close stops every server.
 func (m *Manager) Close() {
 	m.mu.Lock()

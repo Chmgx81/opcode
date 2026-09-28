@@ -1,12 +1,13 @@
 package tui
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Chmgx81/tilde/internal/config"
@@ -30,6 +31,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case statusTickMsg:
+		if m.working {
+			return m, statusTick()
+		}
+		return m, nil
+
 	case permRequestMsg:
 		m.awaitingPerm = msg.req
 		return m, nil
@@ -42,14 +49,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if msg.Paste {
+			m.handlePaste(string(msg.Runes))
+			return m, nil
+		}
 		return m.handleKey(msg)
 	}
 	return m, nil
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// The trust prompt owns the keyboard before anything else: it is
-	// the first question of the session.
+	// The trust prompt owns the keyboard first.
 	if m.awaitingTrust != nil {
 		switch msg.String() {
 		case "y", "Y":
@@ -59,9 +69,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-
-	// A permission prompt owns the keyboard: nothing else may be typed,
-	// steered, or queued while it is up.
+	// Then the permission prompt.
 	if m.awaitingPerm != nil {
 		switch msg.String() {
 		case "y", "Y":
@@ -78,6 +86,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The help overlay closes on any key.
+	if m.helpOpen {
+		m.helpOpen = false
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.cancelTurn()
@@ -87,39 +101,163 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancelTurn()
 		}
 		return m, nil
-	case "enter", "alt+enter":
+	case "shift+tab":
+		m.cycleMode()
+		return m, nil
+	case "ctrl+r":
+		m.expandResults = !m.expandResults
+		if m.expandResults {
+			m.showToast("tool results expanded")
+		} else {
+			m.showToast("tool results collapsed")
+		}
+		return m, nil
+	case "?":
+		if !m.working && m.composer.Value() == "" {
+			m.helpOpen = true
+			return m, nil
+		}
+	case "enter":
 		if m.login != nil {
 			return m, m.submitLogin()
 		}
-		return m, m.submitInput(msg.String() == "alt+enter")
+		return m, m.submitInput(false)
+	case "alt+enter":
+		return m, m.submitInput(true)
+	case "shift+enter", "ctrl+j":
+		// Newline in the composer.
+		m.composer.InsertString("\n")
+		return m, nil
+	case "up", "down":
+		if m.paletteOpen() {
+			matches := m.paletteMatches()
+			if len(matches) > 0 {
+				if msg.String() == "up" {
+					m.paletteIdx--
+				} else {
+					m.paletteIdx++
+				}
+				m.paletteIdx = ((m.paletteIdx % len(matches)) + len(matches)) % len(matches)
+			}
+			return m, nil
+		}
 	}
 
 	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
+	m.composer, cmd = m.composer.Update(msg)
 	return m, cmd
 }
 
-// submitInput handles Enter / Alt+Enter. While a turn runs, Enter steers
-// (folds in at the next round boundary) and Alt+Enter queues a follow-up;
-// while idle, either starts a turn.
+// handlePaste stores a large paste and collapses it to a token in the
+// composer; small pastes insert inline. Tokens re-expand on submit.
+func (m *Model) handlePaste(text string) {
+	const minLines, minChars = 4, 1000
+	lines := strings.Count(text, "\n") + 1
+	if lines < minLines && len(text) < minChars {
+		m.composer.InsertString(text)
+		return
+	}
+	m.pastes = append(m.pastes, text)
+	token := fmt.Sprintf("[paste %d · %d lines]", len(m.pastes), lines)
+	m.pasteAt[token] = text
+	m.composer.InsertString(token)
+	m.showToast(fmt.Sprintf("pasted %d lines collapsed to a token", lines))
+}
+
+// expandPastes replaces paste tokens with their stored content, and
+// @path mentions with the file's contents (capped).
+func (m *Model) expandPastes(text string) string {
+	for token, content := range m.pasteAt {
+		if strings.Contains(text, token) {
+			text = strings.ReplaceAll(text, token, "\n"+content+"\n")
+		}
+	}
+	// @file mentions: read the file, cap the contribution.
+	fields := strings.Fields(text)
+	for _, f := range fields {
+		if !strings.HasPrefix(f, "@") || len(f) < 2 {
+			continue
+		}
+		path := strings.TrimPrefix(f, "@")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			text = strings.Replace(text, f, f+" (unreadable: "+err.Error()+")", 1)
+			continue
+		}
+		content := string(data)
+		if len(content) > 2048 {
+			content = content[:2048] + "\n… (truncated)"
+		}
+		text = strings.Replace(text, f,
+			fmt.Sprintf("file %s contents:\n%s\n(end of %s)", path, content, path), 1)
+	}
+	return text
+}
+
+// cycleMode moves to the next permission mode (shift+tab).
+func (m *Model) cycleMode() {
+	for i, mode := range tools.Modes {
+		if mode == m.opt.Mode {
+			next := tools.Modes[(i+1)%len(tools.Modes)]
+			m.setMode(next)
+			return
+		}
+	}
+	m.setMode(tools.ModeAskEveryTime)
+}
+
+// submitInput handles Enter / Alt+Enter. Large pastes and @ mentions
+// expand here; "!" runs a shell command directly without the model.
 func (m *Model) submitInput(alt bool) tea.Cmd {
-	text := strings.TrimSpace(m.input.Value())
-	if text == "" {
+	raw := strings.TrimSpace(m.composer.Value())
+	if raw == "" {
 		return nil
 	}
-	m.input.SetValue("")
-
-	// Slash commands: exact match or "/mode <name>".
-	fields := strings.Fields(text)
-	cmd := fields[0]
-	arg := ""
-	if len(fields) > 1 {
-		arg = fields[1]
+	// Resolve the palette selection BEFORE clearing the composer: the
+	// palette reads the composer's value, and clearing first would
+	// turn "/mo" into an unknown command.
+	if strings.HasPrefix(raw, "/") {
+		fields := strings.Fields(raw)
+		if len(fields) == 1 && m.paletteOpen() {
+			matches := m.paletteMatches()
+			if len(matches) > 0 {
+				raw = matches[m.paletteIdx].Name
+			}
+		}
 	}
-	switch cmd {
+	m.composer.SetValue("")
+	defer func() { m.pastes, m.pasteAt = nil, map[string]string{} }()
+
+	// Shell escape: the user typed it, not the model.
+	if strings.HasPrefix(raw, "!") && len(raw) > 1 {
+		cmd := strings.TrimSpace(strings.TrimPrefix(raw, "!"))
+		m.add(entry{kind: entryUser, text: dimStyle.Render("! " + cmd)})
+		out, err := (tools.RunShell{}).Execute(context.Background(), `{"command": `+mustJSON(cmd)+`}`)
+		if err != nil {
+			m.add(entry{kind: entryErr, text: out + " " + err.Error()})
+		} else {
+			m.add(entry{kind: entryDim, text: out})
+		}
+		return nil
+	}
+
+	text := m.expandPastes(raw)
+
+	fields := strings.Fields(text)
+	cmdName, arg := "", ""
+	if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
+		cmdName = fields[0]
+		if len(fields) > 1 {
+			arg = fields[1]
+		}
+	}
+	switch cmdName {
 	case "/exit", "/quit":
 		m.cancelTurn()
 		return tea.Quit
+	case "/help":
+		m.helpOpen = true
+		return nil
 	case "/login":
 		m.beginLogin()
 		return nil
@@ -129,82 +267,173 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	case "/mode":
 		m.setMode(arg)
 		return nil
+	case "/model":
+		m.add(entry{kind: entryDim, text: fmt.Sprintf("model %s · provider %s · base %s",
+			m.opt.Model, m.opt.ProviderName, m.opt.BaseURL)})
+		return nil
+	case "/skills":
+		m.listSkills()
+		return nil
+	case "/mcp":
+		m.listMcp()
+		return nil
 	}
 
 	if m.working {
 		if alt {
 			m.queue = append(m.queue, text)
-			m.lines = append(m.lines, queuedStyle.Render("(queued) "+text))
+			m.add(entry{kind: entryQueued, text: text})
 			return nil
 		}
 		m.opt.Orch.Steer(text)
-		m.lines = append(m.lines, steerStyle.Render("(steering) "+text))
+		m.add(entry{kind: entrySteer, text: text})
 		return nil
 	}
 
-	m.appendWrapped(accentStyle, "~ ", text)
+	m.add(entry{kind: entryUser, text: text})
 	m.startTurn(text)
-	return tea.Cmd(func() tea.Msg { return m.spinner.Tick() })
+	return tea.Batch(m.spinner.Tick, statusTick())
 }
 
-// beginLogin switches the input to masked capture for the provider's key.
+func mustJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func (m *Model) listSkills() {
+	if m.opt.Skills == nil {
+		m.add(entry{kind: entryDim, text: "no skills loaded"})
+		return
+	}
+	names := m.opt.Skills.Names()
+	if len(names) == 0 {
+		m.add(entry{kind: entryDim, text: "no skills loaded"})
+		return
+	}
+	var rows []string
+	for _, name := range names {
+		s, _ := m.opt.Skills.Get(name)
+		desc := ""
+		if s != nil {
+			desc = s.Description
+		}
+		rows = append(rows, accentStyle.Render(GlyphCaret+" ")+name+dimStyle.Render("  "+desc))
+	}
+	m.add(entry{kind: entryDim, text: strings.Join(rows, "\n")})
+}
+
+func (m *Model) listMcp() {
+	if m.opt.MCPNames == nil {
+		m.add(entry{kind: entryDim, text: "no MCP manager wired"})
+		return
+	}
+	names := m.opt.MCPNames()
+	if len(names) == 0 {
+		m.add(entry{kind: entryDim, text: "no MCP servers connected"})
+		return
+	}
+	m.add(entry{kind: entryDim, text: strings.Join(names, "\n")})
+}
+
+// applyNewKey rebuilds the provider and the audit redactor so /login
+// and /logout take effect without a restart.
+func (m *Model) applyNewKey(provider, key string) {
+	m.opt.Orch.Provider = llm.NewOpenAICompat(m.opt.BaseURL, key)
+	m.opt.Orch.Gate = &tools.Gate{
+		Decide: tools.PolicyDecide(m.opt.Mode, m.Prompt()),
+		Audit:  tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),
+	}
+	_ = provider
+}
+
 func (m *Model) beginLogin() {
 	m.login = &loginFlow{provider: m.opt.ProviderName}
-	m.input.SetValue("")
-	m.input.EchoMode = textinput.EchoPassword
-	m.input.Placeholder = "paste the API key for " + m.opt.ProviderName
+	m.composer.SetValue("")
 }
 
 func (m *Model) submitLogin() tea.Cmd {
-	key := strings.TrimSpace(m.input.Value())
+	key := strings.TrimSpace(m.composer.Value())
 	provider := m.login.provider
 	m.login = nil
-	m.input.SetValue("")
-	m.input.EchoMode = textinput.EchoNormal
-	m.input.Placeholder = "type a message, /login, /logout, or /exit"
+	m.composer.SetValue("")
 
 	if key == "" {
-		m.appendWrapped(errorStyle, "", "login cancelled: no key entered")
+		m.add(entry{kind: entryErr, text: "login cancelled: no key entered"})
 		return nil
 	}
 	if err := config.WriteAuthKey(m.opt.TildeHome, provider, key); err != nil {
-		m.appendWrapped(errorStyle, "", "login failed: "+err.Error())
+		m.add(entry{kind: entryErr, text: "login failed: " + err.Error()})
 		return nil
 	}
-	// Use the new key immediately: rebuild the provider and the audit
-	// redactor instead of requiring a restart.
-	m.opt.Orch.Provider = llm.NewOpenAICompat(m.opt.BaseURL, key)
-	m.opt.Orch.Gate = &tools.Gate{
-		Decide: tools.PolicyDecide(m.opt.Mode, func(tool tools.Tool, args string) bool {
-			return m.decide(tool, args)
-		}),
-		Audit: tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),
-	}
-	m.appendWrapped(okStyle, "",
-		"key for "+provider+" stored in auth.json (0600) — future requests use it")
+	m.applyNewKey(provider, key)
+	m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — future requests use it"})
 	return nil
 }
 
-// logout removes tilde's stored credential and says exactly what that
-// does and does not do (spec 3.10).
 func (m *Model) logout() {
 	removed, err := config.RemoveAuthKey(m.opt.TildeHome, m.opt.ProviderName)
 	if err != nil {
-		m.appendWrapped(errorStyle, "", "logout failed: "+err.Error())
+		m.add(entry{kind: entryErr, text: "logout failed: " + err.Error()})
 		return
 	}
 	if !removed {
-		m.appendWrapped(okStyle, "",
-			"no stored key for "+m.opt.ProviderName+" — nothing to remove")
+		m.add(entry{kind: entryOK, text: "no stored key for " + m.opt.ProviderName + " — nothing to remove"})
 		return
 	}
-	m.opt.Orch.Provider = llm.NewOpenAICompat(m.opt.BaseURL, "")
-	m.appendWrapped(okStyle, "",
-		"removed the stored key for "+m.opt.ProviderName+
-			". This does not unset environment variables or revoke the key at the provider.")
+	m.applyNewKey(m.opt.ProviderName, "")
+	m.add(entry{kind: entryOK,
+		text: "removed the stored key for " + m.opt.ProviderName +
+			". This does not unset environment variables or revoke the key at the provider."})
 }
 
-// handleEvent renders one orchestrator event into TUI state.
+// setMode implements /mode and shift+tab: no argument shows the mode;
+// a valid name switches and resets any session allow-all grant.
+func (m *Model) setMode(arg string) {
+	if arg == "" {
+		m.add(entry{kind: entryDim,
+			text: "mode is " + m.opt.Mode + " — options: " + strings.Join(tools.Modes, ", ") + "; /mode <name> or shift+tab"})
+		return
+	}
+	mode := tools.NormalizeMode(arg)
+	if !tools.ValidMode(mode) {
+		m.add(entry{kind: entryErr, text: "unknown mode " + arg + " — options: " + strings.Join(tools.Modes, ", ")})
+		return
+	}
+	if mode == m.opt.Mode {
+		m.showToast("mode is already " + mode)
+		return
+	}
+	m.opt.Orch.SetMode(mode)
+	m.rebuildGate(mode)
+	m.opt.Mode = mode
+	m.allowAll = false
+	note := "mode switched to " + mode
+	if m.working {
+		note += " (takes effect for the next model request)"
+	}
+	m.showToast(note)
+	m.add(entry{kind: entryOK, text: note})
+}
+
+func (m *Model) rebuildGate(mode string) {
+	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
+}
+
+func (m *Model) answerTrust(trusted bool) {
+	d := m.awaitingTrust
+	m.awaitingTrust = nil
+	if d == nil || d.OnAnswer == nil {
+		return
+	}
+	d.OnAnswer(trusted)
+	if trusted {
+		m.add(entry{kind: entryOK, text: "project trusted — project-level skills are available this session"})
+	} else {
+		m.add(entry{kind: entryErr, text: "project not trusted — running with user-level skills only"})
+	}
+}
+
+// handleEvent maps orchestrator events to timeline entries.
 func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 	switch ev.Kind {
 	case orchestrator.EventText:
@@ -212,19 +441,10 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 
 	case orchestrator.EventToolStart:
 		m.finishStream()
-		args := ev.ToolCall.Arguments
-		if len(args) > 60 {
-			args = args[:60] + "..."
-		}
-		m.lines = append(m.lines, accentStyle.Render("⏺ ")+
-			toolNameStyle.Render(ev.ToolCall.Name)+dimStyle.Render(" "+args))
+		m.add(entry{kind: entryTool, tool: ev.ToolCall.Name, text: ev.ToolCall.Arguments})
 
 	case orchestrator.EventToolResult:
-		res := strings.ReplaceAll(strings.TrimSpace(ev.ToolResult), "\n", " ")
-		if len(res) > 200 {
-			res = res[:200] + "..."
-		}
-		m.appendWrapped(resultStyle, "  ⎿ ", res)
+		m.addResultEntry(ev)
 
 	case orchestrator.EventUsage:
 		m.usage.PromptTokens += ev.Usage.PromptTokens
@@ -232,7 +452,7 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 
 	case orchestrator.EventCompaction:
 		m.finishStream()
-		m.appendWrapped(queuedStyle, "… ", ev.Text)
+		m.add(entry{kind: entryCompaction, text: ev.Text})
 
 	case orchestrator.EventTurnComplete:
 		m.finishStream()
@@ -244,17 +464,34 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 			m.turnEnded()
 			return m
 		}
-		if err := ev.Err; err == orchestrator.ErrCancelled {
-			m.lines = append(m.lines, errorStyle.Render("turn cancelled"))
+		if ev.Err == orchestrator.ErrCancelled {
+			m.add(entry{kind: entryErr, text: "turn interrupted"})
 		} else {
-			m.lines = append(m.lines, errorStyle.Render("error: "+err.Error()))
+			m.add(entry{kind: entryErr, text: "error: " + ev.Err.Error()})
 		}
 		m.turnEnded()
 	}
 	return m
 }
 
-// turnEnded resets turn state and drains one queued follow-up, if any.
+// addResultEntry stores a tool result with enough structure to render
+// collapsed, expanded, or as an edit_file diff.
+func (m *Model) addResultEntry(ev orchestrator.Event) {
+	res := strings.ReplaceAll(strings.TrimSpace(ev.ToolResult), "\n", " ⏎ ")
+	e := entry{kind: entryResult, tool: ev.ToolCall.Name, summary: res, full: ev.ToolResult}
+	if ev.ToolCall.Name == "edit_file" {
+		var a struct {
+			Path string `json:"path"`
+			Old  string `json:"old"`
+			New  string `json:"new"`
+		}
+		if err := json.Unmarshal([]byte(ev.ToolCall.Arguments), &a); err == nil {
+			e.path, e.old, e.new = a.Path, a.Old, a.New
+		}
+	}
+	m.add(e)
+}
+
 func (m *Model) turnEnded() {
 	m.working = false
 	m.cancel = nil
@@ -263,88 +500,13 @@ func (m *Model) turnEnded() {
 	}
 	next := m.queue[0]
 	m.queue = m.queue[1:]
-	m.lines = append(m.lines, accentStyle.Render("~ ")+dimStyle.Render("(follow-up) ")+next)
+	m.add(entry{kind: entryUser, text: dimStyle.Render("(follow-up) ") + next})
 	m.startTurn(next)
 }
 
-// appendWrapped adds a transcript entry whose plain text is word-wrapped
-// to the terminal width before styling, so long content never wraps a
-// rendered frame line on its own.
-func (m *Model) appendWrapped(style lipgloss.Style, prefix, text string) {
-	width := m.termWidth() - lipgloss.Width(prefix)
-	wrapped := wordWrap(text, width)
-	for i, line := range wrapped {
-		if i == 0 {
-			m.lines = append(m.lines, style.Render(prefix+line))
-		} else {
-			// Continuation lines keep the indentation of the prefix.
-			m.lines = append(m.lines, style.Render(
-				strings.Repeat(" ", lipgloss.Width(prefix))+line))
-		}
-	}
-}
-
-// setMode implements /mode: no argument shows the current mode and the
-// options; a valid name switches. Switching rebuilds the gate policy for
-// the new mode and resets any "allow all this session" grant — a mode
-// change must re-establish the posture, not inherit a looser one.
-func (m *Model) setMode(arg string) {
-	if arg == "" {
-		m.appendWrapped(okStyle, "",
-			"mode is "+m.opt.Mode+" — options: "+strings.Join(tools.Modes, ", ")+"; /mode <name> to switch")
-		return
-	}
-	mode := tools.NormalizeMode(arg)
-	if !tools.ValidMode(mode) {
-		m.appendWrapped(errorStyle, "",
-			"unknown mode "+arg+" — options: "+strings.Join(tools.Modes, ", "))
-		return
-	}
-	if mode == m.opt.Mode {
-		m.appendWrapped(okStyle, "", "mode is already "+mode)
-		return
-	}
-	m.opt.Orch.SetMode(mode)
-	m.rebuildGate(mode)
-	m.opt.Mode = mode
-	m.allowAll = false
-	note := "mode switched to " + mode
-	if m.working {
-		note += " (takes effect for the next model request)"
-	}
-	m.appendWrapped(okStyle, "", note)
-}
-
-// rebuildGate points the gate at a new permission mode. The prompt
-// callback is the TUI's own; only the policy wraps it.
-func (m *Model) rebuildGate(mode string) {
-	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
-}
-
-// answerTrust records the user's project-trust decision, hands it to
-// the wiring callback (which persists it and re-discovers skills), and
-// notes the outcome in the transcript.
-func (m *Model) answerTrust(trusted bool) {
-	d := m.awaitingTrust
-	m.awaitingTrust = nil
-	if d == nil || d.OnAnswer == nil {
-		return
-	}
-	d.OnAnswer(trusted)
-	if trusted {
-		m.appendWrapped(okStyle, "",
-			"project trusted — project-level skills are available this session")
-	} else {
-		m.appendWrapped(errorStyle, "",
-			"project not trusted — running with user-level skills only")
-	}
-}
-
-// handleSubagent renders one subagent progress event as labeled
-// transcript lines. Text deltas accumulate per title; tool calls,
-// completion, and errors flush whatever accumulated first.
+// handleSubagent renders subagent progress as labeled timeline entries.
 func (m *Model) handleSubagent(ev subagentEvent) {
-	label := "[subagent " + ev.Title + "] "
+	label := "[" + ev.Title + "] "
 	m.subMu.Lock()
 	if m.subStreams == nil {
 		m.subStreams = map[string]*strings.Builder{}
@@ -354,12 +516,18 @@ func (m *Model) handleSubagent(ev subagentEvent) {
 		acc = &strings.Builder{}
 		m.subStreams[ev.Title] = acc
 	}
+	flush := func() {
+		if s := strings.TrimSpace(acc.String()); s != "" {
+			m.add(entry{kind: entrySubagent, subTitle: label, text: s})
+		}
+		acc.Reset()
+	}
 	switch ev.Kind {
 	case subagentText:
 		acc.WriteString(ev.Text)
 	case subagentTool:
-		m.flushSubagentLocked(acc, label)
-		m.appendWrapped(queuedStyle, label, ev.Text)
+		flush()
+		m.add(entry{kind: entrySubagent, subTitle: label, text: ev.Text})
 	case subagentUsage:
 		m.usage.PromptTokens += ev.Usage.PromptTokens
 		m.usage.CompletionTokens += ev.Usage.CompletionTokens
@@ -368,20 +536,20 @@ func (m *Model) handleSubagent(ev subagentEvent) {
 			acc.Reset()
 			acc.WriteString(ev.Text)
 		}
-		m.flushSubagentLocked(acc, label)
-		m.appendWrapped(okStyle, label, "done")
+		flush()
+		m.add(entry{kind: entrySubagent, subTitle: label, text: dimStyle.Render("done")})
 	case subagentError:
-		m.flushSubagentLocked(acc, label)
-		m.appendWrapped(errorStyle, label, "error: "+ev.Text)
+		flush()
+		m.add(entry{kind: entrySubagent, subTitle: label, text: dangerStyle.Render("error: " + ev.Text)})
 	}
 	m.subMu.Unlock()
 }
 
-// flushSubagentLocked moves a subagent's accumulated text into the
-// transcript as one labeled, wrapped line. Caller holds subMu.
-func (m *Model) flushSubagentLocked(acc *strings.Builder, label string) {
-	if s := strings.TrimSpace(acc.String()); s != "" {
-		m.appendWrapped(dimStyle, label, s)
+// finishStream flushes the accumulated assistant text into the
+// transcript.
+func (m *Model) finishStream() {
+	if s := strings.TrimRight(m.stream.String(), "\n"); strings.TrimSpace(s) != "" {
+		m.add(entry{kind: entryAssistant, text: s})
 	}
-	acc.Reset()
+	m.stream.Reset()
 }
