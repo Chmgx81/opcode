@@ -149,3 +149,55 @@ Spec: [docs/specs/phase1-tui.md](docs/specs/phase1-tui.md)
 - Full permission mode system: read-only / ask-every-time /
   auto-accept-safe-ops / full-auto as a switchable mode set, mode-aware
   tool filtering and prompt policy.
+
+---
+
+# Phase 2 — Permission Modes (status: complete, live-verified)
+
+Spec: [docs/specs/phase2-modes.md](docs/specs/phase2-modes.md)
+
+## Built
+
+- `internal/tools` — the four modes (read-only / ask-every-time /
+  auto-accept-safe-ops / full-auto), the full 4x3 decision matrix
+  against the three Section 7 tiers (including Draft-Only, which no
+  built-in tool uses yet — skills in Phase 3 will), mode-based tool
+  advertisement, and per-mode system-prompt instructions.
+- `internal/orchestrator` — Mode field; read-only mode filters
+  action-tier tools out of the request entirely; mode instruction
+  composed into the system prompt; `SetMode` for runtime switching.
+- `internal/config` — `permission_mode` validated at load (unknown modes
+  fail loudly); legacy `ask` normalized to `ask-every-time`.
+- `internal/tui` — `/mode` to show or switch; switching rebuilds the
+  gate policy and resets any session "allow all" grant.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all packages, including the full decision
+  matrix (each cell asserted with both a granting and a denying prompt,
+  and prompt-consultation checked per cell), nil-prompt fail-closed,
+  tool advertisement asserted on the request the fake provider
+  receives, config normalization/rejection, and the /mode command paths.
+- PTY sessions against the local scripted server, one per posture:
+  read-only mode denied a write without prompting (the model was not
+  even offered write tools); full-auto wrote with no prompt; ask
+  prompted and the answer gated the call.
+- Live OpenRouter run (full-auto): a real edit executed with no
+  permission prompt and a clean audit entry.
+
+## Phase 2 assumptions
+
+1. Switching modes resets the session "allow all" grant — a mode change
+   re-establishes the posture rather than inheriting a looser one.
+2. Unknown modes behave as ask-every-time at the gate (fail closed) and
+   are rejected at config load time; the two agree.
+3. Draft-Only exists in the matrix but has no built-in tool yet; that is
+   a stated gap, not a hidden one.
+4. Mid-turn /mode takes effect at the next model request (tool list and
+   prompt are per-request); in-flight dispatched calls are done.
+
+## Next (Phase 3, only after user review)
+
+- Skill Loader — with project trust built first per the build order's
+  ordering constraint (Section 8): trust must exist before or together
+  with Phase 3.

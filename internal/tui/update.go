@@ -93,7 +93,14 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	}
 	m.input.SetValue("")
 
-	switch text {
+	// Slash commands: exact match or "/mode <name>".
+	fields := strings.Fields(text)
+	cmd := fields[0]
+	arg := ""
+	if len(fields) > 1 {
+		arg = fields[1]
+	}
+	switch cmd {
 	case "/exit", "/quit":
 		m.cancelTurn()
 		return tea.Quit
@@ -102,6 +109,9 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		return nil
 	case "/logout":
 		m.logout()
+		return nil
+	case "/mode":
+		m.setMode(arg)
 		return nil
 	}
 
@@ -252,4 +262,41 @@ func (m *Model) appendWrapped(style lipgloss.Style, prefix, text string) {
 				strings.Repeat(" ", lipgloss.Width(prefix))+line))
 		}
 	}
+}
+
+// setMode implements /mode: no argument shows the current mode and the
+// options; a valid name switches. Switching rebuilds the gate policy for
+// the new mode and resets any "allow all this session" grant — a mode
+// change must re-establish the posture, not inherit a looser one.
+func (m *Model) setMode(arg string) {
+	if arg == "" {
+		m.appendWrapped(okStyle, "",
+			"mode is "+m.opt.Mode+" — options: "+strings.Join(tools.Modes, ", ")+"; /mode <name> to switch")
+		return
+	}
+	mode := tools.NormalizeMode(arg)
+	if !tools.ValidMode(mode) {
+		m.appendWrapped(errorStyle, "",
+			"unknown mode "+arg+" — options: "+strings.Join(tools.Modes, ", "))
+		return
+	}
+	if mode == m.opt.Mode {
+		m.appendWrapped(okStyle, "", "mode is already "+mode)
+		return
+	}
+	m.opt.Orch.SetMode(mode)
+	m.rebuildGate(mode)
+	m.opt.Mode = mode
+	m.allowAll = false
+	note := "mode switched to " + mode
+	if m.working {
+		note += " (takes effect for the next model request)"
+	}
+	m.appendWrapped(okStyle, "", note)
+}
+
+// rebuildGate points the gate at a new permission mode. The prompt
+// callback is the TUI's own; only the policy wraps it.
+func (m *Model) rebuildGate(mode string) {
+	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
 }
