@@ -172,9 +172,14 @@ tilde/
     skills/         # skill discovery + subprocess runner
     mcp/            # MCP client manager
     tools/          # built-in tool implementations + permission gate
-    llm/            # OpenRouter/OpenAI-compatible client, Provider interface, streaming
-    config/         # config loading
-  docs/specs/       # architecture docs and specs (this file lives here)
+    llm/            # Provider interface: OpenAI-compatible + Anthropic Messages clients,
+                    #   streaming, live model listing
+    config/         # config, models, provider catalog, auth, AGENTS.md context
+    session/        # tree-structured session persistence
+    trust/          # project trust fingerprints (skills/MCP gate)
+    sandbox/        # Landlock confinement for shell commands
+    headless/       # -p one-turn mode, no TUI imports
+  docs/specs/       # architecture doc, TUI/UX spec, per-phase specs (this file lives here)
   AGENTS.md
 ```
 

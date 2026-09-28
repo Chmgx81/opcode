@@ -64,7 +64,7 @@ func brandMarkdown() ansi.StyleConfig {
 			StyleBlock: ansi.StyleBlock{
 				Margin: uintPtr(2),
 				StylePrimitive: ansi.StylePrimitive{
-					Color: strPtr(HexText), BackgroundColor: strPtr(HexDeep2),
+					Color: strPtr(HexText), BackgroundColor: strPtr(HexCode),
 				},
 			},
 			// A custom chroma registry entry, not a theme name:

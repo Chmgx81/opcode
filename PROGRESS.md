@@ -1620,3 +1620,43 @@ Spec: [docs/specs/phase26-model-catalog.md](docs/specs/phase26-model-catalog.md)
    come when a provider's models endpoint justifies them.
 2. Two-step browse (provider → models) over a parallel fetch-all:
    the latter needs a key for every provider and fires 15 requests.
+
+# Housekeeping pass (post-Phase 26, status: complete)
+
+A full-tree audit: every file read, every symbol grepped for usage.
+
+## Removed
+
+- `internal/subagent/x.txt` — a stray one-word scratch file.
+- `remapLegacyStyles` (`userStyle`, `toolStyle`, `resultStyle2`) —
+  zero usages; the token migration they bridged finished in Phase 24.
+- The `HexFloor`/`Floor` token, `errorStyle`, and `codeStyle` —
+  declared, never used.
+
+## Fixed
+
+- **Markdown code blocks used the wrong surface** — a Phase 24 miss:
+  the code-block background still took `surface.user`'s fill after
+  the surfaces were split. Now `surface.code` (`#1c2026`), as the
+  spec's token table says.
+- README: a missing blank line from a Phase 26 edit, badges still in
+  the retired Codex blue (now the teal accent), and pre-Phase-24 todo
+  glyphs in the feature text.
+- `docs/specs/tilde-architecture.md` §4: the directory layout
+  predated five packages (session, trust, sandbox, headless; and the
+  llm/config descriptions were stale). Now matches the tree.
+- `docs/specs/tui-design.md`: marked as a historical reference for
+  the Python + Rich lineage — `tui-ux-spec.md` governs the Go
+  implementation. Content untouched.
+
+## Added
+
+- A CI check enforcing the TUI/UX spec's import-graph rule: the
+  headless package must never depend on the TUI stack (internal/tui,
+  bubbletea, lipgloss). True today; now it stays true.
+
+## Verified
+
+- All twelve packages; gofmt, vet, and `go mod tidy` clean; no
+  TODO/FIXME markers in non-test code; every PROGRESS spec link
+  resolves to an existing file.

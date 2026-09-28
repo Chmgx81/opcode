@@ -1,5 +1,12 @@
 # tilde (~) — TUI Design Specification v0.2
 
+> **Status: historical reference, superseded.** This spec was written
+> for the Python + Rich prototype lineage. The Go implementation is
+> governed by [tui-ux-spec.md](tui-ux-spec.md) — that document wins
+> on anything visual or interactive. Kept for its design reasoning
+> (animation budget, glyph discipline, append-only transcript), which
+> the Go spec absorbed.
+
 **Changes from v0.1:** collapsed the animation model from five decorative primitives to two (spinner, tick — plus stream for text); cut the glyph vocabulary from 17 symbols to 9; removed the two-column gradient banner; flattened the plan-suggestion/approval modal pair into a plain manual mode; replaced the rotating-verb reasoning receipt with a fixed two-state spinner (`thinking` / `working`). Rationale for each cut is inline where it deviates from v0.1, and summarized in §5.
 
 Scope: what the user sees when they run `tilde` in a terminal, and nothing else. If a rule is not needed to render a screen, it does not belong here.
