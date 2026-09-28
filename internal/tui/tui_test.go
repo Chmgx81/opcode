@@ -244,7 +244,7 @@ func TestAltEnterWhileWorkingQueuesFollowUp(t *testing.T) {
 
 	m.composer.SetValue("follow up next")
 	m.Update(altEnterKey())
-	if len(m.queue) != 1 || m.queue[0] != "follow up next" {
+	if len(m.queue) != 1 || m.queue[0].text != "follow up next" {
 		t.Fatalf("queue = %v", m.queue)
 	}
 
@@ -934,7 +934,7 @@ func TestInterruptClearsQueue(t *testing.T) {
 
 	// A queued follow-up plus a real interruption: esc must stop
 	// everything, not fire the queue the moment it lands.
-	m.queue = []string{"follow-up one", "follow-up two"}
+	m.queue = []queued{{text: "follow-up one"}, {text: "follow-up two"}}
 	m.working = true
 	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventError, Err: orchestrator.ErrCancelled})
 	if len(m.queue) != 0 {
@@ -952,7 +952,7 @@ func TestInterruptClearsQueue(t *testing.T) {
 	}
 	// A clean completion still drains the queue (existing behavior,
 	// guarded here so the fix can't overreach).
-	m.queue = []string{"follow-up"}
+	m.queue = []queued{{text: "follow-up"}}
 	m.working = true
 	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventTurnComplete})
 	if len(m.queue) != 0 {

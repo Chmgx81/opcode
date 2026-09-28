@@ -79,6 +79,7 @@ executable where your shell will find it.
 |---|---|
 | **Enter** | send — mid-turn: steer at the next round boundary |
 | **Ctrl+J** | newline |
+| **Ctrl+V** | attach the clipboard image — the model sees it |
 | **Ctrl+E** | edit the composer in `$VISUAL`/`$EDITOR` |
 | **Alt+Enter** | queue a follow-up |
 | **Esc** | stop — the turn, or whatever is open |

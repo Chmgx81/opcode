@@ -556,6 +556,7 @@ func (m *Model) helpView(w int) string {
 	rows := []string{
 		accentStyle.Render("keys"),
 		dimStyle.Render("  enter        send · ctrl+j  newline"),
+		dimStyle.Render("  ctrl+v       attach the clipboard image ([Image #N] rides along)"),
 		dimStyle.Render("  alt+enter    queue a follow-up while working"),
 		dimStyle.Render("  esc          interrupt the turn"),
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
