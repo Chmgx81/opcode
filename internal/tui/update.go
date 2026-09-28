@@ -24,6 +24,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		// The composer wraps at its own width, not the terminal's —
+		// keep it sized to the box: terminal minus border+padding.
+		m.composer.SetWidth(maxInt(msg.Width-8, 10))
 		return m, nil
 
 	case spinner.TickMsg:

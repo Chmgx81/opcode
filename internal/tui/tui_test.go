@@ -755,3 +755,24 @@ func TestFreshViewShowsBannerAndBrand(t *testing.T) {
 		}
 	}
 }
+
+func TestComposerResizesWithTerminal(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// Regression: the textarea's internal width defaults to 40 columns,
+	// so the placeholder wrapped onto two lines on any terminal. The
+	// composer must size itself from WindowSizeMsg.
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
+	// SetWidth receives the box content width (70-8); the textarea
+	// reserves its 2-wide prompt from that, so Width() is 60.
+	if got := m.composer.Width(); got != 70-8-2 {
+		t.Errorf("composer width = %d, want %d", got, 70-8-2)
+	}
+	view := stripANSI(m.View())
+	for _, l := range strings.Split(view, "\n") {
+		if strings.Contains(l, "ask tilde anything") && !strings.Contains(l, "help") {
+			t.Errorf("placeholder wrapped at width 70: %q", l)
+		}
+	}
+}
