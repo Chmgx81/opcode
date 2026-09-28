@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // DefaultPermissionMode is used when config.json does not set one.
@@ -23,6 +23,11 @@ const DefaultPermissionMode = "ask"
 type Config struct {
 	Model          string `json:"model"`
 	PermissionMode string `json:"permission_mode"`
+	// ContextWindow is the model's context size in tokens; 0 (the
+	// default) disables compaction. CompactionModel optionally names a
+	// cheaper model for the summarizer round (empty = the main model).
+	ContextWindow   int    `json:"context_window"`
+	CompactionModel string `json:"compaction_model"`
 }
 
 // UserDir returns the user-level tilde directory: $TILDE_HOME if set,
@@ -55,6 +60,9 @@ func LoadConfig(dir string) (Config, error) {
 	}
 	if cfg.PermissionMode == "" {
 		cfg.PermissionMode = DefaultPermissionMode
+	}
+	if cfg.ContextWindow < 0 {
+		return cfg, fmt.Errorf("config.json: context_window must be 0 or positive")
 	}
 	// Canonicalize ("ask" -> ask-every-time) and refuse names that are
 	// neither a mode nor an alias: an unrecognized mode must fail closed
