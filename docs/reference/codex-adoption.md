@@ -95,7 +95,7 @@ checks; this is a presentation layer over them.
 ### 8. History: the missing composer history
 tilde has: none. Codex has: persisted, per-project + global
 history with fuzzy search (`message-history`, TUI Ctrl+R/Ctrl+S
-history search). tilde's spec (tui-ux-spec §5.2) already promises
+history search). tilde's spec already promises
 it. Medium effort, big daily-use win. Note Codex's rule that
 secret-input lines are never stored.
 
@@ -105,7 +105,7 @@ pickers was deferred with the spec. Codex does: input is *blocked*
 while startup events are pending (`block_terminal_input_for_
 pending_startup_events`, tui-audit §2.1) — keys typed before a
 dialog rendered cannot answer it. When tilde implements the
-spec's type-ahead protection (tui-ux-spec §9.2), this is the
+spec's type-ahead protection (tui-spec §6), this is the
 mechanism to copy.
 
 ---
@@ -117,8 +117,8 @@ The single biggest architectural divergence. Codex commits finished
 rows into terminal-native scrollback (`insert_history.rs`,
 per-terminal strategies, reflow caps) and only the live region
 redraws; users keep native scroll/copy/search. tilde redraws a
-windowed view every frame. The tui-ux-spec already mandates this
-(§1.4) and it's the top item on tilde's convergence roadmap. The
+windowed view every frame. The tui-spec already mandates this
+(§6 item 1) and it's the top item on tilde's convergence roadmap. The
 audit adds two practical warnings Codex paid to learn:
 - resize reflow must replay committed rows, capped to what the
   terminal actually retained (`resize_reflow_cap.rs`);
