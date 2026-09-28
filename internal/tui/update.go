@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
@@ -27,6 +28,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The composer wraps at its own width, not the terminal's —
 		// keep it sized to the box: terminal minus border+padding.
 		m.composer.SetWidth(maxInt(msg.Width-8, 10))
+		m.resizeComposer()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -57,9 +59,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if msg.Paste {
 			m.handlePaste(string(msg.Runes))
+			m.resizeComposer()
 			return m, nil
 		}
-		return m.handleKey(msg)
+		model, cmd := m.handleKey(msg)
+		m.resizeComposer()
+		return model, cmd
 	}
 	return m, nil
 }
@@ -167,6 +172,27 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.composer, cmd = m.composer.Update(msg)
 	return m, cmd
+}
+
+// resizeComposer grows the input with its content, one visible line
+// per typed or wrapped line, capped so a huge paste can't eat the
+// transcript: typing never needs more than a screen's worth of editor.
+func (m *Model) resizeComposer() {
+	v := m.composer.Value()
+	h := strings.Count(v, "\n") + 1
+	if w := m.composer.Width(); w > 0 {
+		for _, l := range strings.Split(v, "\n") {
+			if n := lipgloss.Width(l); n > w {
+				h += n / w
+			}
+		}
+	}
+	if h > 6 {
+		h = 6
+	}
+	if h != m.composer.Height() {
+		m.composer.SetHeight(h)
+	}
 }
 
 // handlePaste stores a large paste and collapses it to a token in the

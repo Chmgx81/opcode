@@ -749,7 +749,7 @@ func TestFreshViewShowsBannerAndBrand(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	view := stripANSI(m.View())
-	for _, want := range []string{"▄", "tilde " + version, "test-model", "shift+tab to cycle"} {
+	for _, want := range []string{"▄", "tilde " + version, "test-model", "? help · / commands"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("fresh view missing %q:\n%s", want, view)
 		}
@@ -769,10 +769,45 @@ func TestComposerResizesWithTerminal(t *testing.T) {
 	if got := m.composer.Width(); got != 70-8-2 {
 		t.Errorf("composer width = %d, want %d", got, 70-8-2)
 	}
+	// One line when empty: a short placeholder, not a hint crammed
+	// into it — hints live on the footer line below.
+	if h := m.composer.Height(); h != 1 {
+		t.Errorf("empty composer height = %d, want 1", h)
+	}
 	view := stripANSI(m.View())
 	for _, l := range strings.Split(view, "\n") {
-		if strings.Contains(l, "ask tilde anything") && !strings.Contains(l, "help") {
-			t.Errorf("placeholder wrapped at width 70: %q", l)
+		if strings.Contains(l, "ask tilde") && strings.Contains(l, "/ commands") {
+			t.Errorf("hints leaked into the placeholder: %q", l)
 		}
+	}
+	if !strings.Contains(view, "? help · / commands · ! shell · @ files") {
+		t.Errorf("footer hints missing:\n%s", view)
+	}
+}
+
+func TestComposerGrowsWithContent(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+
+	if h := m.composer.Height(); h != 1 {
+		t.Fatalf("empty composer height = %d, want 1", h)
+	}
+	// A newline (ctrl+j) grows the composer to hold the content.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line one")})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line two")})
+	if h := m.composer.Height(); h != 2 {
+		t.Errorf("two-line composer height = %d, want 2", h)
+	}
+	// A wrapped line grows it too, without an explicit newline.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(strings.Repeat("w ", 45))})
+	if h := m.composer.Height(); h < 3 {
+		t.Errorf("wrapped composer height = %d, want >= 3", h)
+	}
+	// Submitting clears the value and the composer shrinks back.
+	typeAndEnter(m, m.composer.Value())
+	if h := m.composer.Height(); h != 1 {
+		t.Errorf("composer height after submit = %d, want 1", h)
 	}
 }
