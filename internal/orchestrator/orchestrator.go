@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"tilde/internal/llm"
@@ -61,6 +62,11 @@ type Orchestrator struct {
 	// offered to the model (read-only mode hides action-tier tools) and
 	// is composed into the system prompt via ModeInstruction.
 	Mode string
+	// SkillsIndex is the metadata-only skills index (name + description
+	// per skill) appended to the system prompt — tier 1 of progressive
+	// disclosure. Updated in place when a trust decision adds project
+	// skills mid-session.
+	SkillsIndex string
 
 	history []llm.Message
 
@@ -89,13 +95,19 @@ func (o *Orchestrator) SetMode(mode string) {
 	o.Mode = tools.NormalizeMode(mode)
 }
 
-// systemPrompt composes the base prompt with the active mode's
-// instruction, so the model knows the posture it runs under.
+// systemPrompt composes the base prompt, the skills index, and the
+// active mode's instruction — assembled fresh each round so mid-session
+// changes (a trust grant adding project skills, a mode switch) are
+// picked up by the next request.
 func (o *Orchestrator) systemPrompt() string {
-	if instr := tools.ModeInstruction(o.Mode); instr != "" {
-		return o.System + "\n" + instr
+	parts := []string{o.System}
+	if o.SkillsIndex != "" {
+		parts = append(parts, o.SkillsIndex)
 	}
-	return o.System
+	if instr := tools.ModeInstruction(o.Mode); instr != "" {
+		parts = append(parts, instr)
+	}
+	return strings.Join(parts, "\n")
 }
 
 // Steer queues a steering message for the in-flight turn. It is appended

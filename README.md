@@ -54,6 +54,30 @@ appear): `y` allow, `a` allow action tools for this session, `n`/Esc
 deny. The legacy config value `ask` still works and means
 `ask-every-time`.
 
+## Skills
+
+A skill is a folder in `~/.tilde/skills/` (always loaded) or
+`.tilde/skills/` (project, only after you trust the project) with a
+`SKILL.md`:
+
+```
+my-skill/
+  SKILL.md      # --- name: ... / description: ... --- then instructions
+  scripts/      # optional: run via the run_skill_script tool (JSON in, JSON out)
+```
+
+Only the name and description sit in the context; the model loads the
+body with the `load_skill` tool when a request matches. Scripts run as
+subprocesses (Action-Allowed tier, so ask mode prompts).
+
+**Project trust**: the first time tilde runs in a project whose
+`.tilde/` contains anything executable (skill scripts, mcp.json), it
+asks once and shows the literal files. The decision is stored in
+`~/.tilde/trusted-projects.json` with a fingerprint of those files —
+if a `git pull` changes them, tilde asks again. `--trust` (or
+`TILDE_TRUST=1`) pre-approves for scripted use. Declining leaves the
+project's skills unloaded; nothing from it runs.
+
 ## Test
 
 ```

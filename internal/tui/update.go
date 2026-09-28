@@ -44,6 +44,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The trust prompt owns the keyboard before anything else: it is
+	// the first question of the session.
+	if m.awaitingTrust != nil {
+		switch msg.String() {
+		case "y", "Y":
+			m.answerTrust(true)
+		case "n", "N", "esc":
+			m.answerTrust(false)
+		}
+		return m, nil
+	}
+
 	// A permission prompt owns the keyboard: nothing else may be typed,
 	// steered, or queued while it is up.
 	if m.awaitingPerm != nil {
@@ -299,4 +311,23 @@ func (m *Model) setMode(arg string) {
 // callback is the TUI's own; only the policy wraps it.
 func (m *Model) rebuildGate(mode string) {
 	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
+}
+
+// answerTrust records the user's project-trust decision, hands it to
+// the wiring callback (which persists it and re-discovers skills), and
+// notes the outcome in the transcript.
+func (m *Model) answerTrust(trusted bool) {
+	d := m.awaitingTrust
+	m.awaitingTrust = nil
+	if d == nil || d.OnAnswer == nil {
+		return
+	}
+	d.OnAnswer(trusted)
+	if trusted {
+		m.appendWrapped(okStyle, "",
+			"project trusted — project-level skills are available this session")
+	} else {
+		m.appendWrapped(errorStyle, "",
+			"project not trusted — running with user-level skills only")
+	}
 }

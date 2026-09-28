@@ -201,3 +201,68 @@ Spec: [docs/specs/phase2-modes.md](docs/specs/phase2-modes.md)
 - Skill Loader — with project trust built first per the build order's
   ordering constraint (Section 8): trust must exist before or together
   with Phase 3.
+
+---
+
+# Phase 3 — Project Trust + Skill Loader (status: complete, live-verified)
+
+Spec: [docs/specs/phase3-skills-trust.md](docs/specs/phase3-skills-trust.md)
+
+## Built
+
+- `internal/trust` — the Section 7 trust gate: executable-surface
+  fingerprint (skill scripts, `.tilde/config.json`, `.tilde/mcp.json`),
+  `trusted-projects.json` persistence, trusted/untrusted/changed
+  status. A project with nothing executable is trusted by default.
+- `internal/skills` — SKILL.md discovery and parsing (flat frontmatter),
+  user-always / project-if-trusted scopes, project-over-user precedence,
+  metadata-only index, bad skills skipped with reasons.
+- `internal/tools` — `load_skill` (Read-Only: returns the body) and
+  `run_skill_script` (Action-Allowed: subprocess, JSON stdin/stdout
+  contract, discovered-basename-only so no traversal, timeout).
+- `internal/orchestrator` — SkillsIndex composed into the system prompt,
+  re-composed per round so a mid-session trust grant reaches the next
+  request.
+- `internal/tui` — startup trust prompt showing the literal runnable
+  files; y persists + re-discovers, n continues user-level only.
+- `cmd/tilde` — `--trust` / `TILDE_TRUST=1` pre-approval (CI posture).
+
+## Verified for real
+
+- `go test -count=1 ./...` — all seven packages.
+- **PTY, four scenarios against the local scripted server**: declined →
+  project skill unreachable ("no skill named hello"); accepted → skill
+  body loads and trust persists to trusted-projects.json; second run →
+  no re-prompt, skill still available; script modified → re-prompt
+  (direnv rule works live).
+- **Live OpenRouter**: a real user-level `commit-message` skill — the
+  model saw only the metadata index, decided the request matched, called
+  `load_skill` itself, and wrote a commit message following the skill's
+  rules (fix type, imperative, <50 chars). Progressive disclosure
+  driven by a real model, not a mock.
+
+## Found and fixed during verification
+
+- The trust prompt never appeared in the first PTY run: main set
+  `PendingTrust` on the options *after* `tui.New` had copied them into
+  the model. The decision now must be part of Options before New —
+  caught live, fixed, and re-verified.
+
+## Phase 3 assumptions
+
+1. Zero project `config.json` keys are allowed — the spec names no
+   allow-list yet; the file is fingerprinted so adding keys later is
+   trust-visible.
+2. Skill tiers are structural (body load = Read-Only, script run =
+   Action-Allowed); no frontmatter can lower them.
+3. Project skill wins over user skill on the same name (most specific
+   wins, like config precedence).
+4. Trigger matching is the model's decision from the index; disclosure
+   is enforced mechanically by reachability, not heuristics.
+5. Trust is a startup decision: files changing mid-session take effect
+   next launch.
+
+## Next (Phase 4, only after user review)
+
+- MCP Manager — project `.tilde/mcp.json` only after trust (the
+  fingerprint already covers it).
