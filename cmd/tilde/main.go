@@ -1,12 +1,9 @@
-// Command tilde is Phase 0's bare input/output loop: type a message, watch
-// the streamed response and tool calls. No TUI framework — logic lives in
-// the packages it drives, so the Phase 1 Bubble Tea front end and the
-// headless mode can reuse it unchanged.
+// Command tilde runs the terminal coding agent. Phase 1: a Bubble Tea
+// TUI over the UI-independent orchestrator (the same loop the Phase 0
+// bare loop proved). main is wiring only.
 package main
 
 import (
-	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +13,7 @@ import (
 	"tilde/internal/llm"
 	"tilde/internal/orchestrator"
 	"tilde/internal/tools"
+	"tilde/internal/tui"
 )
 
 func main() {
@@ -73,16 +71,16 @@ func run() error {
 		strings.Contains(providerCfg.BaseURL, "127.0.0.1")
 	if !hasKey && !isLocal && providerCfg.APIKeyEnv != "" {
 		fmt.Fprintf(os.Stderr,
-			"warning: no API key for provider %q (set %s or add it to %s)\n",
+			"warning: no API key for provider %q (set %s, run tilde and use /login, or add it to %s)\n",
 			providerName, providerCfg.APIKeyEnv, filepath.Join(userDir, "auth.json"))
 	}
 
 	if err := os.MkdirAll(userDir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", userDir, err)
 	}
+	auditPath := filepath.Join(userDir, "audit.jsonl")
 	gate := &tools.Gate{
-		Audit: tools.NewAuditLog(filepath.Join(userDir, "audit.jsonl"),
-			tools.NewRedactor(key.Value)),
+		Audit: tools.NewAuditLog(auditPath, tools.NewRedactor(key.Value)),
 	}
 
 	var registry tools.Registry
@@ -94,57 +92,21 @@ func run() error {
 	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(cwd), &registry, gate)
 
-	keyNote := key.Source
-	if keyNote == "" {
-		keyNote = "no key"
-	}
-	fmt.Printf("tilde — model %s via %s (key from %s)\n", cfg.Model, providerCfg.BaseURL, keyNote)
-	fmt.Println("Type a message; 'exit' or Ctrl-D to quit.")
+	ui := tui.New(tui.Options{
+		Orch:         orch,
+		Model:        cfg.Model,
+		Mode:         cfg.PermissionMode,
+		Cwd:          cwd,
+		TildeHome:    userDir,
+		ProviderName: providerName,
+		BaseURL:      providerCfg.BaseURL,
+		AuditPath:    auditPath,
+	})
+	// The gate's decision policy is wired after the UI exists: prompts
+	// surface in the TUI and block the orchestrator until answered.
+	gate.Decide = tools.PolicyDecide(cfg.PermissionMode, ui.Prompt())
 
-	ctx := context.Background()
-	scanner := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Print("\n> ")
-		if !scanner.Scan() {
-			fmt.Println()
-			return nil
-		}
-		input := strings.TrimSpace(scanner.Text())
-		if input == "" {
-			continue
-		}
-		if input == "exit" || input == "quit" {
-			return nil
-		}
-		render(orch.Send(ctx, input))
-	}
-}
-
-// render prints one turn's events: text as it streams, one line per tool
-// call and result, errors on stderr.
-func render(events <-chan orchestrator.Event) {
-	for ev := range events {
-		switch ev.Kind {
-		case orchestrator.EventText:
-			fmt.Print(ev.Text)
-		case orchestrator.EventToolStart:
-			fmt.Printf("\n[tool] %s %s\n", ev.ToolCall.Name, ev.ToolCall.Arguments)
-		case orchestrator.EventToolResult:
-			fmt.Printf("[tool result] %s\n", oneline(ev.ToolResult))
-		case orchestrator.EventTurnComplete:
-			fmt.Println()
-		case orchestrator.EventError:
-			fmt.Fprintf(os.Stderr, "error: %v\n", ev.Err)
-		}
-	}
-}
-
-func oneline(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) > 200 {
-		s = s[:200] + "..."
-	}
-	return strings.ReplaceAll(s, "\n", " \\n ")
+	return tui.Run(ui)
 }
 
 func systemPrompt(cwd string) string {
