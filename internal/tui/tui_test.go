@@ -867,3 +867,52 @@ func TestTranscriptHierarchy(t *testing.T) {
 		}
 	}
 }
+
+func TestLoginEscCancels(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	typeAndEnter(m, "/login")
+	if m.login == nil {
+		t.Fatal("/login did not start the flow")
+	}
+	// A typed key then Esc: the flow cancels, the key is discarded,
+	// and nothing reaches auth.json.
+	m.composer.SetValue("typed-secret")
+	m.Update(escKey())
+	if m.login != nil {
+		t.Error("esc must cancel the login flow")
+	}
+	if v := m.composer.Value(); v != "" {
+		t.Errorf("typed key not discarded: %q", v)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "auth.json")); !os.IsNotExist(err) {
+		t.Error("auth.json must not exist after cancel")
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "login cancelled") {
+		t.Errorf("cancel note missing: %s", tr)
+	}
+}
+
+func TestEscClosesPalette(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	m.composer.SetValue("/mo")
+	if !m.paletteOpen() {
+		t.Fatal("palette should be open for a bare /command")
+	}
+	m.Update(escKey())
+	if m.paletteOpen() {
+		t.Error("esc should close the palette")
+	}
+	if v := m.composer.Value(); v != "" {
+		t.Errorf("half-typed command left behind: %q", v)
+	}
+	// Esc must not eat a plain draft when no modal is open.
+	m.composer.SetValue("a real message, not a command")
+	m.Update(escKey())
+	if v := m.composer.Value(); v != "a real message, not a command" {
+		t.Errorf("esc cleared a plain draft: %q", v)
+	}
+}

@@ -62,6 +62,11 @@ Keys while a turn is running:
 | Esc | cancel the current turn |
 | Ctrl+C | cancel and quit |
 
+Esc also closes whatever is open: the command palette (clearing the
+half-typed command), the model/session pickers, the help overlay, the
+permission prompt (deny), the trust prompt (decline), and the `/login`
+input (cancels and discards the typed key — nothing is written).
+
 Slash commands: `/mode` (show or switch permission mode), `/model`
 (pick a model, or `/model <name>` to switch directly — provider, key,
 and audit redactor follow), `/sessions` (browse saved sessions

@@ -616,6 +616,19 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   TestTranscriptHierarchy pins all three: dim placeholder with no
   background SGR, accent+bright query, no dim on the answer.
 
+- **Esc cancel audit** (user-reported: Esc did nothing during /login):
+  went through every modal state. Trust prompt, permission prompt,
+  help overlay, and the pickers already honored Esc; two did not. The
+  /login input now cancels on Esc — the typed key is discarded,
+  nothing is written to auth.json, and a "login cancelled" note lands
+  in the transcript (the Enter handler moved up to its own early block
+  in handleKey, since the main switch never saw Esc in that state).
+  The command palette now also closes on Esc instead of leaving a
+  half-typed command in the composer; a plain draft with no modal open
+  is untouched. Both paths regression-tested and PTY-verified
+  live: /login + typed key + Esc left no auth.json, /mo + Esc cleared
+  the composer.
+
 ## Phase 8 assumptions
 
 1. Model switching is refused mid-turn rather than racing an in-flight
