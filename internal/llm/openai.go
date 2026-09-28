@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,10 +41,24 @@ type wireStreamOptions struct {
 }
 
 type wireMessage struct {
-	Role       string         `json:"role"`
-	Content    string         `json:"content"`
+	Role string `json:"role"`
+	// Content is a plain string for text, or the parts array for
+	// messages carrying images (the OpenAI multimodal form).
+	Content    any            `json:"content,omitempty"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+// wireContentPart is one element of a multimodal content array: a
+// text part or an image part, told apart by Type.
+type wireContentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *wireImageURL `json:"image_url,omitempty"`
+}
+
+type wireImageURL struct {
+	URL string `json:"url"`
 }
 
 type wireToolCall struct {
@@ -95,6 +110,33 @@ type streamChunk struct {
 	} `json:"usage"`
 }
 
+// readableProviderError turns an HTTP error body into what a human
+// should read. OpenAI-compatible servers answer with
+// {"error":{"message":...,"code":...}} — show that message, not the
+// JSON envelope; anything unparseable falls back to truncated raw
+// text so the transcript never carries a wall of response body.
+func readableProviderError(body []byte) string {
+	var probe struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Message string `json:"message"` // some servers put it top-level
+	}
+	if err := json.Unmarshal(body, &probe); err == nil {
+		if probe.Error.Message != "" {
+			return probe.Error.Message
+		}
+		if probe.Message != "" {
+			return probe.Message
+		}
+	}
+	s := strings.TrimSpace(string(body))
+	if len(s) > 300 {
+		s = s[:300] + "…"
+	}
+	return s
+}
+
 // toWire converts tilde's message history into the wire format.
 func toWire(req ChatRequest) wireRequest {
 	msgs := make([]wireMessage, 0, len(req.Messages)+1)
@@ -103,6 +145,23 @@ func toWire(req ChatRequest) wireRequest {
 	}
 	for _, m := range req.Messages {
 		wm := wireMessage{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
+		if len(m.Images) > 0 {
+			// Multimodal form: text part first, then one image
+			// part per attached image, each as a data URL. Tool
+			// messages never carry images (they are assistant
+			// results), so this only shapes user messages.
+			parts := []wireContentPart{{Type: "text", Text: m.Content}}
+			for _, img := range m.Images {
+				parts = append(parts, wireContentPart{
+					Type: "image_url",
+					ImageURL: &wireImageURL{
+						URL: "data:" + img.MimeType + ";base64," +
+							base64.StdEncoding.EncodeToString(img.Data),
+					},
+				})
+			}
+			wm.Content = parts
+		}
 		for _, tc := range m.ToolCalls {
 			wm.ToolCalls = append(wm.ToolCalls, wireToolCall{
 				ID:       tc.ID,
@@ -153,7 +212,7 @@ func (p *OpenAICompat) StreamChat(ctx context.Context, req ChatRequest) (<-chan 
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		return nil, fmt.Errorf("%s: %s", resp.Status, readableProviderError(msg))
 	}
 
 	events := make(chan ChatEvent, 16)

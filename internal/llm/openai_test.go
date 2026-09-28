@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -204,6 +205,31 @@ func TestStreamChatHTTPError(t *testing.T) {
 	_, err := p.StreamChat(context.Background(), ChatRequest{Model: "m"})
 	if err == nil {
 		t.Fatal("expected error on 401, got nil")
+	}
+}
+
+// A structured provider error reads as its message — the wall of JSON
+// envelope never reaches the transcript (the real-world case: an
+// OpenRouter 404 whose message says which slug to use instead).
+func TestReadableProviderError(t *testing.T) {
+	body := []byte(`{"error":{"message":"This model is unavailable for free. The paid version is available now - use this slug instead: inclusionai/ling-3.0-flash-fin","code":404},"user_id":"user_3Dti7kEOHztvMCOIzMR6nTjWhbr"}`)
+	got := readableProviderError(body)
+	if want := "This model is unavailable for free. The paid version is available now - use this slug instead: inclusionai/ling-3.0-flash-fin"; got != want {
+		t.Errorf("structured error:\n got: %s\nwant: %s", got, want)
+	}
+	if strings.Contains(got, `{"error"`) || strings.Contains(got, "user_id") {
+		t.Errorf("raw JSON leaked into the message: %s", got)
+	}
+
+	// Top-level message shape.
+	if got := readableProviderError([]byte(`{"message":"rate limited"}`)); got != "rate limited" {
+		t.Errorf("top-level message: got %q", got)
+	}
+	// Unparseable bodies fall back to truncated raw text (300 chars
+	// plus the ellipsis rune, which is three bytes).
+	garbage := strings.Repeat("x", 400)
+	if got := readableProviderError([]byte(garbage)); len([]rune(got)) != 301 || !strings.HasSuffix(got, "…") {
+		t.Errorf("garbage fallback wrong: %d chars %q", len([]rune(got)), got)
 	}
 }
 
