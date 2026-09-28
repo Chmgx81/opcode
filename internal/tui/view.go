@@ -98,7 +98,7 @@ func (m *Model) todosView() []string {
 		var marker, text string
 		switch it.Status {
 		case tools.TodoDone:
-			marker, text = okStyle.Render(GlyphOK), dimStyle.Render(it.Content)
+			marker, text = dimStyle.Render(GlyphTodoOn), dimStyle.Strikethrough(true).Render(it.Content)
 		case tools.TodoInProgress:
 			marker, text = accentStyle.Render(GlyphDoing), it.Content
 		default:
@@ -161,7 +161,7 @@ func (m *Model) renderEntry(e *entry) []string {
 		// The echoed query sits in a subtle background panel with a
 		// bold-dim › prefix — Codex's separation between what you
 		// said and what the agent answered, without dimming the text.
-		return []string{userPanel(wrapAll(dimStyle.Bold(true).Render(GlyphUser+" ")+e.text, w), m.termWidth())}
+		return []string{userPanel(wrapAll(dimStyle.Render(GlyphUser+" ")+e.text, w), m.termWidth())}
 	case entryAssistant:
 		if e.rendered == nil || e.renderedW != w {
 			e.rendered = renderMarkdown(e.text, w)
@@ -177,13 +177,13 @@ func (m *Model) renderEntry(e *entry) []string {
 	case entryOK:
 		return wrapAll(okStyle.Render(GlyphOK+" ")+e.text, w)
 	case entryErr:
-		return wrapAll(dangerStyle.Render(GlyphWarn+" ")+e.text, w)
+		return wrapAll(dangerStyle.Render(GlyphError+" ")+e.text, w)
 	case entryDim:
 		return wrapAll(e.text, w)
 	case entrySteer:
 		return wrapAll(steerStyle.Render("(steering) ")+e.text, w)
 	case entryQueued:
-		return wrapAll(queuedStyle.Render("(queued) ")+e.text, w)
+		return wrapAll(queuedStyle.Render(GlyphQueued+" ")+e.text, w)
 	case entryCompaction:
 		return wrapAll(infoStyle.Render("… ")+e.text, w)
 	case entrySubagent:

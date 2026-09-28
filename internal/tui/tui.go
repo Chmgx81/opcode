@@ -341,8 +341,8 @@ func New(opt Options) *Model {
 	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Prompt = accentStyle
 	ta.BlurredStyle.Prompt = accentStyle
-	ta.FocusedStyle.Placeholder = dimStyle
-	ta.BlurredStyle.Placeholder = dimStyle
+	ta.FocusedStyle.Placeholder = subtleStyle
+	ta.BlurredStyle.Placeholder = subtleStyle
 	ta.Prompt = GlyphPrompt + " "
 	ta.CharLimit = 0
 	// One line when empty, Claude-Code-style: the composer grows with
@@ -373,7 +373,7 @@ func New(opt Options) *Model {
 		m.entries = append(m.entries, entry{kind: entryDim, text: accentStyle.Render(line)})
 	}
 	m.entries = append(m.entries, entry{kind: entryDim, text: ""})
-	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("tilde " + version)})
+	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render(GlyphBrand + " tilde " + version)})
 	m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Model + " · " + opt.Mode)})
 	if opt.Cwd != "" {
 		m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Cwd)})
