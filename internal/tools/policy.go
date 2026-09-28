@@ -10,6 +10,7 @@ package tools
 // config alias.
 const (
 	ModeReadOnly     = "read-only"
+	ModePlan         = "plan"
 	ModeAskEveryTime = "ask-every-time"
 	ModeFullAuto     = "full-auto"
 
@@ -18,8 +19,8 @@ const (
 	ModeAutoAcceptSafe = "auto-accept-safe-ops"
 )
 
-// Modes is the complete set, in display order.
-var Modes = []string{ModeReadOnly, ModeAskEveryTime, ModeFullAuto}
+// Modes is the complete set, in display order: look, plan, ask, act.
+var Modes = []string{ModeReadOnly, ModePlan, ModeAskEveryTime, ModeFullAuto}
 
 // NormalizeMode canonicalizes a configured mode name. The Phase 1
 // spelling "ask" and the removed auto-accept-safe-ops map to
@@ -35,10 +36,10 @@ func NormalizeMode(mode string) string {
 	return mode
 }
 
-// ValidMode reports whether mode is one of the three real modes.
+// ValidMode reports whether mode is one of the four real modes.
 func ValidMode(mode string) bool {
 	switch mode {
-	case ModeReadOnly, ModeAskEveryTime, ModeFullAuto:
+	case ModeReadOnly, ModePlan, ModeAskEveryTime, ModeFullAuto:
 		return true
 	}
 	return false
@@ -46,11 +47,23 @@ func ValidMode(mode string) bool {
 
 // ModeAllowsTool reports whether a tool is offered to the model at all
 // under this mode (Section 3.2: mode determines the allowed tool set).
-// In read-only mode the model never sees action-tier tools; the gate's
-// denial is only the backstop for a hallucinated call.
+// Read-only mode offers only Read-Only tools; plan mode additionally
+// offers Draft-Only tools — present_plan is the mechanical exit from
+// planning. In neither mode can the model even see an action-tier
+// tool; the gate's denial is only the backstop for a hallucinated
+// call.
 func ModeAllowsTool(mode string, t Tool) bool {
-	if mode == ModeReadOnly {
-		return t.Tier() == TierReadOnly
+	return ModeAllowsTier(mode, t.Tier())
+}
+
+// ModeAllowsTier is the tier-level form of the policy, for callers
+// (like the orchestrator's tool defs) that hold a Def, not a Tool.
+func ModeAllowsTier(mode string, tier Tier) bool {
+	switch NormalizeMode(mode) {
+	case ModeReadOnly:
+		return tier == TierReadOnly
+	case ModePlan:
+		return tier == TierReadOnly || tier == TierDraftOnly
 	}
 	return true
 }
@@ -62,6 +75,8 @@ func ModeInstruction(mode string) string {
 	switch NormalizeMode(mode) {
 	case ModeReadOnly:
 		return "Permission mode is read-only: tools that modify state are not available. Do not attempt to write, edit, or run commands."
+	case ModePlan:
+		return "Permission mode is plan: you cannot change anything yet. Research the codebase with read tools, then present exactly one plan with the present_plan tool — markdown with the goal, concrete steps, and risks — and stop. Wait for the user's decision; do not act before it."
 	case ModeAskEveryTime:
 		return "Permission mode is ask-every-time: each call to a state-changing tool asks the user before running."
 	case ModeFullAuto:
@@ -90,7 +105,7 @@ func PolicyDecide(mode string, prompt func(tool Tool, args string) bool) func(To
 			switch NormalizeMode(mode) {
 			case ModeFullAuto:
 				return true
-			case ModeReadOnly:
+			case ModeReadOnly, ModePlan:
 				return false
 			default:
 				if prompt == nil {

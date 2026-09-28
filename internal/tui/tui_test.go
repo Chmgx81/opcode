@@ -454,7 +454,7 @@ func TestTabCyclesModes(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 
-	// Three modes, forward: ask -> full-auto -> read-only.
+	// Four modes, forward: ask -> full-auto -> read-only -> plan.
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.opt.Mode != tools.ModeFullAuto {
 		t.Errorf("first tab = %q, want full-auto", m.opt.Mode)
@@ -462,6 +462,10 @@ func TestTabCyclesModes(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.opt.Mode != tools.ModeReadOnly {
 		t.Errorf("second tab = %q, want read-only", m.opt.Mode)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if m.opt.Mode != tools.ModePlan {
+		t.Errorf("third tab = %q, want plan", m.opt.Mode)
 	}
 	if m.toast == "" {
 		t.Error("mode toast not set")
@@ -471,10 +475,14 @@ func TestTabCyclesModes(t *testing.T) {
 	if decide := m.opt.Orch.Gate.Decide; decide == nil || decide(tools.WriteFile{}, `{}`) {
 		t.Error("read-only gate must deny after cycling into it")
 	}
-	// Backward: read-only -> full-auto -> ask.
+	// Backward: plan -> read-only -> full-auto -> ask.
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.opt.Mode != tools.ModeReadOnly {
+		t.Errorf("shift+tab = %q, want read-only", m.opt.Mode)
+	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if m.opt.Mode != tools.ModeFullAuto {
-		t.Errorf("shift+tab = %q, want full-auto", m.opt.Mode)
+		t.Errorf("second shift+tab = %q, want full-auto", m.opt.Mode)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if m.opt.Mode != tools.ModeAskEveryTime {
@@ -1136,5 +1144,68 @@ func TestWorkingLineGerundAndUserPanel(t *testing.T) {
 	}
 	if !strings.Contains(stripANSI(joined), "hello") {
 		t.Errorf("content lost in the panel:\n%s", joined)
+	}
+}
+
+func TestPlanApprovalLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.opt.Mode = tools.ModePlan
+	m.opt.Orch.SetMode(tools.ModePlan)
+
+	// The model presents a plan; the prompt owns the keyboard.
+	reply := make(chan planVerdict, 1)
+	m.Update(planRequestMsg{req: &planRequest{plan: "## Goal\nship it", reply: reply}})
+	if m.awaitingPlan == nil {
+		t.Fatal("plan prompt not shown")
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "plan") || !strings.Contains(tr, "ship it") {
+		t.Errorf("plan not rendered in the transcript:\n%s", tr)
+	}
+	if !strings.Contains(stripANSI(m.View()), "proceed with this plan?") {
+		t.Errorf("approval prompt missing from the view")
+	}
+
+	// y: proceed — plan graduates to ask-every-time.
+	m.Update(keyMsg("y"))
+	v := <-reply
+	if !v.proceed || v.auto {
+		t.Errorf("y verdict = %+v, want proceed without auto", v)
+	}
+	if m.opt.Mode != tools.ModeAskEveryTime {
+		t.Errorf("y must switch plan -> ask-every-time, got %q", m.opt.Mode)
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "plan approved") {
+		t.Errorf("approval note missing:\n%s", tr)
+	}
+
+	// a: proceed with auto-accept — full-auto.
+	m.opt.Mode = tools.ModePlan
+	m.opt.Orch.SetMode(tools.ModePlan)
+	reply2 := make(chan planVerdict, 1)
+	m.Update(planRequestMsg{req: &planRequest{plan: "again", reply: reply2}})
+	m.Update(keyMsg("a"))
+	v2 := <-reply2
+	if !v2.proceed || !v2.auto {
+		t.Errorf("a verdict = %+v, want proceed with auto", v2)
+	}
+	if m.opt.Mode != tools.ModeFullAuto {
+		t.Errorf("a must switch to full-auto, got %q", m.opt.Mode)
+	}
+
+	// n: keep planning — mode unchanged, verdict declines.
+	m.opt.Mode = tools.ModePlan
+	m.opt.Orch.SetMode(tools.ModePlan)
+	reply3 := make(chan planVerdict, 1)
+	m.Update(planRequestMsg{req: &planRequest{plan: "third", reply: reply3}})
+	m.Update(keyMsg("n"))
+	if v3 := <-reply3; v3.proceed {
+		t.Errorf("n verdict = %+v, want decline", v3)
+	}
+	if m.opt.Mode != tools.ModePlan {
+		t.Errorf("n must keep plan mode, got %q", m.opt.Mode)
+	}
+	if tr := m.transcript(); !strings.Contains(tr, "plan declined") {
+		t.Errorf("decline note missing:\n%s", tr)
 	}
 }

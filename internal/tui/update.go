@@ -58,6 +58,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.awaitingPerm = msg.req
 		return m, nil
 
+	case planRequestMsg:
+		m.awaitingPlan = msg.req
+		// The plan lands in the transcript rendered as markdown; the
+		// approval prompt below the composer carries the decision.
+		m.add(entry{kind: entryPlan, text: msg.req.plan})
+		return m, nil
+
 	case orchestratorMsg:
 		return m.handleEvent(orchestrator.Event(msg)), nil
 
@@ -172,6 +179,39 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.atIdx %= len(m.atMenu)
 			return m, nil
 		}
+	}
+
+	// Then the plan decision: approve (optionally auto-accept), or
+	// keep planning.
+	if m.awaitingPlan != nil {
+		var v planVerdict
+		switch msg.String() {
+		case "y", "Y":
+			v.proceed = true
+		case "a", "A":
+			v.proceed, v.auto = true, true
+		case "n", "N", "esc":
+		default:
+			return m, nil
+		}
+		req := m.awaitingPlan
+		m.awaitingPlan = nil
+		req.reply <- v
+		m.notePlanVerdict(v)
+		if v.proceed {
+			// Approval graduates the session into a working mode so
+			// the NEXT model request carries the action tools.
+			mode := m.opt.Mode
+			if v.auto {
+				mode = tools.ModeFullAuto
+			} else if mode == tools.ModeReadOnly || mode == tools.ModePlan {
+				mode = tools.ModeAskEveryTime
+			}
+			if mode != m.opt.Mode {
+				return m, m.setMode(mode)
+			}
+		}
+		return m, nil
 	}
 
 	switch msg.String() {
@@ -406,6 +446,19 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	m.add(entry{kind: entryUser, text: text})
 	m.startTurn(text)
 	return tea.Batch(m.spinner.Tick, statusTick())
+}
+
+// notePlanVerdict records the plan decision in the transcript so the
+// conversation reads as plan → decision → execution.
+func (m *Model) notePlanVerdict(v planVerdict) {
+	switch {
+	case v.proceed && v.auto:
+		m.add(entry{kind: entryOK, text: "plan approved — full-auto, implementing"})
+	case v.proceed:
+		m.add(entry{kind: entryOK, text: "plan approved — implementing, actions will ask"})
+	default:
+		m.add(entry{kind: entryDim, text: "plan declined — staying in " + m.opt.Mode})
+	}
 }
 
 func mustJSON(s string) string {

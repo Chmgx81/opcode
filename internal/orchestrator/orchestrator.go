@@ -278,7 +278,9 @@ func (o *Orchestrator) dispatch(ctx context.Context, call llm.ToolCall) (string,
 func (o *Orchestrator) toolDefs() []llm.Tool {
 	var out []llm.Tool
 	for _, d := range o.Registry.Defs() {
-		if o.Mode == tools.ModeReadOnly && d.Tier != tools.TierReadOnly {
+		// The policy owns which tiers each mode offers (plan mode also
+		// offers drafts — present_plan — which is how planning ends).
+		if !tools.ModeAllowsTier(o.Mode, d.Tier) {
 			continue
 		}
 		out = append(out, llm.Tool{

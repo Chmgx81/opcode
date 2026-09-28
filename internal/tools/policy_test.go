@@ -35,6 +35,10 @@ func TestDecisionMatrix(t *testing.T) {
 		{ModeAskEveryTime, TierDraftOnly, "allow"},
 		{ModeAutoAcceptSafe, TierDraftOnly, "allow"},
 		{ModeFullAuto, TierDraftOnly, "allow"},
+		// Plan mode: read and draft (present_plan) run, actions deny.
+		{ModePlan, TierReadOnly, "allow"},
+		{ModePlan, TierDraftOnly, "allow"},
+		{ModePlan, TierActionAllowed, "deny"},
 		// Action-Allowed: the mode actually bites here.
 		{ModeReadOnly, TierActionAllowed, "deny"},
 		{ModeAskEveryTime, TierActionAllowed, "prompt"},
@@ -140,7 +144,7 @@ func TestLegacyModeAliases(t *testing.T) {
 	if ValidMode(ModeAutoAcceptSafe) {
 		t.Error("auto-accept-safe-ops is not a real mode anymore")
 	}
-	if len(Modes) != 3 {
-		t.Errorf("Modes = %v, want exactly three", Modes)
+	if len(Modes) != 4 {
+		t.Errorf("Modes = %v, want exactly four (read-only, plan, ask-every-time, full-auto)", Modes)
 	}
 }

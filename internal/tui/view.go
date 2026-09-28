@@ -29,7 +29,7 @@ func (m *Model) timelineView() []string {
 	var out []string
 	for i := range m.entries {
 		e := &m.entries[i]
-		if e.kind == entryUser || e.kind == entryAssistant {
+		if e.kind == entryUser || e.kind == entryAssistant || e.kind == entryPlan {
 			out = append(out, "")
 		}
 		out = append(out, m.renderEntry(e)...)
@@ -118,6 +118,11 @@ func (m *Model) renderEntry(e *entry) []string {
 		return wrapAll(infoStyle.Render("… ")+e.text, w)
 	case entrySubagent:
 		return wrapAll(dimStyle.Render(e.subTitle)+e.text, w)
+	case entryPlan:
+		// The presented plan: a labeled markdown block in the
+		// transcript; the decision line follows below it.
+		out := []string{accentStyle.Render(GlyphBullet + " plan")}
+		return append(out, renderMarkdown(e.text, w)...)
 	}
 	return nil
 }
@@ -237,6 +242,12 @@ func (m *Model) floatingView() []string {
 				promptStyle.Render("allow?")+" "+toolNameStyle.Render(m.awaitingPerm.tool)+" "+
 					dimStyle.Render("(tier "+string(m.awaitingPerm.tier)+
 						") — y allow · a allow all action tools this session · n/Esc deny")))
+	}
+	if m.awaitingPlan != nil {
+		out = append(out, "",
+			promptBoxStyle.Width(w-4).Render(
+				promptStyle.Render("proceed with this plan?")+" "+
+					dimStyle.Render("y implement (actions will ask) · a implement with auto-accept · n/Esc keep planning")))
 	}
 	if m.login != nil {
 		out = append(out, "",

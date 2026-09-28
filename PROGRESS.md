@@ -910,3 +910,65 @@ persistent left-column session sidebar.
   line showed "Thinking… (esc to interrupt · 0s · ↓ 0 tokens)"-shaped
   status; submitted queries rendered with the panel background
   (48;5;232 on xterm-256color).
+
+---
+
+# Phase 13 — Plan Mode (status: complete, live-verified)
+
+Spec: [docs/specs/phase13-plan-mode.md](docs/specs/phase13-plan-mode.md)
+
+## Built
+
+- **The mode**: `plan` joins the cycle — read-only → plan →
+  ask-every-time → full-auto (Tab forward, shift+tab back). Like
+  read-only, action-tier tools are not advertised; unlike read-only,
+  Draft-Only tools ARE — which finally gives the long-empty Draft-Only
+  tier its tool.
+- **The tool**: `present_plan` (Draft-Only, always allowed — proposing
+  changes nothing). Args: the plan as markdown (goal, steps, risks).
+  Execute blocks on the injected Approve callback — the permission
+  gate's pattern — and the result text tells the model the verdict:
+  approved + full-auto, approved (actions will ask), or declined. Nil
+  Approve (headless) fails closed: "user cannot be reached", nothing
+  proceeds.
+- **The approval flow**: a plan prompt like the permission prompt.
+  `y` implement — switches plan/read-only into ask-every-time; `a`
+  implement with auto-accept — full-auto; `n`/Esc keep planning. Mode
+  switching mid-turn is the mechanism: the next model request
+  re-composes the tool list, so approval immediately widens what the
+  model can do — no restart, no new session.
+- **Transcript**: the plan renders as a labeled markdown block
+  (entryPlan, same renderer as answers); the decision line follows
+  ("plan approved — implementing, actions will ask" / "plan declined").
+- **System prompt**: plan mode instructs research-first, exactly one
+  plan via present_plan, stop and wait.
+- **Fix found while wiring**: the orchestrator had its own inline
+  read-only tool filter instead of calling the policy — plan mode's
+  advertisement would have been ignored. toolDefs now routes through
+  ModeAllowsTier (the tier-level form of the policy).
+
+## Verified for real
+
+- All eleven packages, new tests: the tool (tier, verdict texts,
+  fail-closed, arg validation), the policy matrix rows for plan mode,
+  orchestrator advertisement (read_file + present_plan offered;
+  write/edit/shell absent; instruction composed), the TUI plan
+  lifecycle (y/a/n/Esc verdicts, mode follow-through, transcript
+  entries), and the four-mode tab ring.
+- **PTY, end-to-end with the decisive proof**: the fixture answers
+  based on what the request ADVERTISES — no write_file → present_plan;
+  write_file present → "implementing". Plan mode turn: the plan
+  rendered, the prompt appeared, `y` was pressed, the mode line
+  flipped to ask-every-time, and the NEXT request provably carried
+  write_file (the implementation text streamed only because the tool
+  was offered). Headless plan mode fails closed by construction.
+
+## Phase 13 assumptions
+
+1. `a` (auto-accept) maps to full-auto — tilde has no
+  "auto-accept-edits-only" mode; the mapping is stated in the prompt
+  text, not hidden.
+2. The plan lives in the conversation and transcript; persisting a
+  plan.md is deferred.
+3. present_plan offered in every mode (drafts always are); outside
+  plan mode the model is simply not instructed to use it.

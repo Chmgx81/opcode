@@ -45,6 +45,7 @@ func newTestOrchestrator(p llm.Provider, gate *tools.Gate, dir string) (*Orchest
 	reg.Register(tools.WriteFile{})
 	reg.Register(tools.EditFile{})
 	reg.Register(tools.RunShell{})
+	reg.Register(tools.PresentPlan{Approve: func(string) (bool, bool) { return false, false }})
 	if gate == nil {
 		gate = &tools.Gate{}
 	}
@@ -127,8 +128,8 @@ func TestLoopExecutesToolAndFeedsResultBack(t *testing.T) {
 		t.Errorf("tool result not fed back: %q", tool.Content)
 	}
 	// The request must carry the tool definitions.
-	if len(round2.Tools) != 4 {
-		t.Errorf("round 2 carries %d tools, want 4", len(round2.Tools))
+	if len(round2.Tools) != 5 {
+		t.Errorf("round 2 carries %d tools, want 5", len(round2.Tools))
 	}
 }
 
@@ -472,8 +473,8 @@ func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 		orch.SetMode(mode)
 		drain(t, orch.Send(context.Background(), "go"))
 		req := p.gotRequests[0]
-		if len(req.Tools) != 4 {
-			t.Errorf("mode %s offered %d tools, want all 4", mode, len(req.Tools))
+		if len(req.Tools) != 5 {
+			t.Errorf("mode %s offered %d tools, want all 5", mode, len(req.Tools))
 		}
 		if !strings.Contains(req.System, mode) {
 			t.Errorf("mode %s instruction missing from prompt: %q", mode, req.System)
@@ -665,5 +666,32 @@ func TestCompactionFailureIsNotFatal(t *testing.T) {
 	}
 	if !completed {
 		t.Error("the turn died on a compaction failure — it must continue uncompacted")
+	}
+}
+
+func TestPlanModeAdvertisesResearchAndPlanTools(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "hi"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.SetMode(tools.ModePlan)
+	drain(t, orch.Send(context.Background(), "plan this"))
+	req := p.gotRequests[0]
+
+	names := map[string]bool{}
+	for _, tl := range req.Tools {
+		names[tl.Name] = true
+	}
+	if !names["read_file"] || !names["present_plan"] {
+		t.Errorf("plan mode must offer read_file and present_plan, got %v", names)
+	}
+	for _, banned := range []string{"write_file", "edit_file", "run_shell"} {
+		if names[banned] {
+			t.Errorf("plan mode must not offer %s", banned)
+		}
+	}
+	if !strings.Contains(req.System, "mode is plan") || !strings.Contains(req.System, "present_plan") {
+		t.Errorf("plan instruction missing from prompt: %q", req.System)
 	}
 }
