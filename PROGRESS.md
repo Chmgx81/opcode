@@ -1115,3 +1115,53 @@ that failure class.
 
 Footer-hint width fitting, external editor, screen-reader detection
 seeding the animations default, OSC 8 hyperlinks.
+
+---
+
+# Phase 17 — Footer Fitting, External Editor, Screen-Reader Seeding (status: complete, live-verified)
+
+Borrow list items 4 and the accessibility seed, from the Codex audit.
+
+## Built
+
+- **Footer fitting** (Codex's footer_hint.rs pattern): the mode line
+  has candidates from fullest (mode + (tab to cycle) + hints) to bare
+  mode; the first that fits the terminal wins. Hints degrade; the
+  mode never does — a shortcut never separates from its label.
+- **External editor** (ctrl+e): the composer's text lands in a temp
+  file, $VISUAL/$EDITOR runs with the TUI suspended (tea.ExecProcess),
+  and the result loads back (composer grows, mentions re-resolve,
+  shell prompt re-syncs, temp file removed). No editor set → toast, no
+  process. Deliberate no-ops: during a turn (suspending mid-turn
+  strands the orchestrator) and in modal states (they own the
+  keyboard). The editor's edit wins even on nonzero exit — half the
+  editors in the wild exit nonzero — but an unreadable file leaves the
+  composer untouched.
+- **Screen-reader seeding** (Codex's probe, tilde-sized):
+  config.ScreenReaderActive() checks the conventional signals
+  (SCREEN_READER, atk-bridge in GTK_MODULES, ACCESSIBILITY_ENABLED) —
+  deliberately conservative, because a false positive removes
+  animation someone may want. When the user has not chosen
+  explicitly, a detected reader turns animations off for the session
+  with a visible startup note. Nothing is persisted silently (Codex
+  writes the preference; tilde lets the config key win).
+
+## Verified for real
+
+- All eleven packages; new tests: the footer degradation ladder (full
+  hints at 80 cols, ≤ terminal width with the mode intact at 24), the
+  editor flow (no-editor toast, result lands in the composer, temp
+  file removed, composer grows to fit, mid-turn no-op), and the
+  screen-reader signal matrix.
+- **PTY, live**: ctrl+e with a fake editor script — the draft went
+  out, the editor appended a line, the composer loaded the edited
+  text, and the toast confirmed; a 34-col terminal rendered the bare
+  `~ ask-every-time` footer with the full hints provably absent; a
+  SCREEN_READER=1 session showed the startup note and zero spinner
+  frames.
+
+## Deferred (borrow list)
+
+OSC 8 hyperlinks (glamour emits no link anchors to post-process — a
+fragile hack, not built on purpose). The borrow list is otherwise
+exhausted.

@@ -67,6 +67,7 @@ dominates: read-only and plan deny shell outright.
 |---|---|
 | **Enter** | send — mid-turn: steer at the next round boundary |
 | **Ctrl+J** | newline |
+| **Ctrl+E** | edit the composer in `$VISUAL`/`$EDITOR` |
 | **Alt+Enter** | queue a follow-up |
 | **Esc** | stop — the turn, or whatever is open |
 | **Tab** | cycle permission mode |
@@ -104,6 +105,10 @@ and toast animations become static glyphs, the information stays.
 Light terminals: tilde asks the terminal for its background and
 re-skins (dark ink on light fills, deepened accents) — or force it
 with `TILDE_THEME=light|dark`.
+
+Screen readers: a detected reader (SCREEN_READER, atk-bridge) turns
+animations off for the session and says so — the config key still
+wins. The footer reflows on narrow terminals instead of wrapping.
 
 Everything is recorded honestly in [PROGRESS.md](PROGRESS.md) — what
 was verified live, what wasn't, and what is deferred. The architecture

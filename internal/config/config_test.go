@@ -142,3 +142,30 @@ func TestLoadConfigCompactionKeys(t *testing.T) {
 		t.Error("negative context_window must fail at load")
 	}
 }
+
+func TestScreenReaderActive(t *testing.T) {
+	t.Setenv("SCREEN_READER", "")
+	t.Setenv("GTK_MODULES", "")
+	t.Setenv("ACCESSIBILITY_ENABLED", "")
+	if ScreenReaderActive() {
+		t.Error("no signals: not active")
+	}
+	t.Setenv("SCREEN_READER", "1")
+	if !ScreenReaderActive() {
+		t.Error("SCREEN_READER=1 must be active")
+	}
+	t.Setenv("SCREEN_READER", "0")
+	if ScreenReaderActive() {
+		t.Error("SCREEN_READER=0 must not be active")
+	}
+	t.Setenv("SCREEN_READER", "")
+	t.Setenv("GTK_MODULES", "canberra-gtk-module:atk-bridge")
+	if !ScreenReaderActive() {
+		t.Error("atk-bridge in GTK_MODULES must be active")
+	}
+	t.Setenv("GTK_MODULES", "")
+	t.Setenv("ACCESSIBILITY_ENABLED", "1")
+	if !ScreenReaderActive() {
+		t.Error("ACCESSIBILITY_ENABLED=1 must be active")
+	}
+}

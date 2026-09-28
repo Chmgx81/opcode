@@ -270,6 +270,13 @@ var workingVerbs = []string{
 // toastTickMsg drives the toast animation.
 type toastTickMsg time.Time
 
+// editorDoneMsg reports the external editor (ctrl+e) finished with
+// the composer's temp file.
+type editorDoneMsg struct {
+	path string
+	err  error
+}
+
 func toastTick() tea.Cmd {
 	return tea.Tick(90*time.Millisecond, func(t time.Time) tea.Msg {
 		return toastTickMsg(t)

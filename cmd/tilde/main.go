@@ -257,6 +257,15 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		resumeNote = fmt.Sprintf("resumed session %s (%d messages)", filepath.Base(path), len(s.History()))
 	}
 
+	// Screen-reader posture (Codex borrow): a detected reader reduces
+	// motion for the session when the user has not chosen explicitly;
+	// the config key always wins, and nothing is persisted silently.
+	if cfg.Animations == nil && config.ScreenReaderActive() {
+		off := false
+		cfg.Animations = &off
+		startupNotes = append(startupNotes, "screen reader detected — animations off (set \"animations\": true to override)")
+	}
+
 	// If the project has an unapproved executable surface, the TUI asks
 	// first. Granting persists the decision and re-discovers skills into
 	// the same manager, so the tools and the system prompt pick up the

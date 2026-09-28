@@ -292,14 +292,31 @@ func (m *Model) composerView() []string {
 	out = append(out, box.Width(m.termWidth()-4).Render(composer))
 
 	// Mode line in the reference shape: "~ mode (tab to cycle)" then
-	// the minimal hints. Shell mode swaps the hint for its own.
-	mode := accent2Style.Render(GlyphPrompt+" "+m.opt.Mode) +
-		dimStyle.Render(" (tab to cycle)")
-	hint := dimStyle.Render("? help · / commands")
+	// the minimal hints. Codex's footer fitting: candidates from
+	// fullest to bare mode, first one that fits the terminal wins — a
+	// shortcut never separates from its label on narrow screens.
+	mode := accent2Style.Render(GlyphPrompt + " " + m.opt.Mode)
+	var hint string
 	if m.shellMode() {
 		hint = dimStyle.Render("shell — enter runs it directly, no model round trip")
+	} else {
+		hint = dimStyle.Render("? help · / commands")
 	}
-	out = append(out, mode+"   "+hint)
+	tab := dimStyle.Render("(tab to cycle)")
+	candidates := []string{
+		mode + tab + "   " + hint,
+		mode + dimStyle.Render(" (tab)") + "   " + hint,
+		mode + "   " + hint,
+		mode,
+	}
+	line := candidates[len(candidates)-1]
+	for _, c := range candidates {
+		if lipgloss.Width(c) <= m.termWidth() {
+			line = c
+			break
+		}
+	}
+	out = append(out, line)
 	return out
 }
 
