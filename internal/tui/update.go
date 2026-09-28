@@ -128,8 +128,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// The login prompt: Enter saves, Esc cancels and discards the
-	// typed key. Everything else falls through to the composer (View
-	// renders it masked).
+	// typed key. Tab/shift+tab are swallowed — cycling permission modes
+	// while typing a secret is a non sequitur. Everything else falls
+	// through to the composer (View renders it masked).
 	if m.login != nil {
 		switch msg.String() {
 		case "enter":
@@ -139,6 +140,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.composer.SetValue("")
 			m.resizeComposer()
 			m.add(entry{kind: entryDim, text: "login cancelled"})
+			return m, nil
+		case "tab", "shift+tab":
 			return m, nil
 		}
 	}
@@ -494,7 +497,9 @@ func (m *Model) setMode(arg string) tea.Cmd {
 	if m.working {
 		note += " (takes effect for the next model request)"
 	}
-	m.add(entry{kind: entryOK, text: note})
+	// No transcript entry: the animated toast announces the change and
+	// the mode line under the composer persists it. A line per keypress
+	// buried the conversation.
 	return m.showAnimatedToast(note)
 }
 
