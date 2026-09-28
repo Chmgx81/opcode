@@ -1448,3 +1448,69 @@ Spec: [docs/specs/phase23-provider-auth.md](docs/specs/phase23-provider-auth.md)
 2. The conventional `<PROVIDER>_API_KEY` names match what users
    already export for other tools (the same names the reference
    table uses for the common providers).
+
+# Phase 24 — TUI/UX spec adoption + design tokens (status: complete, live-verified)
+
+Spec: [docs/specs/tui-ux-spec.md](docs/specs/tui-ux-spec.md) — the
+new source of truth for everything visual or interactive. By its own
+precedence rule it overrides earlier direction where they conflict
+(including the Phase 20 Codex restyle: the spec's accent is tilde's
+own teal `#2dd4bf`, and it forbids cloning reference identities).
+
+## Built — the first convergence step (Section 2)
+
+- **Colors** to the token table: teal accent (`#2dd4bf` dark /
+  `#0f766e` light), `fg.muted` `#9aa0a6`, `fg.subtle` `#6b7280`
+  (placeholder and hints now subtle, metadata muted — two grays,
+  not one), success/warning/danger/info per the table, `border`
+  `#3f4650`, `surface.user` `#262a31`, and a separate
+  `surface.code` `#1c2026` (code blocks no longer share the user
+  block's fill). Body text now uses the **terminal's default
+  foreground** (empty fg token), so light and dark terminals both
+  read correctly at the body level.
+- **Glyphs** to Section 2.4: `❯` composer/user/selection, `⎿`
+  result connector, `✗` errors, `⚠` warnings, `☐ ◐ ☑` todos (done
+  items dim + struck through), `⏵` queued, `~` kept as the header
+  brand mark. Emoji: none, per the spec.
+- **Tests**: every color/glyph pin moved to the spec values — moved,
+  not deleted (placeholder-subtle, no-background-highlight,
+  panel-fill, light-theme, accent-deepening, and todo-glyph
+  assertions all still assert).
+
+## Verified for real
+
+- All twelve packages; PTY live (256-color): teal accent, subtle
+  placeholder, muted metadata, ❯ prompts, user-block fill, and the
+  header brand all render as the spec's screen anatomy describes.
+
+## Convergence roadmap — what the spec demands that is NOT yet built
+
+Honest list, in build order (each is its own phase):
+
+1. **Modes + keys (Section 10, 13)**: ask / accept-edits / plan /
+   bypass with Shift+Tab cycling, Tab queuing, mode-colored
+   composer rules and footer labels. Today: read-only / plan /
+   ask-every-time / full-auto on Tab. The spec's Section 10.1 maps
+   them onto the existing postures — a rename plus the accept-edits
+   split and bypass guardrails.
+2. **`safe/` sanitizer (Section 3.1)**: typed sanitization of all
+   untrusted text; today the redactor covers secrets, not escape
+   sequences.
+3. **Inline commit renderer (Section 1.4)**: block-commit streaming
+   to scrollback; today the whole view repaints per frame.
+4. **Composer rules + type-ahead protection + paste safety details
+   (Sections 5, 9)**: horizontal rules around the composer,
+   permission-dialog type-ahead guard, `/`-and-`!` paste guards.
+5. **Component gallery + goldens (Section 1.3, 20)**.
+6. **Copy catalog, ask_user, /context, /diff, transcript view,
+   ASCII glyph fallback, themes picker** — the remaining Sections.
+
+## Phase 24 assumptions
+
+1. termenv rounds truecolor one step in this environment (the pins
+   assert what renders, e.g. `#2dd4bf` → `44;211;191`).
+2. The 16-color column degrades via termenv quantization from the
+   hex values rather than a hand-mapped table; the spec's 16-color
+   names (cyan accent, green success, …) match what quantization
+   produces. Verified by eyeball in a 256-color PTY; a forced
+   16-color golden comes with the gallery phase.

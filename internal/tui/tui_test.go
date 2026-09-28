@@ -832,11 +832,12 @@ func TestTranscriptHierarchy(t *testing.T) {
 	// The placeholder: dim, and carrying no background rectangle — the
 	// textarea's stock focused CursorLine paints one and it reads as a
 	// selection highlight on any terminal whose floor isn't pure black.
-	const dimSGR = "38;2;153;153;153"   // HexDim #999999 (measured blend)
-	const accentSGR = "38;2;99;168;248" // HexAccent #63A8F8 in truecolor
+	const dimSGR = "38;2;154;160;166"    // fg.muted #9aa0a6
+	const subtleSGR = "38;2;107;113;128" // fg.subtle #6b7280 (placeholder)
+	const accentSGR = "38;2;44;211;191"  // accent #2dd4bf (termenv rounds one step)
 	// The echoed query sits in the shaded panel (termenv renders
 	// #292929 one step down; the panel-fill SGR reflects that).
-	const panelFillSGR = "48;2;40;40;40" // HexDeep2 #292929 user panel
+	const panelFillSGR = "48;2;38;42;48" // surface.user #262a31 (rounds one step)
 	// The cursor block overlays the placeholder's first character, so
 	// probe for a tail fragment rather than the whole string.
 	view := m.View()
@@ -849,8 +850,8 @@ func TestTranscriptHierarchy(t *testing.T) {
 			placeholderLine = l
 		}
 	}
-	if !strings.Contains(placeholderLine, dimSGR) {
-		t.Errorf("placeholder not dim:\n%q", placeholderLine)
+	if !strings.Contains(placeholderLine, subtleSGR) {
+		t.Errorf("placeholder not fg.subtle:\n%q", placeholderLine)
 	}
 	if strings.Contains(placeholderLine, "48;") {
 		t.Errorf("placeholder carries a background highlight:\n%q", placeholderLine)
@@ -996,7 +997,7 @@ func TestEditDiffHighlightsSyntax(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	// The keyword keeps its accent color even inside the removed line;
 	// the marker still carries the verdict.
-	if !strings.Contains(joined, "38;2;99;168;248") { // HexAccent #63A8F8
+	if !strings.Contains(joined, "38;2;44;211;191") { // accent #2dd4bf
 		t.Errorf("keyword not highlighted in the diff:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "func main() {") {
@@ -1145,7 +1146,7 @@ func TestWorkingLineGerundAndUserPanel(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	panel := m.renderEntry(&entry{kind: entryUser, text: "hello"})
 	joined := strings.Join(panel, "\n")
-	if !strings.Contains(joined, "48;2;40;40;40") { // HexDeep2 #292929 (termenv rounds one step)
+	if !strings.Contains(joined, "48;2;38;42;48") { // surface.user #262a31
 		t.Errorf("user entry lacks the background panel:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "hello") {
@@ -1298,19 +1299,21 @@ func TestLightThemeAdaptation(t *testing.T) {
 	defer func() {
 		// The dark branch of adaptTheme is a no-op by design, so restore
 		// the dark values explicitly.
-		HexAccent, HexAccent2 = "#63A8F8", "#3E82D6"
-		HexDeep, HexDeep2 = "#404040", "#292929"
-		HexText, HexDim = "#E8E8E8", "#999999"
-		HexSuccess, HexDanger = "#3FB950", "#F87171"
-		HexWarning, HexInfo = "#C4A767", "#8FBFE8"
+		HexAccent, HexInfo = "#2dd4bf", "#60a5fa"
+		HexDeep, HexDeep2 = "#3f4650", "#262a31"
+		HexCode = "#1c2026"
+		HexText, HexDim = "", "#9aa0a6"
+		HexSubtle = "#6b7280"
+		HexSuccess, HexDanger = "#4ade80", "#f87171"
+		HexWarning = "#fbbf24"
 		refreshTokens()
 	}()
 
 	adaptTheme(false)
 
-	if HexAccent != "#1C64C8" || HexText != "#1A1A1A" || HexDeep2 != "#F2F2F2" {
-		t.Errorf("light palette not applied: accent=%s text=%s fill=%s",
-			HexAccent, HexText, HexDeep2)
+	if HexAccent != "#0f766e" || HexDeep2 != "#eef0f3" || HexCode != "#f5f6f8" {
+		t.Errorf("light palette not applied: accent=%s fill=%s code=%s",
+			HexAccent, HexDeep2, HexCode)
 	}
 
 	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
@@ -1319,12 +1322,12 @@ func TestLightThemeAdaptation(t *testing.T) {
 	// The user panel renders with the LIGHT fill, and the body text is
 	// dark ink — the legibility failure class this exists to prevent.
 	panel := strings.Join(m_renderUserPanel("hello"), "\n")
-	if !strings.Contains(panel, "48;2;242;242;242") { // #F2F2F2
+	if !strings.Contains(panel, "48;2;238;240;243") { // #eef0f3
 		t.Errorf("user panel lacks the light fill:\n%q", panel)
 	}
 	// The composer's accent prompt uses the deepened light accent.
-	prompt := accentStyle.Render("~ ")
-	if !strings.Contains(prompt, "38;2;28;100;200") { // #1C64C8
+	prompt := accentStyle.Render(GlyphPrompt + " ")
+	if !strings.Contains(prompt, "38;2;15;118;110") { // #0f766e
 		t.Errorf("accent not deepened for light background: %q", prompt)
 	}
 }
@@ -1420,7 +1423,7 @@ func TestTodosPanelRenders(t *testing.T) {
 		{Content: "write tests", Status: tools.TodoPending},
 	}))
 	view := stripANSI(m.View())
-	for _, want := range []string{"tasks (1/3 done)", "✓ read the config", "▸ fix the auth bug", "· write tests"} {
+	for _, want := range []string{"tasks (1/3 done)", "☑ read the config", "◐ fix the auth bug", "· write tests"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("panel missing %q:\n%s", want, view)
 		}
