@@ -219,9 +219,12 @@ func (m *Model) composerView() []string {
 	}
 	out = append(out, boxStyle.Width(m.termWidth()-4).Render(composer))
 
-	// Mode line: the permission posture, always visible, cyclable.
+	// Mode line, Claude-Code-shaped footer: the permission posture
+	// first, then the always-available prefixes as dim hints. The
+	// placeholder stays a real placeholder ("ask tilde anything…"),
+	// not a keymap.
 	mode := accent2Style.Render(GlyphPrompt + " " + m.opt.Mode)
-	hint := dimStyle.Render("shift+tab to cycle · ctrl+r expand results · ? help")
+	hint := dimStyle.Render("? help · / commands · ! shell · @ files")
 	out = append(out, mode+"   "+hint)
 	return out
 }
@@ -343,9 +346,10 @@ func (m *Model) fit(layers []string) []string {
 	if m.height <= 0 {
 		return layers
 	}
-	// Reserve rows for the composer (3-line textarea + borders + mode
-	// line + status) so long transcripts trim, not the composer.
-	reserved := 9
+	// Reserve rows for the composer (its live height + borders + the
+	// footer mode line + the status/blank line above it) so long
+	// transcripts trim, not the composer.
+	reserved := m.composer.Height() + 6
 	if m.working {
 		reserved += 2
 	}

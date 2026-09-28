@@ -225,10 +225,14 @@ var commands = []command{
 
 func New(opt Options) *Model {
 	ta := textarea.New()
-	ta.Placeholder = "ask tilde… / commands · ! shell · @ files · ? help"
+	ta.Placeholder = "ask tilde anything…"
 	ta.Prompt = GlyphPrompt + " "
 	ta.CharLimit = 0
-	ta.SetHeight(3)
+	// One line when empty, Claude-Code-style: the composer grows with
+	// typed content (resizeComposer) instead of reserving rows that
+	// render as empty prompt lines. Hints live on the footer line, not
+	// in the placeholder.
+	ta.SetHeight(1)
 	// The textarea's own width defaults to 40 columns — placeholder and
 	// typed text wrap there no matter how wide the terminal is. Size it
 	// to the composer box's content width (terminal minus box chrome);

@@ -578,6 +578,16 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   chrome minus prompt), and the placeholder was shortened to fit a
   60-column terminal. Regression test pins both: composer width after
   a resize event, and the placeholder unwrapped at width 70.
+- **Composer restructured to the Claude Code reference shape**
+  (user-reported, second pass): the placeholder had become a keymap
+  ("/ commands · ! shell · @ files · ? help") crammed into the input,
+  and the fixed 3-line textarea showed two empty prompt rows below it.
+  Now: a one-line composer with a real placeholder ("ask tilde
+  anything…") that grows with content (one row per typed or wrapped
+  line, capped at 6) and shrinks on submit; the hints moved to the dim
+  footer line under the box ("? help · / commands · ! shell · @
+  files"), the shape of the reference apps' "? for shortcuts" footer.
+  fit() now reserves the composer's live height instead of a constant.
 
 ## Phase 8 assumptions
 
