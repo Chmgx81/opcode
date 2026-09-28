@@ -32,9 +32,17 @@ tilde                                                                   # 2. run
 ```
 
 No key yet? Start tilde and run `/login` (masked input, takes effect
-immediately) — or set `$OPENROUTER_API_KEY`. Non-default providers
-(Ollama, vLLM, anything OpenAI-compatible) go in `~/.tilde/models.json`.
-Credentials never load from a project-level `.tilde/`.
+immediately; `/login <provider>` stores a key for another provider).
+Non-default providers (Ollama, vLLM, anything OpenAI-compatible) go in
+`~/.tilde/models.json`.
+
+Keys resolve in order: the `auth.json` entry (`{"openrouter": "<key>"}`,
+or `{"openrouter": "!pass show openrouter"}` to fetch from a secret
+manager at first use), then the environment — the provider's
+`api_key_env` if models.json names one, else the conventional
+`<PROVIDER>_API_KEY` (`DEEPSEEK_API_KEY`, `GROQ_API_KEY`,
+`OPENROUTER_API_KEY`, …). Credentials never load from a project-level
+`.tilde/`.
 
 ## The four modes
 

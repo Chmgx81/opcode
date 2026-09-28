@@ -430,10 +430,10 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		m.helpOpen = true
 		return nil
 	case "/login":
-		m.beginLogin()
+		m.beginLogin(arg)
 		return nil
 	case "/logout":
-		m.logout()
+		m.logout(arg)
 		return nil
 	case "/mode":
 		return m.setMode(arg)
@@ -531,8 +531,14 @@ func (m *Model) applyNewKey(provider, key string) {
 	_ = provider
 }
 
-func (m *Model) beginLogin() {
-	m.login = &loginFlow{provider: m.opt.ProviderName}
+// beginLogin starts the masked key capture. An explicit provider names
+// which entry auth.json gets (pre-provisioning another provider is
+// fine); bare /login means the active one.
+func (m *Model) beginLogin(provider string) {
+	if provider == "" {
+		provider = m.opt.ProviderName
+	}
+	m.login = &loginFlow{provider: provider}
 	m.composer.SetValue("")
 }
 
@@ -550,24 +556,39 @@ func (m *Model) submitLogin() tea.Cmd {
 		m.add(entry{kind: entryErr, text: "login failed: " + err.Error()})
 		return nil
 	}
-	m.applyNewKey(provider, key)
-	m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — future requests use it"})
+	// The live client only changes when the stored key belongs to the
+	// active provider — a different provider's key is stored for its
+	// next session, not applied to this one's requests.
+	if provider == m.opt.ProviderName {
+		m.applyNewKey(provider, key)
+		m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — future requests use it"})
+	} else {
+		m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — used when " + provider + " is the active provider"})
+	}
 	return nil
 }
 
-func (m *Model) logout() {
-	removed, err := config.RemoveAuthKey(m.opt.TildeHome, m.opt.ProviderName)
+// logout removes the stored key for a provider: bare /logout means the
+// active one, an argument names another. Only what tilde stored is
+// touched — never environment variables, never the provider's side.
+func (m *Model) logout(provider string) {
+	if provider == "" {
+		provider = m.opt.ProviderName
+	}
+	removed, err := config.RemoveAuthKey(m.opt.TildeHome, provider)
 	if err != nil {
 		m.add(entry{kind: entryErr, text: "logout failed: " + err.Error()})
 		return
 	}
 	if !removed {
-		m.add(entry{kind: entryOK, text: "no stored key for " + m.opt.ProviderName + " — nothing to remove"})
+		m.add(entry{kind: entryOK, text: "no stored key for " + provider + " — nothing to remove"})
 		return
 	}
-	m.applyNewKey(m.opt.ProviderName, "")
+	if provider == m.opt.ProviderName {
+		m.applyNewKey(provider, "")
+	}
 	m.add(entry{kind: entryOK,
-		text: "removed the stored key for " + m.opt.ProviderName +
+		text: "removed the stored key for " + provider +
 			". This does not unset environment variables or revoke the key at the provider."})
 }
 

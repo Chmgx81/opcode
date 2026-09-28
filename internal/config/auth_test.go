@@ -269,3 +269,47 @@ func TestRemoveAuthKeyMissingDir(t *testing.T) {
 		t.Error("removed = true with no auth.json at all")
 	}
 }
+
+func TestResolverDerivedEnvFallback(t *testing.T) {
+	// No api_key_env: the conventional <PROVIDER>_API_KEY applies —
+	// one rule for every OpenAI-compatible provider.
+	t.Setenv("DEEPSEEK_API_KEY", "derived-key")
+	r := NewResolver(AuthConfig{}, ProviderConfig{})
+
+	key, ok, err := r.APIKey("deepseek")
+	if err != nil || !ok {
+		t.Fatalf("APIKey: ok=%v err=%v", ok, err)
+	}
+	if key.Value != "derived-key" || key.Source != "environment" {
+		t.Errorf("got %q from %q, want derived-key from environment", key.Value, key.Source)
+	}
+}
+
+func TestResolverExplicitEnvWinsOverDerived(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "derived")
+	t.Setenv("CUSTOM_DEEPSEEK_VAR", "explicit")
+	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "CUSTOM_DEEPSEEK_VAR"})
+
+	key, ok, err := r.APIKey("deepseek")
+	if err != nil || !ok {
+		t.Fatalf("APIKey: ok=%v err=%v", ok, err)
+	}
+	if key.Value != "explicit" {
+		t.Errorf("explicit api_key_env lost to the derived variable: %q", key.Value)
+	}
+}
+
+func TestDerivedAPIKeyEnv(t *testing.T) {
+	cases := []struct{ provider, want string }{
+		{"deepseek", "DEEPSEEK_API_KEY"},
+		{"openrouter", "OPENROUTER_API_KEY"},
+		{"my-provider", "MY_PROVIDER_API_KEY"},
+		{"dotted.name", "DOTTED_NAME_API_KEY"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := DerivedAPIKeyEnv(c.provider); got != c.want {
+			t.Errorf("DerivedAPIKeyEnv(%q) = %q, want %q", c.provider, got, c.want)
+		}
+	}
+}

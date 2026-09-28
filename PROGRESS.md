@@ -1409,3 +1409,42 @@ Spec: [docs/specs/phase22-image-paste.md](docs/specs/phase22-image-paste.md)
    unrecognized bytes are refused with a toast, not mislabeled.
 2. Vision-less providers will 4xx the parts array; the error now
    reads as the provider's own message instead of a JSON dump.
+
+# Phase 23 — Multi-provider authentication (status: complete)
+
+Spec: [docs/specs/phase23-provider-auth.md](docs/specs/phase23-provider-auth.md)
+
+## Built
+
+- **The derived env rule**: when a provider's models.json entry
+  names no `api_key_env`, the conventional `<PROVIDER>_API_KEY`
+  applies — uppercased, dashes and dots to underscores. One rule
+  covers every OpenAI-compatible provider (deepseek →
+  `DEEPSEEK_API_KEY`, groq → `GROQ_API_KEY`, …) where the reference
+  products hardcode thirty-entry tables; an explicit `api_key_env`
+  still wins over the derivation, and auth.json still wins over
+  both.
+- **`/login <provider>` and `/logout <provider>`**: bare forms keep
+  meaning the active provider; a named form stores or removes that
+  provider's key. The live client changes only when the named
+  provider IS the active one — storing another provider's key is
+  pre-provisioning, and the transcript entry says when that is the
+  case. The provider argument is used as given (the TUI stays
+  config-free), so a typo stores an entry the next `/logout` can
+  remove.
+
+## Verified for real
+
+- All twelve packages; new tests: the derived fallback, the explicit
+  override winning, the name-derivation table (dots, dashes, empty),
+  and the named login/logout flow (stores under the name, removes
+  exactly that entry, entries name the provider acted on).
+
+## Phase 23 assumptions
+
+1. OAuth/device flows stay out of scope: they need per-provider
+   client IDs and callback servers, and tilde's API-key chain is
+   complete for every OpenAI-compatible endpoint.
+2. The conventional `<PROVIDER>_API_KEY` names match what users
+   already export for other tools (the same names the reference
+   table uses for the common providers).
