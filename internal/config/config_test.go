@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"tilde/internal/tools"
 )
 
 func writeFile(t *testing.T, path, content string, mode os.FileMode) {
@@ -88,5 +90,31 @@ func TestLoadModelsCustomLocalProvider(t *testing.T) {
 	}
 	if p.APIKeyEnv != "" {
 		t.Errorf("APIKeyEnv = %q, want empty (no key needed)", p.APIKeyEnv)
+	}
+}
+
+func TestLoadConfigModeNormalizationAndValidation(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.json"),
+		`{"model": "m", "permission_mode": "ask"}`, 0o600)
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatalf("legacy \"ask\" must keep working: %v", err)
+	}
+	if cfg.PermissionMode != tools.ModeAskEveryTime {
+		t.Errorf("PermissionMode = %q, want ask-every-time", cfg.PermissionMode)
+	}
+
+	writeFile(t, filepath.Join(dir, "config.json"),
+		`{"model": "m", "permission_mode": "full-auto"}`, 0o600)
+	cfg, err = LoadConfig(dir)
+	if err != nil || cfg.PermissionMode != tools.ModeFullAuto {
+		t.Errorf("full-auto rejected or mangled: %v %q", err, cfg.PermissionMode)
+	}
+
+	writeFile(t, filepath.Join(dir, "config.json"),
+		`{"model": "m", "permission_mode": "yolo"}`, 0o600)
+	if _, err := LoadConfig(dir); err == nil {
+		t.Error("unknown mode must fail at load time, not fail open later")
 	}
 }

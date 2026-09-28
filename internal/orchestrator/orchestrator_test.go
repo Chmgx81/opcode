@@ -437,3 +437,46 @@ func (f *steerableProvider) waitForRequest(t *testing.T) {
 	}
 	t.Fatal("provider never received a request")
 }
+
+func TestReadOnlyModeHidesActionTools(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "hi"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.SetMode(tools.ModeReadOnly)
+	drain(t, orch.Send(context.Background(), "go"))
+
+	req := p.gotRequests[0]
+	// Only read_file is offered; write/edit/shell are hidden entirely.
+	if len(req.Tools) != 1 || req.Tools[0].Name != "read_file" {
+		names := []string{}
+		for _, tt := range req.Tools {
+			names = append(names, tt.Name)
+		}
+		t.Errorf("read-only mode offered tools %v, want [read_file]", names)
+	}
+	// The system prompt carries the mode instruction.
+	if !strings.Contains(req.System, "read-only") {
+		t.Errorf("mode instruction missing from system prompt: %q", req.System)
+	}
+}
+
+func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
+	dir := t.TempDir()
+	for _, mode := range []string{tools.ModeAskEveryTime, tools.ModeAutoAcceptSafe, tools.ModeFullAuto} {
+		p := &fakeProvider{rounds: [][]llm.ChatEvent{
+			{{Type: llm.TextEvent, Text: "hi"}},
+		}}
+		orch, _ := newTestOrchestrator(p, nil, dir)
+		orch.SetMode(mode)
+		drain(t, orch.Send(context.Background(), "go"))
+		req := p.gotRequests[0]
+		if len(req.Tools) != 4 {
+			t.Errorf("mode %s offered %d tools, want all 4", mode, len(req.Tools))
+		}
+		if !strings.Contains(req.System, mode) {
+			t.Errorf("mode %s instruction missing from prompt: %q", mode, req.System)
+		}
+	}
+}
