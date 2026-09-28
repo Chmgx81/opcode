@@ -248,6 +248,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.cycleMode(dir)
 	case "ctrl+e":
 		return m, m.openEditor()
+	case "ctrl+v":
+		// Image attach: the clipboard is read through the platform
+		// tool (terminals can't deliver image bytes as text); the
+		// login flow is masked input, not a place for images.
+		if m.login == nil {
+			m.attachClipboardImage()
+		}
+		return m, nil
 	case "ctrl+r":
 		m.expandResults = !m.expandResults
 		if m.expandResults {
@@ -445,7 +453,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 
 	if m.working {
 		if alt {
-			m.queue = append(m.queue, text)
+			m.queue = append(m.queue, queued{text: text, images: m.pendingImages()})
 			m.add(entry{kind: entryQueued, text: text})
 			return nil
 		}
@@ -455,7 +463,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	}
 
 	m.add(entry{kind: entryUser, text: text})
-	m.startTurn(text)
+	m.startTurn(text, m.pendingImages())
 	return tea.Batch(m.spinner.Tick, statusTick())
 }
 
@@ -709,8 +717,8 @@ func (m *Model) turnEnded() {
 	}
 	next := m.queue[0]
 	m.queue = m.queue[1:]
-	m.add(entry{kind: entryUser, text: dimStyle.Render("(follow-up) ") + next})
-	m.startTurn(next)
+	m.add(entry{kind: entryUser, text: dimStyle.Render("(follow-up) ") + next.text})
+	m.startTurn(next.text, next.images)
 }
 
 // handleSubagent renders subagent progress as labeled timeline entries.

@@ -1359,3 +1359,52 @@ Spec: [docs/specs/phase21-landlock.md](docs/specs/phase21-landlock.md)
    tool result; disabling the sandbox is the documented escape.
 3. Network isolation (seccomp) is a future phase; Landlock v5
    cannot scope TCP.
+
+# Phase 22 — Image paste + vision (status: complete, live-verified)
+
+Spec: [docs/specs/phase22-image-paste.md](docs/specs/phase22-image-paste.md)
+
+## Built
+
+- **The wire**: `llm.Image` on `Message.Images`; a user message with
+  images serializes as the OpenAI parts array — text part, then one
+  `image_url` part per image as a data URL. Text-only and tool
+  messages keep the plain string form. A test pins the exact
+  serialized shape.
+- **The clipboard**: ctrl+v reads the image through the platform
+  tool — `wl-paste` (Wayland), `xclip` (X11), `pngpaste` (macOS),
+  first that answers wins — because terminals cannot deliver image
+  bytes through bracketed paste. A numbered `[Image #N]` placeholder
+  lands at the cursor (the large-paste token pattern); an 8 MiB cap
+  is enforced at the consumer, so the bound holds whatever produced
+  the bytes.
+- **The flow**: images attach to the message, ride with queued
+  follow-ups until their turn runs, and persist on the history
+  message for the session (what the model saw once, it sees again on
+  resume).
+- **Readable provider errors** (found live: an OpenRouter 404 dumped
+  its raw JSON envelope into the transcript): non-2xx bodies are
+  parsed for the OpenAI `error.message` (or top-level `message`) and
+  shown as the message; unparseable bodies truncate to 300 chars.
+  The user's live config was also migrated off the retired
+  `:free` slug.
+
+## Verified for real
+
+- All twelve packages; new tests: the wire shape, the attach
+  lifecycle (placeholder, numbering, cap, no-image toast), and
+  queue-drain routing (the provider's recorded request carries the
+  image).
+- **PTY, live**: a fake `wl-paste` on PATH supplied a PNG; ctrl+v
+  showed the toast and `[Image #1]`; the request-inspecting fixture
+  answered "saw a png image" — the data-URL part was on the real
+  wire.
+- **Live provider**: the migrated config's model answered a real
+  turn (`tilde -p`).
+
+## Phase 22 assumptions
+
+1. The platform tool reports PNG; other clipboard formats surface as
+   whatever bytes arrive with an `image/png` mime.
+2. Vision-less providers will 4xx the parts array; the error now
+   reads as the provider's own message instead of a JSON dump.

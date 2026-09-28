@@ -161,10 +161,17 @@ func (o *Orchestrator) drainSteer() []string {
 // turn is complete, failed, or ctx is cancelled. The channel closes when
 // the turn ends.
 func (o *Orchestrator) Send(ctx context.Context, userText string) <-chan Event {
+	return o.SendImages(ctx, userText, nil)
+}
+
+// SendImages is Send with clipboard-attached images (Phase 22). The
+// images persist on the history message for the session — what the
+// model saw once, it sees again on resume.
+func (o *Orchestrator) SendImages(ctx context.Context, userText string, images []llm.Image) <-chan Event {
 	events := make(chan Event, 32)
 	go func() {
 		defer close(events)
-		o.history = append(o.history, llm.Message{Role: "user", Content: userText})
+		o.history = append(o.history, llm.Message{Role: "user", Content: userText, Images: images})
 		if err := o.runTurn(ctx, events); err != nil {
 			if ctx.Err() != nil {
 				err = ErrCancelled

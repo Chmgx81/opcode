@@ -28,14 +28,23 @@ type ToolCall struct {
 	Arguments string
 }
 
+// Image is one image attached to a user message. Data is raw bytes;
+// the wire layer encodes it as a data URL. MimeType is what the
+// clipboard reported (image/png from every supported platform tool).
+type Image struct {
+	MimeType string
+	Data     []byte
+}
+
 // Message is one node of the conversation. An assistant message may carry
 // ToolCalls; a "tool" message carries a ToolCallID and the tool's result
-// in Content.
+// in Content. A user message may carry Images alongside Content.
 type Message struct {
 	Role       string     // "system", "user", "assistant", or "tool"
 	Content    string     // "" for pure tool-call assistant messages is fine
 	ToolCalls  []ToolCall // assistant messages only
 	ToolCallID string     // tool result messages only
+	Images     []Image    // user messages only
 }
 
 // Tool describes one tool to the model. Parameters is a JSON Schema

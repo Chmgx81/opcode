@@ -177,6 +177,13 @@ type entry struct {
 	renderedW int
 }
 
+// queued is one follow-up waiting for the current turn to finish; it
+// may carry images, which attach when the queued turn actually runs.
+type queued struct {
+	text   string
+	images []llm.Image
+}
+
 // Model is the Bubble Tea model. Pointer receiver so the gate's prompt
 // closure, the pump goroutine, and the palette share one instance.
 type Model struct {
@@ -197,7 +204,12 @@ type Model struct {
 	awaitingPlan  *planRequest
 	allowAll      bool
 
-	queue []string // follow-ups (Alt+Enter while working)
+	queue []queued // follow-ups (Alt+Enter while working)
+
+	// Images attached by ctrl+v, keyed by their composer placeholder
+	// ("[Image #1]"); consumed on submit like paste tokens.
+	images   map[string]llm.Image
+	imageSeq int
 
 	usage llm.Usage
 
@@ -468,8 +480,8 @@ func (m *Model) PlanApprove() func(plan string) (proceed, auto bool) {
 }
 
 // startTurn sends a new user message and pumps the turn's events into
-// the tea program until the channel closes.
-func (m *Model) startTurn(text string) {
+// the tea program until the channel closes. images may be nil.
+func (m *Model) startTurn(text string, images []llm.Image) {
 	if m.working {
 		return
 	}
@@ -479,7 +491,7 @@ func (m *Model) startTurn(text string) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	ch := m.opt.Orch.Send(ctx, text)
+	ch := m.opt.Orch.SendImages(ctx, text, images)
 
 	go func() {
 		for ev := range ch {
