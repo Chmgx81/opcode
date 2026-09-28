@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -45,6 +46,66 @@ func (ReadFile) Execute(ctx context.Context, args string) (string, error) {
 		return "", fmt.Errorf("read_file: %w", err)
 	}
 	return string(data), nil
+}
+
+// ListDir lists a directory's entries, one per line, directories
+// marked with a trailing slash. Read-Only tier: read-only and plan
+// modes can explore project structure, not just read files whose
+// paths they already guessed.
+type ListDir struct{}
+
+func (ListDir) Name() string { return "list_dir" }
+
+func (ListDir) Description() string {
+	return "List a directory's entries (one per line; directories carry a trailing /). Use it to discover project structure before reading files."
+}
+
+func (ListDir) Parameters() json.RawMessage {
+	return json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"path": {"type": "string", "description": "Directory to list (default: the working directory)"}
+		}
+	}`)
+}
+
+func (ListDir) Tier() Tier { return TierReadOnly }
+
+func (ListDir) Execute(ctx context.Context, args string) (string, error) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if err := parseArgs(args, &a); err != nil {
+		return "", err
+	}
+	dir := a.Path
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("list_dir: %w", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() {
+			name += "/"
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	// Bound the contribution: a huge directory must not dump its
+	// whole index into the context.
+	const maxEntries = 500
+	if len(names) > maxEntries {
+		return strings.Join(names[:maxEntries], "\n") +
+			fmt.Sprintf("\n… %d more entries (list a narrower path)", len(names)-maxEntries), nil
+	}
+	if len(names) == 0 {
+		return "(empty directory)", nil
+	}
+	return strings.Join(names, "\n"), nil
 }
 
 // WriteFile creates or overwrites a file with the given content, creating

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,10 +149,73 @@ func TestToolTiers(t *testing.T) {
 	if read.Tier() != TierReadOnly {
 		t.Error("read_file must be Read-Only")
 	}
+	list := ListDir{}
+	if list.Tier() != TierReadOnly {
+		t.Error("list_dir must be Read-Only")
+	}
 	for _, tool := range []Tool{WriteFile{}, EditFile{}, RunShell{}} {
 		if tool.Tier() != TierActionAllowed {
 			t.Errorf("%s must be Action-Allowed, got %s", tool.Name(), tool.Tier())
 		}
+	}
+}
+
+func TestListDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "adir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := run(t, ListDir{}, `{"path": "`+dir+`"}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	want := "a.txt\nadir/\nb.txt"
+	if out != want {
+		t.Errorf("out = %q, want %q", out, want)
+	}
+
+	// No path lists the working directory; an empty directory says
+	// so instead of returning nothing.
+	empty := t.TempDir()
+	out, err = run(t, ListDir{}, `{"path": "`+empty+`"}`)
+	if err != nil {
+		t.Fatalf("Execute on empty dir: %v", err)
+	}
+	if out != "(empty directory)" {
+		t.Errorf("empty dir out = %q", out)
+	}
+
+	if _, err := run(t, ListDir{}, `{"path": "`+filepath.Join(dir, "a.txt")+`"}`); err == nil {
+		t.Error("listing a file must error")
+	}
+	if _, err := run(t, ListDir{}, `{"path": "`+filepath.Join(dir, "missing")+`"}`); err == nil {
+		t.Error("listing a missing directory must error")
+	}
+}
+
+func TestListDirCapsHugeDirectories(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 600; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%04d.txt", i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := run(t, ListDir{}, `{"path": "`+dir+`"}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got := strings.Count(out, "\n") + 1; got > 501 {
+		t.Errorf("huge directory returned %d lines, want the 500-entry cap plus the count note", got)
+	}
+	if !strings.Contains(out, "100 more entries") {
+		t.Errorf("cap note missing: %q", out)
 	}
 }
 
