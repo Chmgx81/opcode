@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"tilde/internal/tools"
 )
 
 // DefaultPermissionMode is used when config.json does not set one.
@@ -53,6 +55,14 @@ func LoadConfig(dir string) (Config, error) {
 	}
 	if cfg.PermissionMode == "" {
 		cfg.PermissionMode = DefaultPermissionMode
+	}
+	// Canonicalize ("ask" -> ask-every-time) and refuse names that are
+	// neither a mode nor an alias: an unrecognized mode must fail closed
+	// at load time, not silently behave like something permissive.
+	cfg.PermissionMode = tools.NormalizeMode(cfg.PermissionMode)
+	if !tools.ValidMode(cfg.PermissionMode) {
+		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, ask-every-time, auto-accept-safe-ops, full-auto)",
+			cfg.PermissionMode)
 	}
 	return cfg, nil
 }

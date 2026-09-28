@@ -57,6 +57,10 @@ type Orchestrator struct {
 	System   string
 	Registry *tools.Registry
 	Gate     *tools.Gate
+	// Mode is the active permission mode. It shapes which tools are
+	// offered to the model (read-only mode hides action-tier tools) and
+	// is composed into the system prompt via ModeInstruction.
+	Mode string
 
 	history []llm.Message
 
@@ -74,7 +78,24 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 		System:   system,
 		Registry: registry,
 		Gate:     gate,
+		Mode:     tools.ModeAskEveryTime,
 	}
+}
+
+// SetMode switches the permission mode. The next model request picks up
+// the new tool set and mode instruction; the gate's Decide callback is
+// the caller's to rebuild (it owns the prompt plumbing).
+func (o *Orchestrator) SetMode(mode string) {
+	o.Mode = tools.NormalizeMode(mode)
+}
+
+// systemPrompt composes the base prompt with the active mode's
+// instruction, so the model knows the posture it runs under.
+func (o *Orchestrator) systemPrompt() string {
+	if instr := tools.ModeInstruction(o.Mode); instr != "" {
+		return o.System + "\n" + instr
+	}
+	return o.System
 }
 
 // Steer queues a steering message for the in-flight turn. It is appended
@@ -133,7 +154,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		copy(msgs, o.history)
 		req := llm.ChatRequest{
 			Model:    o.Model,
-			System:   o.System,
+			System:   o.systemPrompt(),
 			Messages: msgs,
 			Tools:    o.toolDefs(),
 		}
@@ -204,10 +225,14 @@ func (o *Orchestrator) dispatch(ctx context.Context, call llm.ToolCall) (string,
 	return o.Gate.Execute(ctx, tool, call.Arguments)
 }
 
+// toolDefs builds the tool list the model sees, filtered by the active
+// mode: read-only mode never offers state-changing tools.
 func (o *Orchestrator) toolDefs() []llm.Tool {
-	defs := o.Registry.Defs()
-	out := make([]llm.Tool, 0, len(defs))
-	for _, d := range defs {
+	var out []llm.Tool
+	for _, d := range o.Registry.Defs() {
+		if o.Mode == tools.ModeReadOnly && d.Tier != tools.TierReadOnly {
+			continue
+		}
 		out = append(out, llm.Tool{
 			Name:        d.Name,
 			Description: d.Description,
