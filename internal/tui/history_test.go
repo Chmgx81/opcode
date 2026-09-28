@@ -173,3 +173,49 @@ func TestHistorySkipsEmpty(t *testing.T) {
 		t.Errorf("empty prompt recorded: %v", m.hist)
 	}
 }
+
+// TestHistoryExpandsPasteTokens: a submitted paste token stores its
+// content — recall must give back usable text, not a dead token.
+func TestHistoryExpandsPasteTokens(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, [][]llm.ChatEvent{})
+
+	content := strings.Repeat("pasted content line\n", 60)
+	m.handlePaste(content) // ≥4 lines, ≥1000 chars → collapsed token
+	if v := m.composer.Value(); !strings.Contains(v, "[paste 1") {
+		t.Fatalf("setup: paste not collapsed to a token: %q", v)
+	}
+	m.Update(enterKey())
+
+	if len(m.hist) != 1 {
+		t.Fatalf("history = %v", m.hist)
+	}
+	if strings.Contains(m.hist[0], "[paste 1") {
+		t.Errorf("history kept the dead token: %q", m.hist[0])
+	}
+	if !strings.Contains(m.hist[0], "pasted content line") {
+		t.Errorf("history lost the paste content: %q", m.hist[0])
+	}
+}
+
+// TestHistoryKeepsHugePastesAsTyped: an expansion beyond the cap
+// stores the typed form — a visible dead token on recall, not
+// megabytes in history.jsonl.
+func TestHistoryKeepsHugePastesAsTyped(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, [][]llm.ChatEvent{})
+
+	content := strings.Repeat("x", 5000)
+	m.handlePaste(content)
+	if v := m.composer.Value(); !strings.Contains(v, "[paste 1") {
+		t.Fatalf("setup: paste not collapsed to a token: %q", v)
+	}
+	m.Update(enterKey())
+
+	if len(m.hist) != 1 {
+		t.Fatalf("history = %v", m.hist)
+	}
+	if !strings.Contains(m.hist[0], "[paste 1") {
+		t.Errorf("huge paste was expanded into history: %q", m.hist[0])
+	}
+}

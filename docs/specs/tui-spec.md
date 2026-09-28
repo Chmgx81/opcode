@@ -225,9 +225,12 @@ doubles, so entries can be appended freely.
   one expandable line. Never stored in history.
 - **Prompt history** (↑ recall) persists to `history.jsonl` under
   tilde's home (global, 500 entries, consecutive duplicates
-  collapse, 0600). Login keys never enter it. Recall stores the
-  typed form — a recalled `[paste N]` token from an earlier session
-  no longer expands, visibly so.
+  collapse, 0600). Login keys never enter it. The stored form is
+  what recall should put back: `[paste N]` tokens expand into
+  their content (their map entry left with the submit), `@path`
+  mentions stay raw and re-read fresh at submit; a paste whose
+  expansion exceeds ~4 KB keeps the typed token, visibly dead on
+  recall, rather than bloating the file.
 - **Errors** always read as the provider's message, never a raw
   JSON dump; every error names the next step.
 - **Sandbox** (Linux): shell writes confined to the project dir,

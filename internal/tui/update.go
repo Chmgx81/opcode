@@ -519,15 +519,17 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 }
 
 // pushHistory records a submitted prompt in the recall history and
-// persists it. The stored text is the typed form — @mentions
-// re-expand at submit time, so recall gives back exactly what was
-// typed. Consecutive duplicates collapse; the list caps at 500.
-// Login keys never pass through here — secrets stay out of history
-// by construction.
+// persists it. The stored form is what recall should put back:
+// paste tokens expand into their content (their map entry left with
+// the submit, so a recalled token would be dead), @mentions stay
+// raw — they re-read the file fresh at submit. Consecutive
+// duplicates collapse; the list caps at 500. Login keys never pass
+// through here — secrets stay out of history by construction.
 func (m *Model) pushHistory(text string) {
 	if text == "" {
 		return
 	}
+	text = m.expandHistoryPastes(text)
 	if n := len(m.hist); n > 0 && m.hist[n-1] == text {
 		m.histIdx = n
 		return
@@ -539,6 +541,25 @@ func (m *Model) pushHistory(text string) {
 	}
 	m.histIdx = len(m.hist)
 	m.saveHistory()
+}
+
+// expandHistoryPastes replaces paste tokens with their content for
+// history storage. A huge expansion keeps the typed form — recall
+// then shows the dead token visibly instead of writing megabytes
+// into history.jsonl.
+func (m *Model) expandHistoryPastes(text string) string {
+	const maxExpanded = 4096
+	for token, content := range m.pasteAt {
+		if !strings.Contains(text, token) {
+			continue
+		}
+		candidate := strings.ReplaceAll(text, token, "\n"+content+"\n")
+		if len(candidate) > maxExpanded {
+			return text
+		}
+		text = candidate
+	}
+	return text
 }
 
 // saveHistory rewrites history.jsonl under TILDE_HOME (0600 —
