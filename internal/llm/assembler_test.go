@@ -50,12 +50,19 @@ func TestAssemblerWholeCallInOneChunk(t *testing.T) {
 	// work too, not just the fragmented case.
 	var asm toolCallAssembler
 	asm.add(0, "call-1", "read_file", `{"path": "x"}`)
+	if !asm.hasContent() {
+		t.Error("hasContent = false after adding a fragment")
+	}
 	calls := asm.flush()
 	if len(calls) != 1 || calls[0].Arguments != `{"path": "x"}` {
 		t.Errorf("calls = %+v", calls)
 	}
-	if !asm.hasContent() {
-		t.Error("hasContent = false after adding a fragment")
+	// flush resets: a second flush must not re-emit the call.
+	if asm.hasContent() {
+		t.Error("hasContent = true after flush (flush must reset)")
+	}
+	if again := asm.flush(); len(again) != 0 {
+		t.Errorf("second flush = %+v, want empty", again)
 	}
 }
 

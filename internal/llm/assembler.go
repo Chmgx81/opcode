@@ -46,8 +46,18 @@ func (a *toolCallAssembler) hasContent() bool {
 	return len(a.order) > 0
 }
 
-// flush returns all accumulated calls in first-fragment order.
+// flush returns all accumulated calls in first-fragment order and resets
+// the assembler, so a second flush (e.g. both on finish_reason and at
+// stream end) never re-emits calls.
 func (a *toolCallAssembler) flush() []ToolCall {
+	out := a.peek()
+	a.calls = nil
+	a.order = nil
+	return out
+}
+
+// peek returns the accumulated calls without resetting.
+func (a *toolCallAssembler) peek() []ToolCall {
 	var out []ToolCall
 	for _, idx := range a.order {
 		acc := a.calls[idx]

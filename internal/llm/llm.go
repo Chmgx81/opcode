@@ -61,14 +61,24 @@ const (
 	// ToolCallEvent carries one completed tool call, emitted only after
 	// its arguments are known complete.
 	ToolCallEvent = "tool_call"
+	// UsageEvent carries token usage for the finished round. Servers
+	// that don't report usage simply never emit it.
+	UsageEvent = "usage"
 	// ErrorEvent carries a mid-stream failure; the channel closes after it.
 	ErrorEvent = "error"
 )
 
+// Usage is the token accounting for one request.
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+}
+
 // ChatEvent is one streamed event from the provider.
 type ChatEvent struct {
-	Type string
-	Text string   // TextEvent
-	Call ToolCall // ToolCallEvent
-	Err  error    // ErrorEvent
+	Type  string
+	Text  string   // TextEvent
+	Call  ToolCall // ToolCallEvent
+	Usage Usage    // UsageEvent
+	Err   error    // ErrorEvent
 }
