@@ -91,6 +91,7 @@ func run() error {
 
 	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(cwd), &registry, gate)
+	orch.SetMode(cfg.PermissionMode)
 
 	ui := tui.New(tui.Options{
 		Orch:         orch,

@@ -34,12 +34,25 @@ Keys while a turn is running:
 | Esc | cancel the current turn |
 | Ctrl+C | cancel and quit |
 
-Slash commands: `/login` (store a key, masked input, takes effect
-immediately), `/logout` (remove the stored key only — never touches env
-vars or revokes at the provider), `/exit`.
+Slash commands: `/mode` (show or switch permission mode), `/login`
+(store a key, masked input, takes effect immediately), `/logout`
+(remove the stored key only — never touches env vars or revokes at the
+provider), `/exit`.
 
-Permission prompts (ask mode, Action-Allowed tools): `y` allow, `a` allow
-action tools for this session, `n`/Esc deny. Read-Only tools never prompt.
+Permission modes (`permission_mode` in config.json, or `/mode <name>` at
+runtime):
+
+| Mode | Action-Allowed tools (write/edit/shell) |
+|---|---|
+| `read-only` | not even offered to the model; a call is denied outright |
+| `ask-every-time` | prompted each time (default) |
+| `auto-accept-safe-ops` | prompted (read-only and draft tools auto-run) |
+| `full-auto` | allowed without prompting, still logged |
+
+Read-Only tools never prompt in any mode. Permission prompts (when they
+appear): `y` allow, `a` allow action tools for this session, `n`/Esc
+deny. The legacy config value `ask` still works and means
+`ask-every-time`.
 
 ## Test
 

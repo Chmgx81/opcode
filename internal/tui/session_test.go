@@ -59,14 +59,14 @@ func TestFullSessionOverTeaProgram(t *testing.T) {
 	m := New(Options{
 		Orch:         orch,
 		Model:        "m",
-		Mode:         tools.ModeAsk,
+		Mode:         tools.ModeAskEveryTime,
 		Cwd:          dir,
 		TildeHome:    dir,
 		ProviderName: "openrouter",
 		BaseURL:      srv.URL,
 		AuditPath:    filepath.Join(dir, "audit.jsonl"),
 	})
-	gate.Decide = tools.PolicyDecide(tools.ModeAsk, m.Prompt())
+	gate.Decide = tools.PolicyDecide(tools.ModeAskEveryTime, m.Prompt())
 
 	inR, inW := io.Pipe()
 	p := tea.NewProgram(m, tea.WithInput(inR), tea.WithOutput(io.Discard))

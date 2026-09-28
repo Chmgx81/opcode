@@ -72,7 +72,7 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 	m := New(Options{
 		Orch:         orch,
 		Model:        "test-model",
-		Mode:         tools.ModeAsk,
+		Mode:         tools.ModeAskEveryTime,
 		Cwd:          dir,
 		TildeHome:    dir,
 		ProviderName: "openrouter",
@@ -538,5 +538,55 @@ func TestFreshViewShowsBanner(t *testing.T) {
 	}
 	if len(strings.Split(view, "\n")) > 24 {
 		t.Errorf("fresh frame is %d rows, must fit 24", len(strings.Split(view, "\n")))
+	}
+}
+
+func TestModeCommand(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// No argument: shows the current mode and the options.
+	typeAndEnter(m, "/mode")
+	joined := strings.Join(m.lines, "\n")
+	if !strings.Contains(joined, "ask-every-time") || !strings.Contains(joined, "full-auto") {
+		t.Errorf("/mode with no arg should list modes: %q", joined)
+	}
+
+	// Invalid mode: rejected with the valid list.
+	typeAndEnter(m, "/mode nonsense")
+	joined = strings.Join(m.lines, "\n")
+	if !strings.Contains(joined, "unknown mode nonsense") {
+		t.Errorf("invalid mode not rejected: %q", joined)
+	}
+	if m.opt.Mode != tools.ModeAskEveryTime {
+		t.Errorf("mode changed on invalid input: %q", m.opt.Mode)
+	}
+
+	// Valid switch: orchestrator, gate policy, and display all move.
+	typeAndEnter(m, "/mode full-auto")
+	if m.opt.Orch.Mode != tools.ModeFullAuto {
+		t.Errorf("orchestrator mode = %q", m.opt.Orch.Mode)
+	}
+	if m.opt.Mode != tools.ModeFullAuto {
+		t.Errorf("displayed mode = %q", m.opt.Mode)
+	}
+	// The rebuilt gate must now allow action-tier calls without
+	// prompting (and without a permission request being raised).
+	decide := m.opt.Orch.Gate.Decide
+	if decide == nil {
+		t.Fatal("gate has no policy after mode switch")
+	}
+	if !decide(tools.WriteFile{}, `{}`) {
+		t.Error("full-auto gate denied an action-tier call")
+	}
+
+	// A session "allow all" grant is reset by a mode switch.
+	m.allowAll = true
+	typeAndEnter(m, "/mode read-only")
+	if m.allowAll {
+		t.Error("mode switch must reset the allow-all grant")
+	}
+	if decide := m.opt.Orch.Gate.Decide; decide(tools.WriteFile{}, `{}`) {
+		t.Error("read-only gate must deny action-tier calls outright")
 	}
 }
