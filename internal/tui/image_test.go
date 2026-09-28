@@ -146,7 +146,7 @@ func TestImageSubmitRoutesToOrchestrator(t *testing.T) {
 
 	// The drain passes the images into the new turn, and the provider
 	// receives them on the last user message with the sniffed mime.
-	m.turnEnded()
+	_ = m.turnEnded()
 	waitFor(t, func() bool { return fp.requestCount() == 1 })
 	fp.mu.Lock()
 	msgs := fp.gotRequests[0].Messages

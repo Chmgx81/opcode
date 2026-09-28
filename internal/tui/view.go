@@ -25,19 +25,28 @@ func (m *Model) View() string {
 	return strings.Join(m.fit(layers, len(fl)+len(cl)), "\n")
 }
 
-// timelineView renders the transcript entries. Every user query and
-// every finished answer opens with a blank line — conversation blocks
-// breathe — and collapseBlanks keeps that to a single gap no matter
-// what glamour or the greeting emit around them.
+// timelineView renders the live region: entries not yet committed
+// to native scrollback. Every user query and every finished answer
+// opens with a blank line — conversation blocks breathe — and
+// collapseBlanks keeps that to a single gap no matter what glamour
+// or the greeting emit around them.
 func (m *Model) timelineView() []string {
 	var out []string
 	// Breathing space: one blank line before every top-level block —
 	// a user turn, an answer, a tool group, a receipt — while an
 	// action and its own result stay tight. collapseBlanks trims any
-	// doubling, so entries may be added freely.
+	// doubling, so entries may be added freely. The rhythm starts
+	// from the last committed entry so it continues across the seam.
 	prevKind := entryKind(-1)
 	prevSub := ""
+	if m.committed > 0 && m.committed <= len(m.entries) {
+		prevKind = m.entries[m.committed-1].kind
+		prevSub = m.entries[m.committed-1].subTitle
+	}
 	for i := range m.entries {
+		if i < m.committed {
+			continue
+		}
 		e := &m.entries[i]
 		if blankBefore(e, prevKind, prevSub) {
 			out = append(out, "")
@@ -581,6 +590,7 @@ func (m *Model) helpView(w int) string {
 	rows := []string{
 		accentStyle.Render("keys"),
 		dimStyle.Render("  enter        send · ctrl+j  newline"),
+		dimStyle.Render("  ↑/↓          recall a previous prompt"),
 		dimStyle.Render("  ctrl+v       attach the clipboard image ([Image #N] rides along)"),
 		dimStyle.Render("  alt+enter    queue a follow-up while working"),
 		dimStyle.Render("  esc          interrupt the turn"),

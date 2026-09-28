@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -233,9 +234,21 @@ type Model struct {
 	usage llm.Usage
 
 	// entries is the structured transcript; View renders it.
-	entries []entry
-	stream  strings.Builder
-	login   *loginFlow
+	// committed counts the entries already printed to native
+	// scrollback (tea.Println) — View skips them, and they are
+	// frozen: ctrl+r expansion applies to the live region only.
+	entries   []entry
+	committed int
+	stream    strings.Builder
+	login     *loginFlow
+
+	// Composer recall history: submitted prompts, persisted to
+	// history.jsonl under TILDE_HOME. histIdx is the recall
+	// position (len(hist) means the live draft); draftSave holds
+	// the in-progress draft while a recall is active.
+	hist      []string
+	histIdx   int
+	draftSave string
 
 	// todos is the model's live task list (rendered as a panel at
 	// the transcript tail — state, not history).
@@ -388,6 +401,10 @@ func New(opt Options) *Model {
 		pasteAt:    map[string]string{},
 		subStreams: map[string]*strings.Builder{},
 	}
+	// Prompt recall history: loaded once at startup, appended per
+	// submit. A corrupt line is skipped, never fatal.
+	m.hist = loadHistory(filepath.Join(opt.TildeHome, "history.jsonl"))
+	m.histIdx = len(m.hist)
 	// The reference header: the logo at the left, the identity block
 	// beside it — version, model and mode, working directory — then
 	// startup notes below. All of it scrolls away with the transcript.
