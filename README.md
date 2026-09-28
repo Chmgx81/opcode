@@ -81,6 +81,10 @@ model round trip. Big pastes collapse to a token.
 
 ## Beyond the loop
 
+**Todos** — the model tracks its own multi-step work with
+`todo_write`; a live panel shows `✓ done · ▸ in progress · · pending`
+with counts, windowed so long lists stay compact.
+
 **Skills** — drop a `SKILL.md` folder in `~/.tilde/skills/`; the model
 sees the index, loads the body only when it matches. Project skills
 stay locked until you trust the project (a fingerprinted, one-time

@@ -124,6 +124,7 @@ const (
 	GlyphWarn    = "!" // warnings
 	GlyphDeleted = "−" // diff: removed
 	GlyphAdded   = "+" // diff: added
+	GlyphDoing   = "▸" // todo: the item in progress
 )
 
 // Spacing scale — the rhythm between blocks.
