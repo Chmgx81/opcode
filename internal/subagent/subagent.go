@@ -15,9 +15,9 @@ import (
 	"strings"
 	"sync"
 
-	"tilde/internal/llm"
-	"tilde/internal/orchestrator"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // Event kinds a subagent emits.

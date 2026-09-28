@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"tilde/internal/skills"
+	"github.com/Chmgx81/tilde/internal/skills"
 )
 
 // LoadSkill returns a skill's full instructions — tier 2 of progressive

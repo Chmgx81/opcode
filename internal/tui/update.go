@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"tilde/internal/config"
-	"tilde/internal/llm"
-	"tilde/internal/orchestrator"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/config"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // Update implements tea.Model.
@@ -229,6 +229,10 @@ func (m *Model) handleEvent(ev orchestrator.Event) tea.Model {
 	case orchestrator.EventUsage:
 		m.usage.PromptTokens += ev.Usage.PromptTokens
 		m.usage.CompletionTokens += ev.Usage.CompletionTokens
+
+	case orchestrator.EventCompaction:
+		m.finishStream()
+		m.appendWrapped(queuedStyle, "… ", ev.Text)
 
 	case orchestrator.EventTurnComplete:
 		m.finishStream()

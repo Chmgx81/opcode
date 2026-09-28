@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"tilde/internal/llm"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // scriptedProvider serves one round per StreamChat call and records

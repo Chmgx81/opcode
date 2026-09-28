@@ -1,4 +1,4 @@
-module tilde
+module github.com/Chmgx81/tilde
 
 go 1.24.2
 

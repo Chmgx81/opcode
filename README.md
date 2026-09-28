@@ -7,11 +7,38 @@ actions, steering mid-turn, and `/login` / `/logout`.
 Architecture and build order: [docs/specs/tilde-architecture.md](docs/specs/tilde-architecture.md).
 Current status and honest verification notes: [PROGRESS.md](PROGRESS.md).
 
-## Run
+## Install / Run
 
 ```
-go build ./cmd/tilde   # binary: tilde
+go install github.com/Chmgx81/tilde/cmd/tilde@latest   # from the repo
+go build ./cmd/tilde                                    # from a checkout: binary "tilde"
 ```
+
+One-shot (headless) mode runs a single turn without the TUI:
+
+```
+tilde -p "explain what this repo does"           # plain text
+tilde -p "run the tests" --json                 # one JSON event per line
+```
+
+Permissions fail closed headless — with nobody to ask, Action-Allowed
+tools are denied (visible in the output); use `full-auto` for
+unattended automation. `--trust` / `TILDE_TRUST=1` pre-approves the
+project's executable surface, per Section 7's headless posture.
+
+Sessions are saved to `~/.tilde/sessions/` (tree-structured, with
+credentials redacted). Resume with `tilde --continue` or
+`tilde --resume ~/.tilde/sessions/<file>`.
+
+Compaction (Section 3.2) is opt-in: set `context_window` in
+config.json to the model's token window, and optionally
+`compaction_model` for a cheaper summarizer; at 75% of the window the
+oldest messages are auto-summarized into a recap.
+
+Hierarchical `AGENTS.md` context loads automatically: the user-level
+file, then each directory from the filesystem root to the working
+directory (`AGENTS.override.md` > `AGENTS.md` > `CLAUDE.md` per
+directory).
 
 Configuration is user-level only for now (`~/.tilde/`, or `$TILDE_HOME`):
 
@@ -116,7 +143,9 @@ go test ./...
 ## Layout
 
 ```
-cmd/tilde              entry point (thin wiring, TUI launch)
+cmd/tilde              entry point (thin wiring, TUI or headless)
+internal/headless      one-shot -p runner (text and --json event output)
+internal/session       tree-structured session storage + resume, redaction on write
 internal/subagent      spawn_subagent tool: scoped orchestrator instances, labeled progress events
 internal/tui           Bubble Tea model: streaming, prompts, steer/follow-up
 internal/orchestrator  agent loop, UI-independent

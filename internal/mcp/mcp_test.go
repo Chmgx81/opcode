@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 func fixturePath(mode string) []string {

@@ -13,9 +13,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"tilde/internal/llm"
-	"tilde/internal/orchestrator"
-	"tilde/internal/tools"
+	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // scriptedProvider is an llm.Provider the TUI tests control: each
