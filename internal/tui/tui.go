@@ -52,6 +52,10 @@ type Options struct {
 	// approved (or it changed). OnAnswer persists the decision and
 	// re-discovers skills; the TUI owns only the question.
 	PendingTrust *TrustDecision
+
+	// StartupNotes render in the greeting (MCP server status, config
+	// warnings): dim lines that scroll away with the transcript.
+	StartupNotes []string
 }
 
 // TrustDecision is one pending project-trust question. Approved lists
@@ -133,7 +137,12 @@ func New(opt Options) *Model {
 	if opt.Cwd != "" {
 		m.lines = append(m.lines, dimStyle.Render(opt.Cwd))
 	}
-	m.lines = append(m.lines, "")
+	for _, note := range opt.StartupNotes {
+		m.lines = append(m.lines, dimStyle.Render(note))
+	}
+	if len(opt.StartupNotes) > 0 {
+		m.lines = append(m.lines, "")
+	}
 	m.awaitingTrust = opt.PendingTrust
 	return m
 }

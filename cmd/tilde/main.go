@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"tilde/internal/config"
 	"tilde/internal/llm"
+	"tilde/internal/mcp"
 	"tilde/internal/orchestrator"
 	"tilde/internal/skills"
 	"tilde/internal/tools"
@@ -129,6 +131,38 @@ func run() error {
 	registry.Register(tools.LoadSkill{Manager: &skillManager})
 	registry.Register(tools.RunSkillScript{Manager: &skillManager})
 
+	// MCP servers (Section 3.5): user-level always; the project's
+	// mcp.json only when trusted — connecting it spawns a process,
+	// which is exactly the trust gate's job. A grant mid-session
+	// connects the project's servers without a restart.
+	userMcp, err := mcp.LoadConfig(filepath.Join(userDir, "mcp.json"))
+	if err != nil {
+		return err
+	}
+	projectMcp, err := mcp.LoadConfig(filepath.Join(cwd, ".tilde", "mcp.json"))
+	if err != nil {
+		return err
+	}
+	mcpManager := mcp.NewManager()
+	defer mcpManager.Close()
+
+	var startupNotes []string
+	userMcpTools, notes := mcpManager.Connect(context.Background(), userMcp)
+	startupNotes = append(startupNotes, notes...)
+	for _, t := range userMcpTools {
+		registry.Register(t)
+	}
+	connectProjectMcp := func() {
+		projectTools, notes := mcpManager.Connect(context.Background(), projectMcp)
+		for _, t := range projectTools {
+			registry.Register(t)
+		}
+		_ = notes // mid-session grants report through the transcript note
+	}
+	if projectTrusted {
+		connectProjectMcp()
+	}
+
 	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
@@ -155,6 +189,7 @@ func run() error {
 					return
 				}
 				orch.SkillsIndex = skillManager.Index()
+				connectProjectMcp()
 			},
 		}
 	}
@@ -169,6 +204,7 @@ func run() error {
 		BaseURL:      providerCfg.BaseURL,
 		AuditPath:    auditPath,
 		PendingTrust: pending,
+		StartupNotes: startupNotes,
 	})
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.

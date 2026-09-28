@@ -266,3 +266,65 @@ Spec: [docs/specs/phase3-skills-trust.md](docs/specs/phase3-skills-trust.md)
 
 - MCP Manager — project `.tilde/mcp.json` only after trust (the
   fingerprint already covers it).
+
+---
+
+# Phase 4 — MCP Manager (status: complete, live-verified)
+
+Spec: [docs/specs/phase4-mcp.md](docs/specs/phase4-mcp.md)
+
+## Built
+
+- `internal/mcp` — stdio MCP client: JSON-RPC 2.0 newline-delimited,
+  initialize -> initialized -> tools/list handshake, tools/call with
+  isError propagation, one long-lived reader goroutine (notifications
+  interleaving with responses are skipped by id-matching).
+- Manager: parallel connects with a 5s per-server timeout, failure
+  notes instead of startup blocks, clean shutdown (own process group,
+  killed on exit), collision rule (a project server can never replace
+  a user server's name), and mid-session project connects after a
+  trust grant.
+- Tool adapters: `mcp__<server>__<tool>`, always Action-Allowed
+  (readOnlyHint is self-reported; hints are not a permission model).
+- Wiring: user mcp.json always; project mcp.json only when trusted;
+  startup notes in the TUI greeting.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all eight packages, against a real
+  subprocess MCP server (a Python fixture speaking the actual
+  protocol): handshake, discovery, call round-trip, isError, restart-
+  once after a genuine crash (marker-file fixture so the retry
+  provably runs), silent-server timeout bounded by the manager.
+- **PTY**: user-level mcp.json with the fixture — startup note
+  "mcp: fixture (1 tools)", the scripted model called
+  `mcp__fixture__echo`, the subprocess answered, the result fed back,
+  audit logged with tier.
+- **Live OpenRouter**: the model called the MCP tool over the real
+  API and reported the real result verbatim.
+
+## Found and fixed during verification
+
+- Self-deadlock in the client: `start()` held the mutex while the
+  handshake's roundtrip tried to lock it (mutexes are not reentrant).
+  Spawn now happens under the lock; the handshake runs after it. Caught
+  by the test binary's panic dump.
+- Two test-fixture bugs of my own (a die-on-every-call mode that made
+  the restart test unpassable, and a bare-number output that is
+  incidentally valid JSON) — fixed by making the fixtures honest.
+
+## Phase 4 assumptions
+
+1. stdio transport only; HTTP entries are rejected with a clear
+   message (stated gap, not a silent no-op).
+2. All MCP tools are Action-Allowed regardless of server hints.
+3. Trust grants mid-session connect project servers immediately
+   (process spawn — the approved surface).
+4. Context discipline for very large tool inventories is deferred;
+   counts are small.
+
+## Next (Phase 5, only after user review)
+
+- Subagent Manager: in-process goroutines, typed event channels,
+  same trust boundary — built last per the spec, once everything
+  underneath is solid.
