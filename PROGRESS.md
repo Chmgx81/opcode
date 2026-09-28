@@ -692,11 +692,24 @@ persistent left-column session sidebar.
 ## Verified for real
 
 - Full suite green after every change (11 packages).
-- Repo history scanned for secrets before publicizing: only
-  env-var NAMES in tests, no key material, in any of the 40 commits.
-- The force-pushed history and the release pipeline are verified in
-  the trail that follows this entry (tag → Actions run → release
-  assets → go install).
+- **Secrets scan of all history before publicizing**: only env-var
+  NAMES in tests, no key material, across every commit.
+- **History purge**: filter-branch + refs/original cleanup + gc took
+  .git from 17 MB to 356 KB; the largest remaining blobs are
+  PROGRESS.md revisions. Force-pushed main (authorized).
+- **CI**: green on a clean GitHub runner — vet + the full test suite
+  + build.
+- **Release pipeline, end to end**: tagged v0.2.0; the first run
+  FAILED on the Windows build (Setpgid/syscall.Kill are POSIX-only) —
+  found live, fixed with build-tagged procsys_unix.go /
+  procsys_windows.go, all five targets re-verified cross-compiling
+  locally; tag re-pointed, second run green. The release carries all
+  five binaries: darwin amd64/arm64, linux amd64/arm64, windows amd64.
+- **go install from the public module**: `go install
+  github.com/Chmgx81/tilde/cmd/tilde@latest` in a clean GOPATH
+  resolved v0.2.0 through the Go proxy (checksummed), built, and the
+  binary runs (verified: the honest "no model configured" startup
+  error).
 
 ## Phase 9 assumptions
 
