@@ -226,6 +226,10 @@ var commands = []command{
 func New(opt Options) *Model {
 	ta := textarea.New()
 	ta.Placeholder = "ask tilde anything…"
+	// The placeholder must read as a hint, not as typed text: dim it
+	// with the design token, not the textarea's brighter default.
+	ta.FocusedStyle.Placeholder = dimStyle
+	ta.BlurredStyle.Placeholder = dimStyle
 	ta.Prompt = GlyphPrompt + " "
 	ta.CharLimit = 0
 	// One line when empty, Claude-Code-style: the composer grows with
@@ -256,7 +260,7 @@ func New(opt Options) *Model {
 		m.entries = append(m.entries, entry{kind: entryDim, text: accentStyle.Render(line)})
 	}
 	m.entries = append(m.entries, entry{kind: entryDim, text: ""})
-	m.entries = append(m.entries, entry{kind: entryUser, text: boldStyle.Render("tilde " + version)})
+	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("tilde " + version)})
 	m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Model + " · " + opt.Mode)})
 	if opt.Cwd != "" {
 		m.entries = append(m.entries, entry{kind: entryDim, text: dimStyle.Render(opt.Cwd)})

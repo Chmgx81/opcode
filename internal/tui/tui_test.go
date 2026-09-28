@@ -11,6 +11,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
@@ -809,5 +811,47 @@ func TestComposerGrowsWithContent(t *testing.T) {
 	typeAndEnter(m, m.composer.Value())
 	if h := m.composer.Height(); h != 1 {
 		t.Errorf("composer height after submit = %d, want 1", h)
+	}
+}
+
+func TestUserQueryDimAssistantBright(t *testing.T) {
+	// Force a real color profile so style assertions can see SGR codes;
+	// restore the ambient profile for the rest of the suite.
+	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// The rendered placeholder carries the dim token (empty composer).
+	const dimSGR = "38;2;91;107;96" // #5B6B60 in truecolor
+	// The cursor block overlays the placeholder's first character, so
+	// probe for a tail fragment rather than the whole string.
+	view := m.View()
+	if !strings.Contains(view, "tilde anything") {
+		t.Fatalf("placeholder missing from view:\n%s", view)
+	}
+	placeholderLine := ""
+	for _, l := range strings.Split(view, "\n") {
+		if strings.Contains(l, "tilde anything") {
+			placeholderLine = l
+		}
+	}
+	if !strings.Contains(placeholderLine, dimSGR) {
+		t.Errorf("placeholder not dim:\n%q", placeholderLine)
+	}
+
+	// Hierarchy: the echoed query is dim, the agent's answer is not.
+	m.entries = []entry{
+		{kind: entryUser, text: "hello query"},
+		{kind: entryAssistant, text: "answer text"},
+	}
+	user := strings.Join(m.renderEntry(&m.entries[0]), "")
+	assistant := strings.Join(m.renderEntry(&m.entries[1]), "")
+	if !strings.Contains(user, dimSGR) {
+		t.Errorf("user query not dim:\n%q", user)
+	}
+	if strings.Contains(assistant, dimSGR) {
+		t.Errorf("assistant output must not be dim:\n%q", assistant)
 	}
 }
