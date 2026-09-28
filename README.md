@@ -17,9 +17,9 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bas
 ```
 
 <p>
-<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/badge/go-1.24-16DB65.svg" alt="go"></a>&nbsp;
+<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/badge/go-1.24-63A8F8.svg" alt="go"></a>&nbsp;
 <a href="https://github.com/Chmgx81/tilde/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/tilde/ci.yml?label=ci" alt="ci"></a>&nbsp;
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16DB65.svg" alt="MIT"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-63A8F8.svg" alt="MIT"></a>
 </p>
 
 ---

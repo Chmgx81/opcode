@@ -158,10 +158,10 @@ func (m *Model) renderEntry(e *entry) []string {
 	w := m.termWidth()
 	switch e.kind {
 	case entryUser:
-		// The echoed query sits in a subtle background panel — the
-		// demo's separation between what you said and what the agent
-		// answered, without dimming the text.
-		return []string{userPanel(wrapAll(accentStyle.Render(GlyphPrompt+" ")+e.text, w), m.termWidth())}
+		// The echoed query sits in a subtle background panel with a
+		// bold-dim › prefix — Codex's separation between what you
+		// said and what the agent answered, without dimming the text.
+		return []string{userPanel(wrapAll(dimStyle.Bold(true).Render(GlyphUser+" ")+e.text, w), m.termWidth())}
 	case entryAssistant:
 		if e.rendered == nil || e.renderedW != w {
 			e.rendered = renderMarkdown(e.text, w)
@@ -385,9 +385,11 @@ func (m *Model) composerView() []string {
 		if !m.opt.Animations {
 			sp = GlyphBullet
 		}
+		// Codex's status shape: verb, then one parenthesized segment
+		// with elapsed, interrupt, and token flow inside it.
 		left := accentStyle.Render(sp) + " " +
 			accentStyle.Render(verb) + dimStyle.Render(
-			fmt.Sprintf(" (esc to interrupt · %s · ↓ %s tokens)",
+			fmt.Sprintf(" (%s • esc to interrupt • ↓ %s tokens)",
 				elapsed, humanCount(tokens)))
 		out = append(out, "", left)
 	} else {
@@ -417,7 +419,11 @@ func (m *Model) composerView() []string {
 	if m.shellMode() {
 		hint = dimStyle.Render("shell — enter runs it directly, no model round trip")
 	} else {
-		hint = dimStyle.Render("? help · / commands")
+		// Codex's hint shape: the key glyph in accent, the label in
+		// secondary text.
+		hint = accentStyle.Render("?") + dimStyle.Render(" for shortcuts") +
+			dimStyle.Render(" · ") +
+			accentStyle.Render("/") + dimStyle.Render(" commands")
 	}
 	tab := dimStyle.Render("(tab to cycle)")
 	candidates := []string{
