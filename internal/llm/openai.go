@@ -28,10 +28,15 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompat {
 // --- wire types (this file's private translation layer) ---
 
 type wireRequest struct {
-	Model    string        `json:"model"`
-	Messages []wireMessage `json:"messages"`
-	Tools    []wireTool    `json:"tools,omitempty"`
-	Stream   bool          `json:"stream"`
+	Model         string             `json:"model"`
+	Messages      []wireMessage      `json:"messages"`
+	Tools         []wireTool         `json:"tools,omitempty"`
+	Stream        bool               `json:"stream"`
+	StreamOptions *wireStreamOptions `json:"stream_options,omitempty"`
+}
+
+type wireStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type wireMessage struct {
@@ -78,6 +83,12 @@ type streamChunk struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`
+	// Sent on the final chunk when stream_options.include_usage is set;
+	// such chunks carry an empty choices array.
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 }
 
 // toWire converts tilde's message history into the wire format.
@@ -97,7 +108,8 @@ func toWire(req ChatRequest) wireRequest {
 		}
 		msgs = append(msgs, wm)
 	}
-	wr := wireRequest{Model: req.Model, Messages: msgs, Stream: true}
+	wr := wireRequest{Model: req.Model, Messages: msgs, Stream: true,
+		StreamOptions: &wireStreamOptions{IncludeUsage: true}}
 	for _, t := range req.Tools {
 		wr.Tools = append(wr.Tools, wireTool{
 			Type: "function",
@@ -168,13 +180,22 @@ func (p *OpenAICompat) consume(body io.ReadCloser, events chan<- ChatEvent) {
 		}
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			events <- ChatEvent{Type: ErrorEvent, Err: fmt.Errorf("parse stream chunk: %w", err)}
-			return
+			// Real providers (OpenRouter notably) interleave non-JSON
+			// data lines with the chunks. Skipping keeps the stream
+			// alive; failing here kills a healthy turn. Errors that
+			// matter arrive inside valid JSON, handled below.
+			continue
 		}
 		if chunk.Error != nil {
 			events <- ChatEvent{Type: ErrorEvent, Err: fmt.Errorf("provider error %d: %s",
 				chunk.Error.Code, chunk.Error.Message)}
 			return
+		}
+		if chunk.Usage != nil {
+			events <- ChatEvent{Type: UsageEvent, Usage: Usage{
+				PromptTokens:     chunk.Usage.PromptTokens,
+				CompletionTokens: chunk.Usage.CompletionTokens,
+			}}
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -190,13 +211,14 @@ func (p *OpenAICompat) consume(body io.ReadCloser, events chan<- ChatEvent) {
 			asm.add(*frag.Index, frag.ID, frag.Function.Name, frag.Function.Arguments)
 		}
 		// finish_reason marks the end of the model's output: whatever is
-		// buffered is now complete. Some servers omit it on truncation,
+		// buffered is now complete. Keep reading afterwards — with
+		// stream_options.include_usage the usage arrives in a final
+		// chunk after this one. Some servers omit finish_reason entirely,
 		// so flush after the loop too.
-		if choice.FinishReason != nil {
+		if choice.FinishReason != nil && asm.hasContent() {
 			for _, call := range asm.flush() {
 				events <- ChatEvent{Type: ToolCallEvent, Call: call}
 			}
-			return
 		}
 	}
 	if err := scanner.Err(); err != nil {

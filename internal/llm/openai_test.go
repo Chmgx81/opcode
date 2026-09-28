@@ -263,3 +263,99 @@ func TestStreamChatSendsExpectedWireFormat(t *testing.T) {
 		t.Errorf("tools = %+v", cap.Tools)
 	}
 }
+
+func TestStreamChatUsageEvent(t *testing.T) {
+	// With stream_options.include_usage, usage arrives in a final chunk
+	// after finish_reason — the client must keep reading past it.
+	srv := sseServer(t, []string{
+		textDelta("hi"),
+		finish("stop"),
+		`{"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 34}}`,
+	}, nil, 0)
+	defer srv.Close()
+
+	p := NewOpenAICompat(srv.URL, "test-key")
+	events, err := p.StreamChat(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	got := collect(t, events)
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want text + usage", len(got))
+	}
+	if got[0].Type != TextEvent || got[0].Text != "hi" {
+		t.Errorf("event 0 = %+v", got[0])
+	}
+	if got[1].Type != UsageEvent {
+		t.Fatalf("event 1 type = %q, want usage", got[1].Type)
+	}
+	if got[1].Usage.PromptTokens != 12 || got[1].Usage.CompletionTokens != 34 {
+		t.Errorf("usage = %+v", got[1].Usage)
+	}
+}
+
+func TestStreamChatUsageAfterToolCallFinish(t *testing.T) {
+	// Usage chunk also comes after finish_reason=tool_calls; the calls
+	// must be flushed exactly once, not duplicated by the end-of-stream
+	// flush.
+	srv := sseServer(t, []string{
+		toolFragment(0, "call-1", "read_file", `{"path": "x"}`),
+		finish("tool_calls"),
+		`{"choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 7}}`,
+	}, nil, 0)
+	defer srv.Close()
+
+	p := NewOpenAICompat(srv.URL, "test-key")
+	events, err := p.StreamChat(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	got := collect(t, events)
+	var calls, usage int
+	for _, ev := range got {
+		switch ev.Type {
+		case ToolCallEvent:
+			calls++
+		case UsageEvent:
+			usage++
+		}
+	}
+	if calls != 1 {
+		t.Errorf("got %d tool call events, want 1 (no double flush)", calls)
+	}
+	if usage != 1 {
+		t.Errorf("got %d usage events, want 1", usage)
+	}
+}
+
+func TestStreamChatSkipsNonJSONDataLines(t *testing.T) {
+	// Real providers (OpenRouter notably) interleave non-JSON data lines
+	// with the chunks; a healthy turn must survive them.
+	srv := sseServer(t, []string{
+		textDelta("keep"),
+		textDelta(" going"),
+		`DATA: OPENROUTER PROCESSING`,
+		`DONE`,
+		finish("stop"),
+	}, nil, 0)
+	defer srv.Close()
+
+	p := NewOpenAICompat(srv.URL, "test-key")
+	events, err := p.StreamChat(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	got := collect(t, events)
+	var text string
+	for _, ev := range got {
+		if ev.Type == ErrorEvent {
+			t.Fatalf("non-JSON data line killed the stream: %v", ev.Err)
+		}
+		if ev.Type == TextEvent {
+			text += ev.Text
+		}
+	}
+	if text != "keep going" {
+		t.Errorf("text = %q", text)
+	}
+}
