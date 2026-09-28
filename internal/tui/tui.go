@@ -81,7 +81,8 @@ type Model struct {
 
 func New(opt Options) *Model {
 	input := textinput.New()
-	input.Prompt = "> "
+	input.Prompt = "❯ "
+	input.PromptStyle = accentStyle
 	input.Placeholder = "type a message, /login, /logout, or /exit"
 	input.Focus()
 
