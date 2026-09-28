@@ -590,3 +590,58 @@ func TestModeCommand(t *testing.T) {
 		t.Error("read-only gate must deny action-tier calls outright")
 	}
 }
+
+func TestTrustPromptAtStartup(t *testing.T) {
+	dir := t.TempDir()
+	var answer *bool
+	decided := false
+	newT := func() *Model {
+		m, _ := newText(t, dir, nil)
+		m.opt.PendingTrust = &TrustDecision{
+			ProjectDir: "/tmp/some/project",
+			Approved:   []string{".tilde/skills/deploy/scripts/run.sh"},
+			OnAnswer: func(trusted bool) {
+				v := trusted
+				answer = &v
+				decided = true
+			},
+		}
+		m.awaitingTrust = m.opt.PendingTrust
+		return m
+	}
+
+	m := newT()
+	if v := m.View(); !strings.Contains(v, "trust this project?") || !strings.Contains(v, "run.sh") {
+		t.Fatalf("trust prompt not shown with the runnable files:\n%s", v)
+	}
+
+	// While the trust prompt is up, typing anything but y/n must not
+	// leak into the input box or answer it.
+	m.input.SetValue("hello")
+	m.Update(keyMsg("z"))
+	if m.awaitingTrust == nil {
+		t.Fatal("stray key dismissed the trust prompt")
+	}
+
+	// Decline: callback runs, transcript says so, input untouched.
+	m.Update(escKey())
+	if !decided || *answer != false {
+		t.Fatalf("decline not delivered: decided=%v", decided)
+	}
+	if m.awaitingTrust != nil {
+		t.Error("trust prompt still up after answering")
+	}
+	if !strings.Contains(strings.Join(m.lines, "\n"), "not trusted") {
+		t.Error("decline note missing from transcript")
+	}
+
+	// Accept path: callback gets true, transcript notes the grant.
+	m = newT()
+	m.Update(keyMsg("y"))
+	if !decided || *answer != true {
+		t.Fatalf("accept not delivered: decided=%v answer=%v", decided, *answer)
+	}
+	if !strings.Contains(strings.Join(m.lines, "\n"), "project trusted") {
+		t.Error("grant note missing from transcript")
+	}
+}

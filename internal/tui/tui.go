@@ -46,6 +46,21 @@ type Options struct {
 	ProviderName string
 	BaseURL      string
 	AuditPath    string // audit log path, to rebuild the redactor after /login
+
+	// PendingTrust, when non-nil, shows the project-trust prompt at
+	// startup: the project has an executable surface the user has not
+	// approved (or it changed). OnAnswer persists the decision and
+	// re-discovers skills; the TUI owns only the question.
+	PendingTrust *TrustDecision
+}
+
+// TrustDecision is one pending project-trust question. Approved lists
+// the literal files that will become runnable, so the prompt can show
+// exactly what the user is approving (Section 7).
+type TrustDecision struct {
+	ProjectDir string
+	Approved   []string
+	OnAnswer   func(trusted bool)
 }
 
 // permRequest is one pending permission decision. The gate's prompt
@@ -80,8 +95,9 @@ type Model struct {
 	working bool               // a turn is in flight
 	cancel  context.CancelFunc // cancels the in-flight turn
 
-	awaitingPerm *permRequest // non-nil while the prompt is shown
-	allowAll     bool         // "a" answered once: skip action-tier prompts this session
+	awaitingTrust *TrustDecision // non-nil while the trust prompt is up
+	awaitingPerm  *permRequest   // non-nil while the permission prompt is shown
+	allowAll      bool           // "a" answered once: skip action-tier prompts this session
 
 	queue []string // follow-ups (Alt+Enter while working)
 
@@ -118,6 +134,7 @@ func New(opt Options) *Model {
 		m.lines = append(m.lines, dimStyle.Render(opt.Cwd))
 	}
 	m.lines = append(m.lines, "")
+	m.awaitingTrust = opt.PendingTrust
 	return m
 }
 

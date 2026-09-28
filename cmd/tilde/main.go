@@ -4,6 +4,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 	"tilde/internal/config"
 	"tilde/internal/llm"
 	"tilde/internal/orchestrator"
+	"tilde/internal/skills"
 	"tilde/internal/tools"
+	"tilde/internal/trust"
 	"tilde/internal/tui"
 )
 
@@ -24,6 +27,11 @@ func main() {
 }
 
 func run() error {
+	// --trust (or TILDE_TRUST=1) pre-approves the project's executable
+	// surface without prompting: the CI/headless posture (Section 7).
+	preTrust := flag.Bool("trust", false, "trust the current project's executable surface without prompting")
+	flag.Parse()
+
 	userDir, err := config.UserDir()
 	if err != nil {
 		return err
@@ -83,15 +91,73 @@ func run() error {
 		Audit: tools.NewAuditLog(auditPath, tools.NewRedactor(key.Value)),
 	}
 
+	// Project trust (Section 7): project-level skills only load once
+	// the project's executable surface is approved. --trust pre-approves
+	// for scripted use; otherwise the TUI asks, showing exactly what
+	// would run.
+	trustStore, err := trust.LoadStore(userDir)
+	if err != nil {
+		return err
+	}
+	if *preTrust || os.Getenv("TILDE_TRUST") != "" {
+		if err := trustStore.Trust(cwd); err != nil {
+			return err
+		}
+	}
+	status, approved, err := trustStore.Status(cwd)
+	if err != nil {
+		return err
+	}
+	projectTrusted := status == trust.Trusted
+
+	skillSources := func(trusted bool) []skills.Source {
+		return []skills.Source{
+			{Dir: filepath.Join(userDir, "skills"), Scope: skills.ScopeUser},
+			{Dir: filepath.Join(cwd, ".tilde", "skills"), Scope: skills.ScopeProject, Trusted: trusted},
+		}
+	}
+	var skillManager skills.Manager
+	if err := skillManager.Load(skillSources(projectTrusted)); err != nil {
+		return err
+	}
+
 	var registry tools.Registry
 	registry.Register(tools.ReadFile{})
 	registry.Register(tools.WriteFile{})
 	registry.Register(tools.EditFile{})
 	registry.Register(tools.RunShell{})
+	registry.Register(tools.LoadSkill{Manager: &skillManager})
+	registry.Register(tools.RunSkillScript{Manager: &skillManager})
 
 	provider := llm.NewOpenAICompat(providerCfg.BaseURL, key.Value)
 	orch := orchestrator.New(provider, cfg.Model, systemPrompt(cwd), &registry, gate)
 	orch.SetMode(cfg.PermissionMode)
+	orch.SkillsIndex = skillManager.Index()
+
+	// If the project has an unapproved executable surface, the TUI asks
+	// first. Granting persists the decision and re-discovers skills into
+	// the same manager, so the tools and the system prompt pick up the
+	// project's skills immediately. This must be part of Options before
+	// tui.New: the prompt is shown from the first frame.
+	var pending *tui.TrustDecision
+	if status != trust.Trusted && len(approved) > 0 {
+		pending = &tui.TrustDecision{
+			ProjectDir: cwd,
+			Approved:   approved,
+			OnAnswer: func(trusted bool) {
+				if !trusted {
+					return
+				}
+				if err := trustStore.Trust(cwd); err != nil {
+					return
+				}
+				if err := skillManager.Load(skillSources(true)); err != nil {
+					return
+				}
+				orch.SkillsIndex = skillManager.Index()
+			},
+		}
+	}
 
 	ui := tui.New(tui.Options{
 		Orch:         orch,
@@ -102,6 +168,7 @@ func run() error {
 		ProviderName: providerName,
 		BaseURL:      providerCfg.BaseURL,
 		AuditPath:    auditPath,
+		PendingTrust: pending,
 	})
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.

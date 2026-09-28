@@ -480,3 +480,30 @@ func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillsIndexComposedIntoSystemPrompt(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: "hi"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.SkillsIndex = "- deploy: Deploys the app"
+	drain(t, orch.Send(context.Background(), "go"))
+
+	sys := p.gotRequests[0].System
+	for _, want := range []string{"test system prompt", "- deploy: Deploys the app", "ask-every-time"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("system prompt missing %q: %q", want, sys)
+		}
+	}
+
+	// Updating the index mid-session reaches the next request.
+	orch.SkillsIndex = "- audit: Audits things"
+	drain(t, orch.Send(context.Background(), "again"))
+	if !strings.Contains(p.gotRequests[1].System, "- audit: Audits things") {
+		t.Errorf("updated skills index not in second request: %q", p.gotRequests[1].System)
+	}
+	if strings.Contains(p.gotRequests[1].System, "- deploy") {
+		t.Error("stale skills index still present")
+	}
+}

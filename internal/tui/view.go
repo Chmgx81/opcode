@@ -56,6 +56,15 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 
+	if m.awaitingTrust != nil {
+		files := strings.Join(m.awaitingTrust.Approved, ", ")
+		b.WriteString("\n")
+		b.WriteString(promptBoxStyle.Width(m.termWidth() - 4).Render(
+			promptStyle.Render("trust this project?") + " " +
+				dimStyle.Render("it would be able to run: "+files+" — y trust, n/Esc decline")))
+		b.WriteString("\n")
+	}
+
 	if m.awaitingPerm != nil {
 		b.WriteString("\n")
 		b.WriteString(promptBoxStyle.Width(m.termWidth() - 4).Render(fmt.Sprintf(
@@ -113,6 +122,9 @@ func (m *Model) visibleLines() []string {
 	reserved := 8 // input box, meta row, spacing
 	if m.awaitingPerm != nil || m.login != nil {
 		reserved += 4
+	}
+	if m.awaitingTrust != nil {
+		reserved += 3
 	}
 	if m.stream.String() != "" {
 		reserved += 1
