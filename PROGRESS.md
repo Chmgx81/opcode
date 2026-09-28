@@ -734,3 +734,9 @@ persistent left-column session sidebar.
   printed the success block, and the installed binary ran. The curl
   one-liner against raw.githubusercontent is verified in the trail
   after the commit that adds install.sh.
+
+  Verified live, second pass with v0.2.1: the one-liner against
+  raw.githubusercontent resolved v0.2.1, downloaded, installed, and
+  the installed release binary printed "tilde v0.2.1" — the
+  -X main.version injection works in the real pipeline. Release
+  v0.2.1 carries all five binaries.
