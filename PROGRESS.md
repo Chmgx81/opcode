@@ -1777,3 +1777,14 @@ preserved as reference docs:
   a reasoning-effort knob, /doctor, composer history, and the
   inline scrollback + block-commit streaming phase the TUI/UX
   spec already mandates.
+
+# Spec consolidation (status: complete)
+
+docs/specs/tui-design.md (the historical Python+Rich reference)
+and docs/specs/tui-ux-spec.md (the v0.1 Go spec) are merged into
+one dead-simple spec: docs/specs/tui-spec.md. It describes what
+tilde actually is as of Phase 28 — tokens, glyphs, every screen
+with a mockup, keys, behavior rules — plus the short honest
+"not yet built" list. Earlier log entries above still cite the
+old filenames; both point there now. Codex's handling of every
+one of these sections lives in docs/reference/codex-*.md.
