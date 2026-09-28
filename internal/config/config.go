@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Chmgx81/tilde/internal/tools"
 )
@@ -80,4 +81,22 @@ func LoadConfig(dir string) (Config, error) {
 			cfg.PermissionMode)
 	}
 	return cfg, nil
+}
+
+// ScreenReaderActive reports whether the environment indicates a
+// screen reader. Detection is deliberately conservative — only the
+// conventional signals (the SCREEN_READER variable, AT-SPI's
+// atk-bridge in GTK_MODULES, the Flatpak accessibility flag) — because
+// a false positive removes animation the user may want, while a false
+// negative leaves a usable (if busier) UI. Codex probes and persists
+// the preference; tilde seeds the session default and lets the
+// config key win.
+func ScreenReaderActive() bool {
+	if v := os.Getenv("SCREEN_READER"); v != "" && v != "0" && v != "false" {
+		return true
+	}
+	if strings.Contains(os.Getenv("GTK_MODULES"), "atk-bridge") {
+		return true
+	}
+	return os.Getenv("ACCESSIBILITY_ENABLED") == "1"
 }

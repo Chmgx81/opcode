@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -64,6 +65,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// approval prompt below the composer carries the decision.
 		m.add(entry{kind: entryPlan, text: msg.req.plan})
 		return m, nil
+
+	case editorDoneMsg:
+		return m, m.editorFinished(msg)
 
 	case orchestratorMsg:
 		return m.handleEvent(orchestrator.Event(msg)), nil
@@ -237,6 +241,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			dir = -1
 		}
 		return m, m.cycleMode(dir)
+	case "ctrl+e":
+		return m, m.openEditor()
 	case "ctrl+r":
 		m.expandResults = !m.expandResults
 		if m.expandResults {
@@ -921,4 +927,64 @@ func (m *Model) finishStream() {
 	}
 	m.stream.Reset()
 	m.streamRendered, m.streamRenderedLen, m.streamRenderedW = nil, 0, 0
+}
+
+// openEditor hands the composer to $VISUAL / $EDITOR (Codex's
+// external-editor borrow): the text lands in a temp file, the editor
+// runs with the TUI suspended, and editorFinished re-reads the result.
+// Modal states own the keyboard, and a mid-turn suspension would be a
+// surprise — ctrl+e only works in the plain composer.
+func (m *Model) openEditor() tea.Cmd {
+	if m.login != nil || m.picker != nil || m.helpOpen ||
+		m.awaitingPerm != nil || m.awaitingPlan != nil || m.working {
+		return nil
+	}
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		m.showToast("no $VISUAL or $EDITOR set")
+		return nil
+	}
+	f, err := os.CreateTemp("", "tilde-composer-*.md")
+	if err != nil {
+		m.showToast("could not create the editor file: " + err.Error())
+		return nil
+	}
+	path := f.Name()
+	if _, err := f.WriteString(m.composer.Value()); err != nil {
+		f.Close()
+		os.Remove(path)
+		m.showToast("could not write the editor file: " + err.Error())
+		return nil
+	}
+	f.Close()
+
+	// $VISUAL/$EDITOR may carry arguments; fields is enough for the
+	// conventional "code -w" style — quoted editor paths are rare and
+	// fail loudly here.
+	parts := strings.Fields(editor)
+	c := exec.Command(parts[0], append(parts[1:], path)...)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return editorDoneMsg{path: path, err: err}
+	})
+}
+
+// editorFinished reads the editor's file back into the composer. The
+// edit wins even if the editor exited nonzero — half the editors in
+// the wild do that — but a missing file keeps the composer untouched.
+func (m *Model) editorFinished(msg editorDoneMsg) tea.Cmd {
+	defer os.Remove(msg.path)
+	data, err := os.ReadFile(msg.path)
+	if err != nil {
+		m.showToast("editor file unreadable: " + err.Error())
+		return nil
+	}
+	m.composer.SetValue(string(data))
+	m.resizeComposer()
+	m.refreshAtMenu()
+	m.syncComposerPrompt()
+	m.showToast("composer loaded from the editor")
+	return nil
 }

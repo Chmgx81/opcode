@@ -1327,3 +1327,79 @@ func m_renderUserPanel(text string) []string {
 	m := &Model{width: 80}
 	return m.renderEntry(&entry{kind: entryUser, text: text})
 }
+
+func TestFooterFitsNarrowTerminals(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// Wide terminal: the full mode line with both hints.
+	m.width = 80
+	view := m.View()
+	for _, want := range []string{"(tab to cycle)", "? help · / commands"} {
+		if !strings.Contains(stripANSI(view), want) {
+			t.Errorf("wide footer missing %q:\n%s", want, view)
+		}
+	}
+
+	// Narrow terminal: the footer degrades instead of wrapping —
+	// the mode always survives, hints drop off first.
+	m.width = 24
+	footer := ""
+	for _, l := range m.composerView() {
+		p := stripANSI(l)
+		if strings.Contains(p, m.opt.Mode) && !strings.Contains(p, "ask tilde") {
+			footer = p
+		}
+	}
+	if footer == "" {
+		t.Fatal("mode line missing entirely on narrow width")
+	}
+	if w := len([]rune(footer)); w > 24 {
+		t.Errorf("footer is %d cols on a 24-col terminal: %q", w, footer)
+	}
+	if !strings.Contains(footer, "ask-every-time") {
+		t.Errorf("the mode must survive degradation: %q", footer)
+	}
+}
+
+func TestExternalEditorFlow(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// No editor configured: a toast, no process.
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+	if cmd := m.openEditor(); cmd != nil || m.toast == "" {
+		t.Errorf("no $VISUAL/$EDITOR must toast, not exec: cmd=%v toast=%q", cmd, m.toast)
+	}
+
+	// The editor's result lands back in the composer; the temp file
+	// is cleaned up.
+	t.Setenv("EDITOR", "whatever")
+	f, err := os.CreateTemp(t.TempDir(), "edit-*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("edited in $EDITOR\nsecond line"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	m.Update(editorDoneMsg{path: f.Name()})
+	if v := m.composer.Value(); v != "edited in $EDITOR\nsecond line" {
+		t.Errorf("composer = %q, want the editor's text", v)
+	}
+	if _, err := os.Stat(f.Name()); !os.IsNotExist(err) {
+		t.Error("temp editor file must be removed after loading")
+	}
+	if h := m.composer.Height(); h != 2 {
+		t.Errorf("composer height after load = %d, want 2", h)
+	}
+
+	// ctrl+e while a turn runs is a no-op — suspending mid-turn would
+	// strand the orchestrator.
+	m.working = true
+	m.showToast("")
+	if cmd := m.openEditor(); cmd != nil {
+		t.Error("ctrl+e must not open an editor mid-turn")
+	}
+}
