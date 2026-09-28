@@ -52,7 +52,8 @@ or word rides along.
 
 | Glyph | Meaning |
 |---|---|
-| `~` | the brand: header, composer prompt, mode line |
+| `~` | the brand: header, composer prompt |
+| `○ ⏸ › ⏵⏵` | modes: read-only, plan, ask, full-auto |
 | `❯` | user message, picker selection |
 | `!` | composer shell-mode prompt |
 | `●` | tool action |
@@ -112,12 +113,14 @@ I'll add a token-bucket limiter on the route.               ← assistant prose 
 ──────────────────────────────────────────────────────────  ← rule, border color (amber in shell mode)
 ~ ask tilde anything…                                        ← the input, brand ~ prompt
 ──────────────────────────────────────────────────────────  ← rule
-~ ask-every-time (tab to cycle)   ? for shortcuts · / commands
+› ask-every-time (tab to cycle)   ? for shortcuts · / commands
 ```
 
 Full-width rules frame the input — the findable frame without a
 box. The `~` sits in accent; shell mode flips it to `!` and the
-rules to amber. The footer drops hint segments on narrow
+rules to amber. The mode line carries each mode's own glyph —
+`○` read-only, `⏸` plan, `›` ask, `⏵⏵` full-auto — so the
+brand `~` belongs to the composer alone. The footer drops hint segments on narrow
 terminals, never the mode.
 
 ### 3.4 Permission dialog (ask mode, Action-Allowed tools)
