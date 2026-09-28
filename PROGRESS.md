@@ -1879,3 +1879,24 @@ Pinned by TestHistoryExpandsPasteTokens and
 TestHistoryKeepsHugePastesAsTyped. The recall key path itself was
 already PTY-verified last phase; this change only touches what
 pushHistory stores, so a fresh PTY run was not needed.
+
+# list_dir — read-only and plan modes can explore (status: complete, live-verified)
+
+From a live session: in read-only mode the model could read files but
+had no way to list a directory — it guessed paths and apologized for
+the missing tool. list_dir closes that gap: Read-Only tier, so the
+tier-based mode policy admits it in every mode (read-only and plan
+included) with no prompt, no mode-logic changes. It lists one
+directory's entries one per line, directories marked with a trailing
+slash, sorted, capped at 500 entries with a count note so a huge
+directory can't dump its whole index into context. Registered in
+cmd/tilde's registry (subagents inherit it through subset()); the
+gate, audit log, and headless wiring needed no changes.
+
+Verified live in a PTY: read-only mode, a fixture that calls
+list_dir on the session's working directory — the transcript shows
+the call, the real entries (main.go), and the follow-up answer, with
+no permission dialog. Pinned by TestListDir (entries, dir markers,
+empty dir, file-as-path and missing-path errors),
+TestListDirCapsHugeDirectories, and list_dir rows in TestToolTiers
+and TestModeAllowsTool.

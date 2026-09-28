@@ -111,6 +111,14 @@ func TestModeAllowsTool(t *testing.T) {
 	if !ModeAllowsTool(ModeReadOnly, read) {
 		t.Error("read-only mode must offer read-tier tools")
 	}
+	// list_dir is read-tier: read-only and plan modes can explore
+	// project structure, not just read files they already know.
+	if !ModeAllowsTool(ModeReadOnly, ListDir{}) {
+		t.Error("read-only mode must offer list_dir")
+	}
+	if !ModeAllowsTool(ModePlan, ListDir{}) {
+		t.Error("plan mode must offer list_dir")
+	}
 }
 
 func TestModeInstructionAndNormalization(t *testing.T) {

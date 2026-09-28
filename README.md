@@ -71,7 +71,7 @@ manager at first use), then the environment — the provider's
 
 | Mode | What the model gets |
 |---|---|
-| `read-only` | read tools only — nothing else is offered |
+| `read-only` | read tools only (read_file, list_dir) — nothing else is offered |
 | `plan` | reads + `present_plan`: it researches, presents a plan, you approve |
 | `ask-every-time` | asks you first — the default |
 | `full-auto` | runs without prompting, still logged |
