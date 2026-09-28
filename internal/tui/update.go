@@ -69,10 +69,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Paste {
 			m.handlePaste(string(msg.Runes))
 			m.resizeComposer()
+			m.refreshAtMenu()
+			m.syncComposerPrompt()
 			return m, nil
 		}
 		model, cmd := m.handleKey(msg)
 		m.resizeComposer()
+		m.refreshAtMenu()
+		m.syncComposerPrompt()
 		return model, cmd
 	}
 	return m, nil
@@ -142,6 +146,30 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.add(entry{kind: entryDim, text: "login cancelled"})
 			return m, nil
 		case "tab", "shift+tab":
+			return m, nil
+		}
+	}
+
+	// The @-mention menu owns Enter, arrows, and Esc while it is open;
+	// everything else keeps typing into the composer, which live-filters
+	// the menu.
+	if m.atMenuOpen() {
+		switch msg.String() {
+		case "enter":
+			m.completeAt()
+			return m, nil
+		case "esc":
+			m.dismissAt()
+			return m, nil
+		case "up":
+			m.atIdx--
+			if m.atIdx < 0 {
+				m.atIdx = len(m.atMenu) - 1
+			}
+			return m, nil
+		case "down":
+			m.atIdx++
+			m.atIdx %= len(m.atMenu)
 			return m, nil
 		}
 	}

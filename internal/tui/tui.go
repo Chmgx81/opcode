@@ -7,6 +7,7 @@ package tui
 import (
 	"context"
 	_ "embed"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
@@ -188,6 +189,21 @@ type Model struct {
 	// Command palette: open when the composer starts with "/".
 	paletteIdx int
 
+	// The @-mention file picker: live-filtered from the composer's
+	// trailing "@query", navigable, insertable. atFiles is the cached
+	// project file list; atDismissAt holds the byte position of the "@"
+	// Esc dismissed, so the menu stays closed for that mention until a
+	// fresh one appears.
+	atMenu      []string
+	atIdx       int
+	atDismissed bool
+	atDismissAt int
+	atFiles     []string
+
+	// workingVerb is the turn's gerund ("Thinking…", "Pondering…") —
+	// the reference apps' dynamic microcopy.
+	workingVerb string
+
 	// Overlay picker (/model, /sessions): filter-as-you-type list.
 	picker      *picker
 	pendingPick *pickerItem // selected item awaiting its command's action
@@ -210,6 +226,13 @@ type Model struct {
 // blooms open then settles, a short readable transition rather than a
 // color flash.
 var toastFrames = []string{"◇", "◈", "◆", "◈", "◇", "◇"}
+
+// workingVerbs is the gerund pool the working line picks from each
+// turn — dynamic microcopy, the reference apps' "Marinating…" feel.
+var workingVerbs = []string{
+	"Thinking…", "Pondering…", "Crafting…", "Exploring…",
+	"Weaving…", "Marinating…", "Meandering…", "Noodling…",
+}
 
 // toastTickMsg drives the toast animation.
 type toastTickMsg time.Time
@@ -360,6 +383,7 @@ func (m *Model) startTurn(text string) {
 	}
 	m.working = true
 	m.workingSince = time.Now()
+	m.workingVerb = workingVerbs[rand.Intn(len(workingVerbs))]
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel

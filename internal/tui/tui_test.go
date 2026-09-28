@@ -779,7 +779,7 @@ func TestComposerResizesWithTerminal(t *testing.T) {
 			t.Errorf("hints leaked into the placeholder: %q", l)
 		}
 	}
-	if !strings.Contains(view, "? help · / commands · ! shell · @ files") {
+	if !strings.Contains(view, "? help · / commands") {
 		t.Errorf("footer hints missing:\n%s", view)
 	}
 }
@@ -1011,5 +1011,130 @@ func TestAnimatedModeToast(t *testing.T) {
 	}
 	if m.toastAnim != 0 {
 		t.Errorf("toastAnim after all frames = %d, want 0", m.toastAnim)
+	}
+}
+
+func TestAtMentionPicker(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"main.go", "notes.txt", "cmd/app/main.go"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, _ := newText(t, dir, nil)
+
+	// Typing "@" opens the live-filtered file menu.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("see @")})
+	if !m.atMenuOpen() {
+		t.Fatal("trailing @ must open the file menu")
+	}
+	if !contains(m.atMenu, "main.go") || !contains(m.atMenu, "notes.txt") {
+		t.Errorf("menu = %v", m.atMenu)
+	}
+	// Typing filters; arrows move; Enter inserts the path.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("notes")})
+	if len(m.atMenu) != 1 || m.atMenu[0] != "notes.txt" {
+		t.Fatalf("filter = %v, want notes.txt only", m.atMenu)
+	}
+	m.Update(enterKey())
+	if v := m.composer.Value(); !strings.HasSuffix(v, "@notes.txt ") {
+		t.Errorf("completion = %q, want trailing @notes.txt", v)
+	}
+	if m.atMenuOpen() {
+		t.Error("menu must close on completion")
+	}
+
+	// Esc dismisses until the mention changes.
+	m.composer.SetValue("see @")
+	m.refreshAtMenu()
+	if !m.atMenuOpen() {
+		t.Fatal("menu should reopen for a new mention")
+	}
+	m.Update(escKey())
+	if m.atMenuOpen() {
+		t.Error("esc must close the menu")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}) // same mention, more text
+	if m.atMenuOpen() {
+		t.Error("a dismissed mention must stay closed while its query grows")
+	}
+	m.composer.SetValue("another @")
+	m.refreshAtMenu()
+	if !m.atMenuOpen() {
+		t.Error("a fresh mention opens the menu again")
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func TestShellModeAmberIndication(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// Typing "!" flips the composer into its shell-escape look before
+	// Enter — the indication the user asked for, visible up front.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("! echo hi")})
+	if !m.shellMode() {
+		t.Fatal("leading ! must be shell mode")
+	}
+	if m.composer.Prompt != GlyphWarn+" " {
+		t.Errorf("prompt = %q, want the amber ! glyph", m.composer.Prompt)
+	}
+	view := m.View()
+	if !strings.Contains(stripANSI(view), "shell — enter runs it directly") {
+		t.Errorf("shell hint missing from the mode line:\n%s", view)
+	}
+	// Deleting the "!" returns the normal prompt.
+	m.composer.SetValue("echo hi")
+	m.syncComposerPrompt()
+	if m.composer.Prompt != GlyphPrompt+" " {
+		t.Errorf("prompt = %q, want ~ restored", m.composer.Prompt)
+	}
+}
+
+func TestWorkingLineGerundAndUserPanel(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	// The working line reads like the demo: gerund + elapsed + tokens
+	// with the down arrow, and the esc hint.
+	m.working = true
+	m.workingVerb = "Pondering…"
+	m.workingSince = time.Now()
+	var status string
+	for _, l := range m.composerView() {
+		if strings.Contains(l, "Pondering") {
+			status = stripANSI(l)
+		}
+	}
+	if status == "" {
+		t.Fatal("working line missing")
+	}
+	for _, want := range []string{"Pondering…", "esc to interrupt", "↓ "} {
+		if !strings.Contains(status, want) {
+			t.Errorf("working line missing %q: %q", want, status)
+		}
+	}
+
+	// The echoed query renders in a background panel.
+	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	panel := m.renderEntry(&entry{kind: entryUser, text: "hello"})
+	joined := strings.Join(panel, "\n")
+	if !strings.Contains(joined, "48;2;6;34;43") { // HexDeep2 #06222B
+		t.Errorf("user entry lacks the background panel:\n%q", joined)
+	}
+	if !strings.Contains(stripANSI(joined), "hello") {
+		t.Errorf("content lost in the panel:\n%s", joined)
 	}
 }

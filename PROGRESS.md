@@ -853,3 +853,60 @@ persistent left-column session sidebar.
    reskins everything if the user wants another family.
 2. Toast lifetime stays 4 seconds; mode switches are still visible in
    the working-status context because the mode line is always on.
+
+---
+
+# Phase 12 — Affordances and the Demo Feel (status: complete, live-verified)
+
+## Built
+
+- **Watched the demo.gif** (frames extracted with PIL, read through the
+  vision model against the live OpenRouter key) and took the concrete
+  details, not vibes: the gerund working line ("Grooving… (esc to
+  interrupt · 8s · ↓ 555 tokens)"), the echoed query in a subtle
+  background panel, the hairline-divided input strip, minimal hints.
+- **@-mention file picker** (`internal/tui/mention.go`): typing "@" now
+  OPENS a visible live-filtered list of project files (the affordance
+  that was missing entirely — the mention only ever expanded on
+  submit). Type to filter, arrows to move, Enter inserts "@path ",
+  Esc dismisses that mention until a fresh "@" appears. The project
+  walk caches once per session (1000 files, depth 6, .git and friends
+  skipped, shallow-first order).
+- **! amber indication**: a leading "!" turns the composer's border and
+  prompt amber and swaps the mode line for "shell — enter runs it
+  directly" BEFORE Enter, not after.
+- **Working line, demo-shaped**: spinner + a per-turn gerund
+  ("Thinking…", "Pondering…", "Marinating…", …) + "(esc to interrupt ·
+  elapsed · ↓ N tokens)". The steer/queue hints moved to the help
+  overlay; the line is a feeling, not a legend.
+- **User entries render in a background panel** (the deep fill), the
+  demo's separation of what you said from what the agent answered.
+- **Mode line reshaped** to the reference: "~ mode (tab to cycle) ·
+  ? help · / commands".
+
+## Found and fixed during verification
+
+- refreshAtMenu never returned early when there was no trailing
+  mention — an empty query matched every file, so the menu tried to
+  open on ANY typing, which cascaded into the login and full-session
+  tests. The dismissal sentinel also collided with a bare "@"
+  (empty query). Both fixed by anchoring state to the byte position of
+  the "@" and early-returning when no mention is trailing.
+- Two PTY "failures" that were script artifacts, not bugs: the ! test
+  appended to a half-composed mention (so it submitted as a turn), and
+  the probed "hello" was a steering entry (panels are for submitted
+  queries by design). Re-run clean.
+
+## Verified for real
+
+- All eleven packages; new tests: the mention lifecycle (open on bare
+  @, filter, complete, Esc-dismissal semantics per position), the
+  amber shell indication (prompt glyph + mode-line hint + restore on
+  backspace), the gerund working line, the user panel SGR.
+- PTY live: "@" opened the picker listing real files, filtered to one,
+  Enter completed it into the composer and the message really attached
+  the file contents; "!" rendered the amber border and prompt with the
+  shell hint while typing, and Enter ran echo for real; the working
+  line showed "Thinking… (esc to interrupt · 0s · ↓ 0 tokens)"-shaped
+  status; submitted queries rendered with the panel background
+  (48;5;232 on xterm-256color).
