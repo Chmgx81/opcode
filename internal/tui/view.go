@@ -358,7 +358,7 @@ func (m *Model) floatingView() []string {
 		out = append(out, "",
 			promptBoxStyle.Width(w-4).Render(
 				promptStyle.Render("trust this project?")+" "+
-					dimStyle.Render("it would be able to run: "+files+" — y trust, n/Esc decline")))
+					dimStyle.Render("tilde would be able to run: "+files+" — y trust, n/Esc decline")))
 	}
 	if m.awaitingPerm != nil {
 		out = append(out, "", m.permDialogView(m.awaitingPerm, w))
@@ -806,7 +806,7 @@ func (m *Model) permDialogView(req *permRequest, w int) string {
 	for _, l := range wrapAll(permLiteral(req.tool, req.args), w-8) {
 		rows = append(rows, l)
 	}
-	rows = append(rows, "", dimStyle.Render("This command requires approval. Do you want to proceed?"), "")
+	rows = append(rows, "", dimStyle.Render("tilde needs your approval to run this. Do you want to proceed?"), "")
 	for i, o := range opts {
 		marker := "  "
 		style := dimStyle
