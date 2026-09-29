@@ -594,6 +594,8 @@ func (m *Model) helpView(w int) string {
 		dimStyle.Render("  ctrl+v       attach the clipboard image ([Image #N] rides along)"),
 		dimStyle.Render("  alt+enter    queue a follow-up while working"),
 		dimStyle.Render("  esc          interrupt the turn"),
+		dimStyle.Render("  ctrl+c       press twice to exit — the first press interrupts a turn"),
+		dimStyle.Render("  ctrl+d       exit, the same double-press"),
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
 		dimStyle.Render("  ctrl+r       expand / collapse results & thinking"),
 		dimStyle.Render("  ! command    run a shell command directly"),

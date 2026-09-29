@@ -246,9 +246,23 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "ctrl+c":
-		m.cancelTurn()
-		return m, tea.Quit
+	case "ctrl+c", "ctrl+d":
+		// Codex's double-press exit: the first press arms a short
+		// window — and interrupts a running turn — the toast says
+		// so; only a second press inside the window exits. An
+		// explicit /exit needs no arming.
+		if time.Since(m.quitArmedAt) < quitWindow {
+			m.cancelTurn()
+			return m, tea.Quit
+		}
+		m.quitArmedAt = time.Now()
+		if m.working {
+			m.cancelTurn()
+			m.showToast("interrupted — ctrl+c again to exit")
+			return m, nil
+		}
+		m.showToast("ctrl+c again to exit")
+		return m, nil
 	case "esc":
 		if m.working {
 			m.cancelTurn()
@@ -336,6 +350,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.composer, cmd = m.composer.Update(msg)
 	return m, cmd
 }
+
+// quitWindow is how long the first ctrl+c keeps the exit armed —
+// the toast hint shows for the same span, so the promise on screen
+// never outlives the window.
+const quitWindow = 4 * time.Second
 
 // resizeComposer grows the input with its content, one visible line
 // per typed or wrapped line, capped so a huge paste can't eat the
