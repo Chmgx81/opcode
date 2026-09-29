@@ -1,3 +1,7 @@
+> Superseded in part: the modes were later consolidated to three
+> (plan / build / full-auto) — read-only folded into plan, ask became
+> build; see PROGRESS.md. The gate mechanics here still hold.
+
 # Phase 30 — The sandbox-aware gate
 
 ## Goal

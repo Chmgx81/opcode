@@ -53,7 +53,7 @@ or word rides along.
 | Glyph | Meaning |
 |---|---|
 | `~` | the brand: header, composer prompt |
-| `○ ⏸ › ⏵⏵` | modes: read-only, plan, ask, full-auto |
+| `⏸ › ⏵⏵` | modes: plan, build, full-auto |
 | `❯` | user message, picker selection |
 | `!` | composer shell-mode prompt |
 | `●` | tool action |
@@ -90,7 +90,7 @@ exceeds the terminal; the dialog/composer tail is never trimmed.
 
 ```
    ▄▄▄▄▄▄▄      ~ tilde v0.2.1
-▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · ask
+▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · build
 ▀▀         ▀███▄  /home/you/project
                ▀█▄▄▄▄▄▄▄█▀
                  ▀▀▀▀▀▀▀
@@ -124,17 +124,17 @@ I'll add a token-bucket limiter on the route.               ← assistant prose 
 ──────────────────────────────────────────────────────────  ← rule, border color (amber in shell mode)
 ~ ask tilde anything…                                        ← the input, brand ~ prompt
 ──────────────────────────────────────────────────────────  ← rule
-› ask (tab to cycle)   ? for shortcuts · / commands
+› build (tab to cycle)   ? for shortcuts · / commands
 ```
 
 Full-width rules frame the input — the findable frame without a
 box. The `~` sits in accent; shell mode flips it to `!` and the
 rules to amber. The mode line carries each mode's own glyph —
-`○` read-only, `⏸` plan, `›` ask, `⏵⏵` full-auto — so the
+`⏸` plan, `›` build, `⏵⏵` full-auto — so the
 brand `~` belongs to the composer alone. The footer drops hint segments on narrow
 terminals, never the mode.
 
-### 3.4 Permission dialog (ask mode, Action-Allowed tools)
+### 3.4 Permission dialog (build mode, Action-Allowed tools)
 
 ```
 ╭─ Bash command · Runs a command ───────────────────────────╮
@@ -237,7 +237,7 @@ doubles, so entries can be appended freely.
   approval they never read (Codex blocks input the same way).
 - **Plain posture** (`--plain`, `TILDE_PLAIN`, or a detected screen
   reader): every glyph degrades to ASCII (`✓` → `[ok]`, `⎿` → `\-`,
-  modes `○ ⏸ › ⏵⏵` → `o = > >>`), animations off; no glyph
+  modes `⏸ › ⏵⏵` → `= > >>`), animations off; no glyph
   disappears. The window title is sanitized (control and bidi
   characters stripped, 240-rune cap) — OSC titles are an untrusted
   text surface.
