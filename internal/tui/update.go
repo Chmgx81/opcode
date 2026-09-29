@@ -512,12 +512,20 @@ func (m *Model) cycleEffort(dir int) tea.Cmd {
 	return nil
 }
 
-// submitInput handles Enter / Alt+Enter. Large pastes and @ mentions
-// expand here; "!" runs a shell command directly without the model.
+// submitInput handles Enter / Alt+Enter through decideInput — the
+// single typed place that says what a submit became. The wrapper
+// keeps the call sites reading naturally.
 func (m *Model) submitInput(alt bool) tea.Cmd {
+	_, cmd := m.decideInput(alt)
+	return cmd
+}
+
+// decideInput handles Enter / Alt+Enter. Large pastes and @ mentions
+// expand here; "!" runs a shell command directly without the model.
+func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	raw := strings.TrimSpace(m.composer.Value())
 	if raw == "" {
-		return nil
+		return inputIgnored, nil
 	}
 	// Resolve the palette selection BEFORE clearing the composer: the
 	// palette reads the composer's value, and clearing first would
@@ -545,7 +553,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		} else {
 			m.add(entry{kind: entryDim, text: out})
 		}
-		return nil
+		return inputShell, nil
 	}
 
 	text := m.expandPastes(raw)
@@ -561,56 +569,62 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	switch cmdName {
 	case "/exit", "/quit":
 		m.cancelTurn()
-		return tea.Quit
+		return inputCommand, tea.Quit
 	case "/help":
 		m.helpOpen = true
-		return nil
+		return inputCommand, nil
 	case "/login":
 		if arg == "" {
 			m.openLoginPicker()
-			return nil
+			return inputCommand, nil
 		}
 		m.beginLogin(arg)
-		return nil
+		return inputCommand, nil
 	case "/logout":
 		m.logout(arg)
-		return nil
+		return inputCommand, nil
 	case "/mode":
-		return m.setMode(arg)
+		cmd := m.setMode(arg)
+		return inputCommand, cmd
 	case "/model":
 		m.handleModelCommand(arg)
-		return nil
+		return inputCommand, nil
 	case "/models":
-		return m.openModelsPicker(arg)
+		cmd := m.openModelsPicker(arg)
+		return inputCommand, cmd
 	case "/sessions":
 		m.openSessionsPicker()
-		return nil
+		return inputCommand, nil
 	case "/skills":
 		m.listSkills()
-		return nil
+		return inputCommand, nil
 	case "/mcp":
 		m.listMcp()
-		return nil
+		return inputCommand, nil
 	case "/doctor":
 		m.doctor()
-		return nil
+		return inputCommand, nil
 	case "/theme":
 		m.handleThemeCommand(arg)
-		return nil
+		return inputCommand, nil
 	case "/diff":
 		m.showDiff()
-		return nil
+		return inputCommand, nil
 	}
 
 	if m.working {
 		if alt {
 			m.queue = append(m.queue, queued{text: text, images: m.pendingImages()})
 			m.add(entry{kind: entryQueued, text: text})
-			return nil
+			return inputQueued, nil
 		}
+		// Steered input cannot alter the active round: its request is
+		// already on the wire. The draft folds in at the next ROUND
+		// boundary — the orchestrator's steering checkpoint, after the
+		// current tool call finishes.
 		m.opt.Orch.Steer(text)
 		m.add(entry{kind: entrySteer, text: text})
-		return nil
+		return inputSteered, nil
 	}
 
 	// Commit everything before this turn's user entry to native
@@ -619,7 +633,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	commit := m.commitEntries()
 	m.add(entry{kind: entryUser, text: text})
 	m.startTurn(text, m.pendingImages())
-	return tea.Batch(commit, m.spinner.Tick, statusTick())
+	return inputTurnStarted, tea.Batch(commit, m.spinner.Tick, statusTick())
 }
 
 // pushHistory records a submitted prompt in the recall history and
