@@ -136,7 +136,22 @@ func Exec(argv []string) error {
 }
 
 // deathAttr makes a spawned child die with its parent — a sandboxed
-// command must not outlive tilde.
+// command must not outlive tilde — and makes it a process-group
+// leader. exec's context watchdog kills only the direct child, so
+// without the group, a bash that backgrounded work (`make watch &`)
+// would leave its grandchildren running past the timeout or the esc
+// interrupt (audit C7). The group lets KillGroup take the whole
+// tree at once.
 func deathAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	return &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL, Setpgid: true}
+}
+
+// KillGroup sends SIGKILL to pid's whole process group. It is only
+// meaningful for children spawned with deathAttr (they lead their
+// group). ESRCH means the group is already gone — success here.
+func KillGroup(pid int) error {
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	return nil
 }

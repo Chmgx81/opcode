@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 // ErrUnsupported is returned by Apply on platforms without Landlock
@@ -32,13 +33,22 @@ var installed *Runner
 // Install sets the process-wide runner. Called once from main.
 func Install(r *Runner) { installed = r }
 
+// armForDeath points a command at its death semantics: it leads its
+// own process group (so the whole tree can be killed together —
+// audit C7), and its Wait gives up on lingering pipe holders after
+// a short grace period — a backgrounded grandchild holding stdout
+// open must not wedge the caller past the timeout.
+func armForDeath(cmd *exec.Cmd) *exec.Cmd {
+	cmd.SysProcAttr = deathAttr()
+	cmd.WaitDelay = 2 * time.Second
+	return cmd
+}
+
 // Command builds the command through the installed runner — the one
 // entry point the tools use. Works with nothing installed.
 func Command(ctx context.Context, name string, arg ...string) *exec.Cmd {
 	if installed == nil {
-		cmd := exec.CommandContext(ctx, name, arg...)
-		cmd.SysProcAttr = deathAttr()
-		return cmd
+		return armForDeath(exec.CommandContext(ctx, name, arg...))
 	}
 	return installed.Command(ctx, name, arg...)
 }
@@ -48,9 +58,7 @@ func Command(ctx context.Context, name string, arg ...string) *exec.Cmd {
 // such calls as the approval-triggering escape; here it just means
 // the Landlock wrapper is skipped.
 func PlainCommand(ctx context.Context, name string, arg ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, arg...)
-	cmd.SysProcAttr = deathAttr()
-	return cmd
+	return armForDeath(exec.CommandContext(ctx, name, arg...))
 }
 
 // Active reports whether subprocesses built through Command are
@@ -108,9 +116,7 @@ func (r *Runner) Status() string {
 // sandbox when enabled. The child dies with this process either way.
 func (r *Runner) Command(ctx context.Context, name string, arg ...string) *exec.Cmd {
 	if !r.Enabled() {
-		cmd := exec.CommandContext(ctx, name, arg...)
-		cmd.SysProcAttr = deathAttr()
-		return cmd
+		return armForDeath(exec.CommandContext(ctx, name, arg...))
 	}
 	writable := WritableRoots()
 	argv := make([]string, 0, len(writable)+len(arg)+3)
@@ -118,9 +124,7 @@ func (r *Runner) Command(ctx context.Context, name string, arg ...string) *exec.
 	argv = append(argv, writable...)
 	argv = append(argv, "--", name)
 	argv = append(argv, arg...)
-	cmd := exec.CommandContext(ctx, r.self, argv...)
-	cmd.SysProcAttr = deathAttr()
-	return cmd
+	return armForDeath(exec.CommandContext(ctx, r.self, argv...))
 }
 
 // WritableRoots computes the directories a sandboxed command may

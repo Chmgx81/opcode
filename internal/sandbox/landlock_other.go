@@ -36,3 +36,7 @@ func Exec(argv []string) error {
 // deathAttr is a no-op off Linux; the field is Linux-specific but the
 // type exists everywhere, so keep the same shape.
 func deathAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{} }
+
+// KillGroup is a no-op off Linux: without Setpgid there is no group
+// to kill, and the direct child was already killed by the context.
+func KillGroup(int) error { return nil }
