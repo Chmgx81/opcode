@@ -2304,3 +2304,55 @@ Spec: [docs/specs/phase34-themes.md](docs/specs/phase34-themes.md)
   permission_mode); a second run started fully green — zero teal
   bytes in the entire capture, the prompt regression fix confirmed
   on screen.
+
+# Phase 35 — the /diff command (status: complete, live-verified)
+
+Spec: [docs/specs/phase35-diff.md](docs/specs/phase35-diff.md)
+
+## Built
+
+- `internal/tui/diff.go` — /diff answers "what changed?" with the
+  working tree's git changes rendered into the transcript with the
+  verdict tokens: additions in the success color, deletions danger,
+  hunk headers info, file headers bold chrome, context dim — the
+  same vocabulary the edit_file hunks already use.
+- The full posture: `git diff --no-color HEAD` (staged and
+  unstaged; plain-diff fallback for a repo with no commits yet),
+  plus `git status --porcelain` so untracked files — which a diff
+  alone can never show — are listed as dim `?` rows instead of
+  silently missing from the review.
+- Every outcome is a designed state, not just the happy path:
+  not-a-repo and clean-tree dim notes, a missing git binary named
+  as an error, git errors verbatim, and a 400-line cap with an
+  honest "… N more lines" footer so a monster diff cannot flood
+  the transcript.
+- User-invoked and read-only like the `!` shell escape: no model
+  round trip, no permission prompt, no state change. Runs through
+  tools.Bash (sandboxed, bounded) with `git -C <project>` so it
+  does not depend on the process cwd; every byte of output passes
+  safe.Text before rendering.
+
+## Found during verification
+
+- git itself C-style-quotes control characters in porcelain
+  output, so a hostile filename arrives as inert printable text
+  (`"\033]0;..."` with literal backslashes) — visible and named,
+  incapable of driving the terminal, on top of tilde's own
+  safe.Text pass. The test pins that no live OSC sequence can
+  reach the entry.
+- lipgloss gamut-shifts hex colors slightly when rendering
+  (#4ade80 emits 73;222;128, not 74;222;128) — the tests assert
+  the real emitted bytes.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. /diff tests run the
+  real git against real repositories: modified + untracked, staged
+  changes visible in the HEAD diff, clean tree, not-a-repo,
+  no-commits fallback, the renderer's per-line-class colors, the
+  cap footer, and the sanitized-payload entry.
+- **PTY live**: a repo with a modified go file and an untracked
+  file — /diff rendered the `diff --git` header (bold), the removed
+  line in danger, the added line in success, the `@@` hunk in info,
+  and "1 untracked: fresh.txt" as a dim row. The only BEL in the
+  capture is tilde's own window-title OSC. Clean /exit.

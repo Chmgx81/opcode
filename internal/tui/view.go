@@ -285,6 +285,11 @@ func (m *Model) renderEntry(e *entry) []string {
 		// transcript; the decision line follows below it.
 		out := []string{accentStyle.Render(GlyphBullet + " plan")}
 		return append(out, renderMarkdown(e.text, w)...)
+	case entryDiff:
+		// /diff pre-colors git's unified diff line by line; the
+		// lines render exactly as composed (no re-wrap — a wrapped
+		// diff line stops reading as a diff).
+		return strings.Split(e.text, "\n")
 	}
 	return nil
 }
