@@ -56,12 +56,34 @@ type anthropicTool struct {
 }
 
 type anthropicRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    string          `json:"system,omitempty"`
-	Messages  []anthropicMsg  `json:"messages"`
-	Tools     []anthropicTool `json:"tools,omitempty"`
-	Stream    bool            `json:"stream"`
+	Model     string             `json:"model"`
+	MaxTokens int                `json:"max_tokens"`
+	System    string             `json:"system,omitempty"`
+	Messages  []anthropicMsg     `json:"messages"`
+	Tools     []anthropicTool    `json:"tools,omitempty"`
+	Stream    bool               `json:"stream"`
+	Thinking  *anthropicThinking `json:"thinking,omitempty"`
+}
+
+// anthropicThinking is Anthropic's extended-thinking budget. tilde's
+// name→budget mapping: low is the documented minimum, medium a
+// moderate default, high a generous cap.
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
+}
+
+// effortBudget maps the knob's names to Anthropic's token budgets.
+func effortBudget(effort string) int {
+	switch effort {
+	case "low":
+		return 1024
+	case "medium":
+		return 8192
+	case "high":
+		return 16384
+	}
+	return 0
 }
 
 // anthropicMsg is one message: role plus content, which is either a
@@ -97,6 +119,9 @@ func toAnthropic(req ChatRequest) anthropicRequest {
 	}
 	if ar.MaxTokens <= 0 {
 		ar.MaxTokens = anthropicDefaultMaxTokens
+	}
+	if n := effortBudget(req.ReasoningEffort); n > 0 {
+		ar.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: n}
 	}
 	for _, m := range req.Messages {
 		switch m.Role {

@@ -235,11 +235,16 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// built.
 	provider := llm.New(providerCfg.API, providerCfg.BaseURL, key.Value)
 	spawnEmitter := &subagent.Emitter{}
+	// orch is created below, after the runner: the subagent's effort
+	// inheritance reads it through this closure, so mid-session
+	// cycles reach later spawns too.
+	var orch *orchestrator.Orchestrator
 	subRunner := &subagent.Runner{
 		Provider: provider,
 		Model:    cfg.Model,
 		Registry: &registry,
 		Gate:     gate,
+		EffortOf: func() string { return orch.ReasoningEffort },
 	}
 	registry.Register(subagent.SpawnTool{Runner: subRunner, Emitter: spawnEmitter})
 
@@ -254,7 +259,8 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	todoList := &tools.TodoList{}
 	registry.Register(tools.TodoWrite{List: todoList})
 
-	orch := orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
+	orch = orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
+	orch.ReasoningEffort = cfg.ReasoningEffort
 	orch.SetMode(cfg.PermissionMode)
 	orch.SkillsIndex = skillManager.Index()
 	orch.ContextWindow = cfg.ContextWindow
@@ -431,6 +437,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	}
 	ui := tui.New(tui.Options{
 		Orch:         orch,
+		Effort:       cfg.ReasoningEffort,
 		Model:        cfg.Model,
 		Mode:         cfg.PermissionMode,
 		Cwd:          cwd,

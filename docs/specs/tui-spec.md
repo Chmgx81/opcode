@@ -316,6 +316,17 @@ doubles, so entries can be appended freely.
   git's own C-style quoting makes hostile filenames inert printable
   text. Every outcome is designed: not-a-repo and clean-tree notes,
   a missing git binary named.
+- **The reasoning-effort knob** (Phase 39): reasoning is the most
+  expensive dial, and it is now visible and turnable — alt+./alt+,
+  cycle low / medium / high / provider-default with a toast naming
+  the posture and a `◐ <effort>` segment on the mode line whenever
+  one is set. Config seeds it (`reasoning_effort`, validated at
+  load); the orchestrator carries it per request like the
+  permission mode, so a mid-session cycle lands on the next round.
+  OpenAI-compatible servers get `reasoning_effort` (omitted when
+  unset); Anthropic gets a `thinking` budget (low 1024, medium
+  8192, high 16384). Subagents inherit the parent's live posture
+  at spawn time — deliberately no independent knob.
 - **`/doctor`** (Phase 33): one transcript entry, one line per
   subsystem — version, model/provider, api-key presence (never the
   key), config.json and models.json loader verdicts, the live

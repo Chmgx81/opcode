@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,5 +64,28 @@ func TestSaveTheme(t *testing.T) {
 	}
 	if err := SaveTheme(dir, "dark"); err == nil {
 		t.Error("SaveTheme over a non-object config.json should fail")
+	}
+}
+
+// TestReasoningEffortValidation: the knob's names are validated at
+// load time — an unknown value fails loudly instead of silently
+// sending garbage to the provider.
+func TestReasoningEffortValidation(t *testing.T) {
+	dir := t.TempDir()
+	for _, valid := range []string{"", "low", "medium", "high"} {
+		cfg := fmt.Sprintf(`{"reasoning_effort": %q}`, valid)
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadConfig(dir); err != nil {
+			t.Errorf("valid effort %q rejected: %v", valid, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"),
+		[]byte(`{"reasoning_effort": "maximum"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(dir); err == nil {
+		t.Error("unknown effort accepted")
 	}
 }
