@@ -64,6 +64,10 @@ type Orchestrator struct {
 	// offered to the model (read-only mode hides action-tier tools) and
 	// is composed into the system prompt via ModeInstruction.
 	Mode string
+	// ReasoningEffort is the thinking knob: low, medium, high, or
+	// empty for the provider's default. Per-request like Mode;
+	// SetEffort switches it mid-session.
+	ReasoningEffort string
 	// SkillsIndex is the metadata-only skills index (name + description
 	// per skill) appended to the system prompt — tier 1 of progressive
 	// disclosure. Updated in place when a trust decision adds project
@@ -106,6 +110,12 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 // SetMode switches the permission mode. The next model request picks up
 // the new tool set and mode instruction; the gate's Decide callback is
 // the caller's to rebuild (it owns the prompt plumbing).
+// SetEffort switches the reasoning effort; the next model request
+// carries it.
+func (o *Orchestrator) SetEffort(effort string) {
+	o.ReasoningEffort = effort
+}
+
 func (o *Orchestrator) SetMode(mode string) {
 	o.Mode = tools.NormalizeMode(mode)
 }
@@ -208,10 +218,11 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		msgs := make([]llm.Message, len(o.history))
 		copy(msgs, o.history)
 		req := llm.ChatRequest{
-			Model:    o.Model,
-			System:   o.systemPrompt(),
-			Messages: msgs,
-			Tools:    o.toolDefs(),
+			Model:           o.Model,
+			System:          o.systemPrompt(),
+			Messages:        msgs,
+			Tools:           o.toolDefs(),
+			ReasoningEffort: o.ReasoningEffort,
 		}
 		stream, err := o.Provider.StreamChat(ctx, req)
 		if err != nil {

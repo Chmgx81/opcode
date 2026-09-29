@@ -71,6 +71,10 @@ type ChatRequest struct {
 	// (Anthropic requires the field and uses 8192; OpenAI-compatible
 	// servers omit it when 0).
 	MaxTokens int
+	// ReasoningEffort names the thinking budget: low, medium, high,
+	// or empty for the provider's default. OpenAI-compatible servers
+	// get reasoning_effort; Anthropic gets a thinking budget.
+	ReasoningEffort string
 }
 
 // Chat event kinds.

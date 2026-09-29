@@ -2525,3 +2525,47 @@ Landlock sandbox — the tools test binary gained the same
   expanded tool result in the transcript shows the note, the
   named escape, and the raw `Permission denied` — and the file did
   not land.
+
+# Phase 39 — the reasoning-effort knob (status: complete, live-verified)
+
+Spec: [docs/specs/phase39-effort-knob.md](docs/specs/phase39-effort-knob.md)
+(The adoption doc's #5.)
+
+## Built
+
+- **The wire**: `ChatRequest.ReasoningEffort` ("" = provider
+  default). OpenAI-compatible requests carry `reasoning_effort`,
+  omitted when unset; Anthropic requests carry
+  `thinking: {type: enabled, budget_tokens: N}` with tilde's
+  mapping (low 1024 — the documented minimum, medium 8192, high
+  16384), also omitted when unset — a model without extended
+  thinking never sees the field.
+- **The orchestrator** carries the effort per request like the
+  permission mode (`SetEffort` switches it; mid-turn changes land
+  on the next round). Subagents inherit the parent's live posture
+  at spawn through `Runner.EffortOf` — deliberately no independent
+  knob.
+- **The config** seeds it: `reasoning_effort` in config.json,
+  validated at load (unknown values fail loudly, like
+  permission_mode), wired as the session's initial posture.
+- **The TUI**: alt+. climbs the cycle (unset → low → medium →
+  high → unset), alt+, descends; a toast names the posture, and
+  the mode line gains the `◐ <effort>` segment (GlyphDoing, the
+  effort glyph) whenever one is set — a dial you cannot see is a
+  dial you cannot trust.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. Tests cover both
+  wires (the OpenAI field present only when set; the Anthropic
+  budget per name, and the key absent from the wire when unset),
+  config validation, the cycle in both directions with the footer
+  segment appearing and disappearing, and the request provably
+  carrying the posture (asserted on the request the fake provider
+  receives).
+- **PTY live, three turns around the cycle**: turn 1 sent no
+  effort (the fixture echoes the wire's `reasoning_effort`:
+  "none"); alt+. twice showed the "low" then "medium" toasts and
+  the `◐ medium` footer segment, and turn 2's wire carried
+  "medium"; alt+, moved the footer to `◐ low` and turn 3's wire
+  carried "low". The toast, the footer, and the wire agree.

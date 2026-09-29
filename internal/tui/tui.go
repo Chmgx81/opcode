@@ -81,6 +81,9 @@ type Options struct {
 	// persists a /theme switch; nil makes the switch session-only.
 	Theme    string
 	SetTheme func(name string) error
+	// Effort seeds the reasoning-effort knob ("" = provider
+	// default); alt+. / alt+, cycle it live.
+	Effort string
 	// KeyFor resolves a provider's API key through the credential
 	// chain (auth.json, explicit env, derived env) — the /models
 	// picker needs it to fetch live model lists. Missing is fine:
@@ -297,6 +300,11 @@ type Model struct {
 	curTheme    string
 	themeBackup string
 
+	// effort is the reasoning-effort knob ("" = provider default).
+	// Live state like the permission mode; the next model request
+	// carries it.
+	effort string
+
 	// The @-mention file picker: live-filtered from the composer's
 	// trailing "@query", navigable, insertable. atFiles is the cached
 	// project file list; atDismissAt holds the byte position of the "@"
@@ -436,6 +444,7 @@ func New(opt Options) *Model {
 		spinner:    sp,
 		pasteAt:    map[string]string{},
 		subStreams: map[string]*strings.Builder{},
+		effort:     opt.Effort,
 	}
 	// Prompt recall history: loaded once at startup, appended per
 	// submit. A corrupt line is skipped, never fatal.

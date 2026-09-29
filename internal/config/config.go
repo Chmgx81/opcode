@@ -43,6 +43,10 @@ type Config struct {
 	// terminal's background is probed and the dark or light posture
 	// follows it.
 	Theme string `json:"theme"`
+	// ReasoningEffort seeds the thinking knob: low, medium, high, or
+	// empty for the provider's default. Unknown values fail loudly
+	// below, like permission_mode.
+	ReasoningEffort string `json:"reasoning_effort"`
 }
 
 // UserDir returns the user-level tilde directory: $TILDE_HOME if set,
@@ -86,6 +90,12 @@ func LoadConfig(dir string) (Config, error) {
 	if !tools.ValidMode(cfg.PermissionMode) {
 		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, plan, ask, full-auto; legacy: ask-every-time, auto-accept-safe-ops)",
 			cfg.PermissionMode)
+	}
+	switch cfg.ReasoningEffort {
+	case "", "low", "medium", "high":
+	default:
+		return cfg, fmt.Errorf("config.json: unknown reasoning_effort %q (valid: low, medium, high; empty = the provider default)",
+			cfg.ReasoningEffort)
 	}
 	return cfg, nil
 }

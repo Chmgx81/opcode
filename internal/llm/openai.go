@@ -29,11 +29,12 @@ func NewOpenAICompat(baseURL, apiKey string) *OpenAICompat {
 // --- wire types (this file's private translation layer) ---
 
 type wireRequest struct {
-	Model         string             `json:"model"`
-	Messages      []wireMessage      `json:"messages"`
-	Tools         []wireTool         `json:"tools,omitempty"`
-	Stream        bool               `json:"stream"`
-	StreamOptions *wireStreamOptions `json:"stream_options,omitempty"`
+	Model           string             `json:"model"`
+	Messages        []wireMessage      `json:"messages"`
+	Tools           []wireTool         `json:"tools,omitempty"`
+	Stream          bool               `json:"stream"`
+	StreamOptions   *wireStreamOptions `json:"stream_options,omitempty"`
+	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
 }
 
 type wireStreamOptions struct {
@@ -172,7 +173,8 @@ func toWire(req ChatRequest) wireRequest {
 		msgs = append(msgs, wm)
 	}
 	wr := wireRequest{Model: req.Model, Messages: msgs, Stream: true,
-		StreamOptions: &wireStreamOptions{IncludeUsage: true}}
+		StreamOptions:   &wireStreamOptions{IncludeUsage: true},
+		ReasoningEffort: req.ReasoningEffort}
 	for _, t := range req.Tools {
 		wr.Tools = append(wr.Tools, wireTool{
 			Type: "function",

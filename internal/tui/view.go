@@ -545,6 +545,11 @@ func (m *Model) composerView() []string {
 	// fullest to bare mode, first one that fits the terminal wins — a
 	// shortcut never separates from its label on narrow screens.
 	mode := accent2Style.Render(modeGlyph(m.opt.Mode) + " " + m.opt.Mode)
+	// The effort segment rides the mode line whenever a posture is
+	// set — a dial you cannot see is a dial you cannot trust.
+	if m.effort != "" {
+		mode += accent2Style.Render("   " + GlyphDoing + " " + m.effort)
+	}
 	var hint string
 	if m.shellMode() {
 		hint = dimStyle.Render("shell — enter runs it directly, no model round trip")

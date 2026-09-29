@@ -69,6 +69,10 @@ type Runner struct {
 	Model    string
 	Registry *tools.Registry
 	Gate     *tools.Gate
+	// EffortOf returns the parent's live reasoning effort — the
+	// subagent inherits the posture at spawn time; there is
+	// deliberately no independent knob. Nil means unset.
+	EffortOf func() string
 }
 
 // subagentSystemPrompt scopes the subagent: finish the task, answer
@@ -96,6 +100,9 @@ func subset(reg *tools.Registry) *tools.Registry {
 // and the TUI renders the events live.
 func (r *Runner) Run(ctx context.Context, task, title string, emit func(Event)) (string, error) {
 	orch := orchestrator.New(r.Provider, r.Model, subagentSystemPrompt, subset(r.Registry), r.Gate)
+	if r.EffortOf != nil {
+		orch.SetEffort(r.EffortOf())
+	}
 	ch := orch.Send(ctx, task)
 
 	// The subagent's final answer is the text streamed after its last

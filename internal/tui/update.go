@@ -320,6 +320,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			dir = -1
 		}
 		return m, m.cycleMode(dir)
+	case "alt+.", "alt+,":
+		dir := 1
+		if msg.String() == "alt+," {
+			dir = -1
+		}
+		return m, m.cycleEffort(dir)
 	case "ctrl+e":
 		return m, m.openEditor()
 	case "ctrl+v":
@@ -478,6 +484,32 @@ func (m *Model) cycleMode(dir int) tea.Cmd {
 		}
 	}
 	return m.setMode(tools.ModeBuild)
+}
+
+// effortPostures is the reasoning-effort cycle. Empty is the
+// provider's default — the posture users who never touch the dial
+// stay in.
+var effortPostures = []string{"", "low", "medium", "high"}
+
+// cycleEffort moves through the reasoning postures: alt+. up,
+// alt+, down. Like the mode cycle, the next model request carries
+// the new value; the toast names what changed.
+func (m *Model) cycleEffort(dir int) tea.Cmd {
+	i := 0
+	for j, e := range effortPostures {
+		if e == m.effort {
+			i = j
+			break
+		}
+	}
+	m.effort = effortPostures[(i+dir+len(effortPostures))%len(effortPostures)]
+	m.opt.Orch.SetEffort(m.effort)
+	if m.effort == "" {
+		m.showToast("effort: provider default")
+	} else {
+		m.showToast("effort: " + m.effort + " thinking")
+	}
+	return nil
 }
 
 // submitInput handles Enter / Alt+Enter. Large pastes and @ mentions

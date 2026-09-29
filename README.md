@@ -126,6 +126,7 @@ actually confine.
 | **Tab** | cycle permission mode |
 | **Ctrl+R** | expand / collapse tool results & thinking |
 | **Ctrl+O** | transcript — scroll the whole conversation, results expanded |
+| **Alt+. / Alt+,** | reasoning effort — low / medium / high, or the provider default |
 | **?** | everything else |
 
 `/model` switches models at runtime. `/models` browses every
