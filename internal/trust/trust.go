@@ -55,6 +55,7 @@ var surfaceFiles = []string{
 	".tilde/config.json",
 	".tilde/mcp.json",
 }
+
 // Surface lists a project's executable surface: the config/mcp files and
 // every skill script, SKILL.md body, and bundled reference/asset under
 // .tilde/skills/, relative to the project root, sorted. mcp.json and

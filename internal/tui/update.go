@@ -592,64 +592,13 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 			arg = fields[1]
 		}
 	}
-	switch cmdName {
-	case "/exit", "/quit":
-		m.cancelTurn()
-		return inputCommand, tea.Quit
-	case "/help":
-		m.helpOpen = true
-		return inputCommand, nil
-	case "/login":
-		if arg == "" {
-			m.openLoginPicker()
-			return inputCommand, nil
-		}
-		m.beginLogin(arg)
-		return inputCommand, nil
-	case "/logout":
-		m.logout(arg)
-		return inputCommand, nil
-	case "/mode":
-		cmd := m.setMode(arg)
+	// Only a leading "/..." is a command. Plain prose must fall
+	// through to the turn below — the switch's default arm is the
+	// unknown-command error, which must never see cmdName "".
+	if cmdName != "" {
+		cmd := m.runCommand(cmdName, arg)
 		return inputCommand, cmd
-	case "/model":
-		m.handleModelCommand(arg)
-		return inputCommand, nil
-	case "/models":
-		cmd := m.openModelsPicker(arg)
-		return inputCommand, cmd
-	case "/sessions":
-		m.openSessionsPicker()
-		return inputCommand, nil
-	case "/skills":
-		m.listSkills()
-		return inputCommand, nil
-	case "/mcp":
-		m.listMcp()
-		return inputCommand, nil
-	case "/doctor":
-		m.doctor()
-		return inputCommand, nil
-	case "/theme":
-		m.handleThemeCommand(arg)
-		return inputCommand, nil
-	case "/diff":
-		m.showDiff()
-		return inputCommand, nil
-	default:
-		// An unknown "/..." is a typo, not a prompt: sending it to
-		// the model would bill a turn for a command that does not
-		// exist. The typed text stays in recall history as-is
-		// (recall shows what was typed, including the typo); the
-		// turn never starts.
-		if msg := unknownCommandHint(cmdName); msg != "" {
-			m.add(entry{kind: entryErr, text: msg})
-		} else {
-			m.add(entry{kind: entryErr, text: "unknown command " + cmdName + " — /help lists the commands"})
-		}
-		return inputCommand, nil
 	}
-
 	if m.working {
 		if alt {
 			m.queue = append(m.queue, queued{text: text, images: m.pendingImages()})
@@ -672,6 +621,66 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	m.add(entry{kind: entryUser, text: text})
 	m.startTurn(text, m.pendingImages())
 	return inputTurnStarted, tea.Batch(commit, m.spinner.Tick, statusTick())
+}
+
+// runCommand executes one slash command and returns the tea.Cmd the
+// caller should run. It never starts a model turn: an unknown name is
+// a typo, and billing a round for a command that does not exist is the
+// kind of surprise a user should never meet.
+//
+// cmdName is guaranteed non-empty and leading-slash by decideInput.
+func (m *Model) runCommand(cmdName, arg string) tea.Cmd {
+	switch cmdName {
+	case "/exit", "/quit":
+		m.cancelTurn()
+		return tea.Quit
+	case "/help":
+		m.helpOpen = true
+		return nil
+	case "/login":
+		if arg == "" {
+			m.openLoginPicker()
+			return nil
+		}
+		m.beginLogin(arg)
+		return nil
+	case "/logout":
+		m.logout(arg)
+		return nil
+	case "/mode":
+		return m.setMode(arg)
+	case "/model":
+		m.handleModelCommand(arg)
+		return nil
+	case "/models":
+		return m.openModelsPicker(arg)
+	case "/sessions":
+		m.openSessionsPicker()
+		return nil
+	case "/skills":
+		m.listSkills()
+		return nil
+	case "/mcp":
+		m.listMcp()
+		return nil
+	case "/doctor":
+		m.doctor()
+		return nil
+	case "/theme":
+		m.handleThemeCommand(arg)
+		return nil
+	case "/diff":
+		m.showDiff()
+		return nil
+	}
+	// Unknown "/...": the typed text stays in recall history as-is
+	// (recall shows what was typed, including the typo).
+	if msg := unknownCommandHint(cmdName); msg != "" {
+		m.add(entry{kind: entryErr, text: msg})
+	} else {
+		m.add(entry{kind: entryErr, text: "unknown command " + cmdName + " — /help lists the commands"})
+	}
+	return nil
 }
 
 // deadPasteTokens returns the [paste N] tokens in text that have no
@@ -892,12 +901,24 @@ func mustJSON(s string) string {
 // close. Commands are few and their names stable; a small local
 // matcher beats a dependency.
 func unknownCommandHint(cmdName string) string {
+	// Nothing typed, or a name that already exists: no hint. Both
+	// guards matter — HasPrefix(c.Name, "") is true for every
+	// command, so without them a valid command (and every plain
+	// prompt) would come back "did you mean /exit?".
+	if cmdName == "" || !strings.HasPrefix(cmdName, "/") {
+		return ""
+	}
+	for _, c := range commands {
+		if c.Name == cmdName {
+			return ""
+		}
+	}
+	bare := strings.TrimPrefix(cmdName, "/")
 	for _, c := range commands {
 		if strings.HasPrefix(c.Name, cmdName) {
 			return "unknown command " + cmdName + " — did you mean " + c.Name + "?"
 		}
 	}
-	bare := strings.TrimPrefix(cmdName, "/")
 	for _, c := range commands {
 		if strings.Contains(c.Name, bare) {
 			return "unknown command " + cmdName + " — did you mean " + c.Name + "?"
@@ -1019,7 +1040,7 @@ func (m *Model) submitLogin() tea.Cmd {
 	m.composer.SetValue("")
 
 	if key == "" {
-		m.add(entry{kind: entryDim, text: "no key entered — nothing stored"})
+		m.add(entry{kind: entryDim, text: "login cancelled — no key entered, nothing stored"})
 		return nil
 	}
 	if err := config.WriteAuthKey(m.opt.TildeHome, provider, key); err != nil {

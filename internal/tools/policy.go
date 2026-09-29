@@ -215,35 +215,40 @@ func ShellEscaped(args string) bool {
 // shell command gets. In-process writes cannot be Landlocked, so
 // the gate bounds them by path, resolving symlinks along the whole
 // path: a lexical in-tree path that points outside must not
-// auto-run. The full path is resolved when it exists (EvalSymlinks
-// fails on a not-yet-created file), and the base component is
-// Lstat-checked so a planted in-tree symlink to an outside file
-// cannot slip the bound — the parent-dir-only resolution left that
-// hole open (audit S6).
+// auto-run.
+//
+// The path need not exist yet — writing a file that is being created,
+// or one whose directory is being created, is ordinary work. So the
+// longest EXISTING prefix is resolved and the missing tail is
+// re-appended. Resolving only the immediate parent (as an earlier
+// revision did) refused every "Add File: src/pkg/thing.go" as being
+// outside the project; the parts that do not exist cannot be
+// symlinks, so they need no resolution, and every component that does
+// exist is still resolved. A path that exists but will not resolve —
+// a symlink loop, a dangling link — fails closed.
 func pathInWritableRoots(path string) bool {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return false
 	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = resolved
-	} else if dir, base := filepath.Split(abs); base != "" {
-		// The target itself does not exist (or is not resolvable) —
-		// resolve the parent and honor a symlink at the base.
-		resolved, err := filepath.EvalSymlinks(dir)
-		if err != nil {
+	existing, rest := abs, ""
+	for {
+		resolved, err := filepath.EvalSymlinks(existing)
+		if err == nil {
+			abs = filepath.Join(resolved, rest)
+			break
+		}
+		if _, statErr := os.Lstat(existing); statErr == nil {
+			// It exists but will not resolve — a loop or a dangling
+			// link. Nothing honest to check; refuse.
 			return false
 		}
-		abs = filepath.Join(resolved, base)
-		if fi, err := os.Lstat(abs); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-			// Follow the final link and re-check: a symlink planted in
-			// the writable root pointing outside must fail the bound.
-			target, err := filepath.EvalSymlinks(abs)
-			if err != nil {
-				return false
-			}
-			abs = target
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return false
 		}
+		rest = filepath.Join(filepath.Base(existing), rest)
+		existing = parent
 	}
 	for _, root := range sandbox.WritableRoots() {
 		if withinDir(abs, root) {
