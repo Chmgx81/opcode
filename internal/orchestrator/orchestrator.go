@@ -49,7 +49,7 @@ type Event struct {
 const MaxToolRounds = 25
 
 // maxToolResultChars caps what a tool result contributes to the context.
-// run_shell output in particular can be enormous; the model gets the head
+// bash output in particular can be enormous; the model gets the head
 // of it and a note that it was truncated.
 const maxToolResultChars = 50_000
 

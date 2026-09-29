@@ -163,7 +163,7 @@ func TestAskModeBoundedActions(t *testing.T) {
 	// so it is unbounded and prompts — the sandbox must be credited
 	// only when it is actually enforced.
 	promptCalled = false
-	if !decide(RunShell{}, `{"command": "ls"}`) || !promptCalled {
+	if !decide(Bash{}, `{"command": "ls"}`) || !promptCalled {
 		t.Error("shell call without an active sandbox must prompt in ask mode")
 	}
 }
@@ -186,7 +186,7 @@ func TestShellEscaped(t *testing.T) {
 func TestModeAllowsTool(t *testing.T) {
 	// Phase 30: offering is not permission. Every mode offers every
 	// tier; the gate is the single enforcement point.
-	tools := []Tool{ReadFile{}, ListDir{}, WriteFile{}, EditFile{}, RunShell{}}
+	tools := []Tool{ReadFile{}, ListDir{}, WriteFile{}, EditFile{}, Bash{}}
 	for _, mode := range append(append([]string{}, Modes...), "unknown") {
 		for _, tool := range tools {
 			if !ModeAllowsTool(mode, tool) {

@@ -95,7 +95,7 @@ func ModeInstruction(mode string) string {
 	case ModePlan:
 		return "Permission mode is plan: research with the read tools (read_file, grep, glob, list_dir) and do not change anything yet — any write, command, or web fetch you call asks the user first. When you understand the task, present exactly one plan with the present_plan tool — markdown with the goal, concrete steps, and risks — and stop. Wait for the user's decision; do not act before it."
 	case ModeBuild:
-		return "Permission mode is build: sandboxed shell commands — writes kernel-confined to the working directory, /tmp, and dev caches — and file writes or patches inside those roots run without prompting. Anything that escapes the bound (run_shell with \"sandbox\": false, writes outside those roots, web fetches) asks the user first."
+		return "Permission mode is build: sandboxed shell commands — writes kernel-confined to the working directory, /tmp, and dev caches — and file writes or patches inside those roots run without prompting. Anything that escapes the bound (bash with \"sandbox\": false, writes outside those roots, web fetches) asks the user first."
 	case ModeFullAuto:
 		return "Permission mode is full-auto: tool calls run without prompting and are logged."
 	}
@@ -154,7 +154,7 @@ func askPrompt(prompt func(Tool, string) bool, tool Tool, args string) bool {
 // sandbox — is unbounded and asks.
 func boundedAction(tool Tool, args string) bool {
 	switch tool.(type) {
-	case RunShell:
+	case Bash:
 		if ShellEscaped(args) {
 			return false
 		}
@@ -186,7 +186,7 @@ func boundedAction(tool Tool, args string) bool {
 	return false
 }
 
-// ShellEscaped reports whether a run_shell call opted out of the
+// ShellEscaped reports whether a bash call opted out of the
 // sandbox. Unparsable args read as an escape — fail closed. Shared
 // with the TUI, whose approval dialog names the escape for what it
 // is.

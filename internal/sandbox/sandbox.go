@@ -44,7 +44,7 @@ func Command(ctx context.Context, name string, arg ...string) *exec.Cmd {
 }
 
 // PlainCommand builds a command that is never sandboxed — the
-// run_shell {"sandbox": false} escape. The permission gate treats
+// the bash {"sandbox": false} escape. The permission gate treats
 // such calls as the approval-triggering escape; here it just means
 // the Landlock wrapper is skipped.
 func PlainCommand(ctx context.Context, name string, arg ...string) *exec.Cmd {

@@ -142,7 +142,7 @@ quits, and tilde saves the session and says so on the way out —
 
 The model's built-in tools: read_file, list_dir, grep (content search), glob_files (pattern find), current_time, apply_patch
 (V4A multi-file patches — the format Codex uses), write_file,
-edit_file, run_shell, plus skills, MCP tools, subagents, todo
+edit_file, bash, plus skills, MCP tools, subagents, todo
 tracking, and present_plan. Read-tier tools are free in every mode;
 apply_patch runs without prompting in ask mode while every file it
 touches stays inside the sandbox's writable roots.

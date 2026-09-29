@@ -564,7 +564,7 @@ func (m *Model) sessionGrants(tool, args string) bool {
 	if m.toolAllows[tool] {
 		return true
 	}
-	if m.sessionAllow != nil && tool == "run_shell" {
+	if m.sessionAllow != nil && tool == "bash" {
 		var a struct {
 			Command string `json:"command"`
 		}
@@ -580,7 +580,7 @@ func (m *Model) sessionGrants(tool, args string) bool {
 // program + subcommand as a prefix rule (displayed "<prefix>:*"),
 // or the tool name for everything else.
 func alwaysScope(tool, args string) string {
-	if tool != "run_shell" {
+	if tool != "bash" {
 		return tool
 	}
 	var a struct {
@@ -613,7 +613,7 @@ func prefixRule(scope string) string {
 // grantAlways applies option 2: a session-scoped rule, never a file
 // on disk, never a provider-side change.
 func (m *Model) grantAlways(req *permRequest) {
-	if req.tool == "run_shell" {
+	if req.tool == "bash" {
 		if rule := prefixRule(req.scope); rule != "" {
 			m.sessionRules = append(m.sessionRules, rule)
 			m.sessionAllow = tools.NewShellAllowlist(m.sessionRules)

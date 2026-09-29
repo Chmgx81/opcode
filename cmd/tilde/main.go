@@ -185,7 +185,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	registry.Register(tools.ApplyPatch{})
 	registry.Register(tools.WriteFile{})
 	registry.Register(tools.EditFile{})
-	registry.Register(tools.RunShell{})
+	registry.Register(tools.Bash{})
 	registry.Register(tools.LoadSkill{Manager: &skillManager})
 	registry.Register(tools.RunSkillScript{Manager: &skillManager})
 

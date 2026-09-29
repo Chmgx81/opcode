@@ -115,8 +115,8 @@ func TestEditFileAmbiguousMatchIsError(t *testing.T) {
 	}
 }
 
-func TestRunShellOutput(t *testing.T) {
-	out, err := run(t, RunShell{}, `{"command": "printf 'out'; printf 'err' >&2"}`)
+func TestBashOutput(t *testing.T) {
+	out, err := run(t, Bash{}, `{"command": "printf 'out'; printf 'err' >&2"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -125,8 +125,8 @@ func TestRunShellOutput(t *testing.T) {
 	}
 }
 
-func TestRunShellNonzeroExitReportsOutput(t *testing.T) {
-	out, err := run(t, RunShell{}, `{"command": "echo boom; exit 3"}`)
+func TestBashNonzeroExitReportsOutput(t *testing.T) {
+	out, err := run(t, Bash{}, `{"command": "echo boom; exit 3"}`)
 	if err == nil {
 		t.Fatal("expected error on nonzero exit")
 	}
@@ -138,8 +138,8 @@ func TestRunShellNonzeroExitReportsOutput(t *testing.T) {
 	}
 }
 
-func TestRunShellEmptyCommandIsError(t *testing.T) {
-	if _, err := run(t, RunShell{}, `{"command": "  "}`); err == nil {
+func TestBashEmptyCommandIsError(t *testing.T) {
+	if _, err := run(t, Bash{}, `{"command": "  "}`); err == nil {
 		t.Error("expected error for empty command")
 	}
 }
@@ -153,7 +153,7 @@ func TestToolTiers(t *testing.T) {
 	if list.Tier() != TierReadOnly {
 		t.Error("list_dir must be Read-Only")
 	}
-	for _, tool := range []Tool{WriteFile{}, EditFile{}, RunShell{}} {
+	for _, tool := range []Tool{WriteFile{}, EditFile{}, Bash{}} {
 		if tool.Tier() != TierActionAllowed {
 			t.Errorf("%s must be Action-Allowed, got %s", tool.Name(), tool.Tier())
 		}
@@ -222,7 +222,7 @@ func TestListDirCapsHugeDirectories(t *testing.T) {
 func TestRegistry(t *testing.T) {
 	var r Registry
 	r.Register(ReadFile{})
-	r.Register(RunShell{})
+	r.Register(Bash{})
 
 	if _, ok := r.Get("read_file"); !ok {
 		t.Error("read_file not found")
@@ -231,7 +231,7 @@ func TestRegistry(t *testing.T) {
 		t.Error("unknown tool found")
 	}
 	defs := r.Defs()
-	if len(defs) != 2 || defs[0].Name != "read_file" || defs[1].Name != "run_shell" {
+	if len(defs) != 2 || defs[0].Name != "read_file" || defs[1].Name != "bash" {
 		t.Errorf("defs = %+v", defs)
 	}
 	for _, d := range defs {
