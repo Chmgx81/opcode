@@ -701,3 +701,35 @@ func TestPlanModeAdvertisesResearchAndPlanTools(t *testing.T) {
 		t.Errorf("plan instruction missing from prompt: %q", req.System)
 	}
 }
+
+// TestToolFailureKeepsOutput: a failing tool's own output — the
+// shell's stderr, a sandbox-denial note — is evidence of what
+// actually failed; the model's result keeps it beside the error
+// headline instead of discarding it (found live: a sandboxed write
+// denial reached the model as "exit status 1" with no cause).
+func TestToolFailureKeepsOutput(t *testing.T) {
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "bash",
+			Arguments: `{"command": "echo boom >&2; exit 3"}`}}},
+		{{Type: llm.TextEvent, Text: "ok"}},
+	}}
+	var reg tools.Registry
+	reg.Register(tools.Bash{})
+	orch := New(p, "m", "s", &reg, &tools.Gate{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var got string
+	for ev := range orch.Send(ctx, "run it") {
+		if ev.Kind == EventToolResult {
+			got = ev.ToolResult
+		}
+	}
+	if !strings.Contains(got, "error: exit status") {
+		t.Errorf("result missing the error headline: %q", got)
+	}
+	if !strings.Contains(got, "boom") {
+		t.Errorf("result dropped the tool's own output: %q", got)
+	}
+}

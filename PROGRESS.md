@@ -2470,3 +2470,58 @@ Spec: [docs/specs/phase37-grant-scopes.md](docs/specs/phase37-grant-scopes.md)
   did not widen). The sandboxed command auto-ran without any
   prompt in build mode, as designed — the dialogs are the
   unsandboxed escape, which is what the fixture exercised.
+
+# Phase 38 — readable sandbox denials (status: complete, live-verified)
+
+Spec: [docs/specs/phase38-sandbox-denial.md](docs/specs/phase38-sandbox-denial.md)
+(The adoption doc's #4.)
+
+## Built
+
+- `tools.Bash.Execute` classifies a sandboxed EACCES/EROFS: when the
+  command ran sandboxed, the sandbox is active, and the combined
+  output carries a denial signature (Permission denied / Read-only
+  file system / Operation not permitted), a plain-language note is
+  prepended — the write boundary named, "probably" honest about the
+  ambiguity, the `{"sandbox": false}` escape spelled out, and the
+  shell's original complaint kept below it. Non-sandboxed commands
+  never get the note: their EACCES is a real permission error.
+- The note applies on both the exit-error and swallowed-error paths
+  ("|| true" can hide a denial behind exit 0); the timeout path
+  returns unclassified.
+
+## Found during verification — two real pre-existing bugs
+
+The note is only useful if it reaches the model, and live PTY
+verification showed a failing bash call reached the model as
+"error: exit status: exit status 1" with NO cause at all:
+
+1. **The gate zeroed tool output on error** — `result = ""` right
+   after the audit entry had recorded it, contradicting the comment
+   above it ("execution result is reported to the caller
+   regardless"). Fixed: the output stays; the audit entry is
+   unchanged.
+2. **The orchestrator discarded the output of failing calls** —
+   `result = "error: " + err.Error()`. Fixed: the failure result is
+   the error headline plus the tool's own bytes, the evidence
+   channel every tool failure needs, not just sandbox denials.
+
+Both fixes have regression tests
+(TestToolFailureKeepsOutput; the tools-package tests assert the
+note and the kept original error end to end through the real
+Landlock sandbox — the tools test binary gained the same
+`__sandbox` re-exec TestMain the sandbox package's own tests use).
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. Tests cover the
+  signature matcher and its near-misses; a sandboxed out-of-scope
+  write carrying the note, the escape, and the original error
+  through the real sandbox (skipped where Landlock is unsupported);
+  an in-scope write with no note; an unsandboxed denial
+  (chmod-built, host-independent) mislabeled by nothing; and the
+  orchestrator's failure result keeping both headline and output.
+- **PTY live**: a fixture asked for `echo probe > /etc/...`; the
+  expanded tool result in the transcript shows the note, the
+  named escape, and the raw `Permission denied` — and the file did
+  not land.

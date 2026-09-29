@@ -56,6 +56,10 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 		defer cancel()
 	}
 	var cmd *exec.Cmd
+	// sandboxed tracks which branch built the command, so a denial
+	// is only classified when the confinement was actually applied —
+	// an unsandboxed EACCES is a real permission error.
+	sandboxed := !(a.Sandbox != nil && !*a.Sandbox)
 	if a.Sandbox != nil && !*a.Sandbox {
 		cmd = sandbox.PlainCommand(ctx, "bash", "-c", a.Command)
 	} else {
@@ -64,6 +68,12 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return string(out), fmt.Errorf("bash: timed out after %s", bashTimeout)
+	}
+	// A sandboxed write denial gets the plain-language cause and the
+	// documented escape, on both the exit-error and swallowed-error
+	// paths ("|| true" can hide a denial behind exit 0).
+	if sandboxed && sandbox.Active() && looksLikeSandboxDenial(string(out)) {
+		out = []byte(sandboxDenialNote + string(out))
 	}
 	if err != nil {
 		// Nonzero exit is a tool result the model can act on, not a
@@ -74,4 +84,20 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 		return string(out), fmt.Errorf("bash: %w", err)
 	}
 	return string(out), nil
+}
+
+// sandboxDenialNote classifies a sandboxed EACCES/EROFS for the model
+// in plain language. "Probably" is honest: the signature usually
+// means the write boundary, but a genuine permission error inside
+// the writable roots looks identical — the original error always
+// stays visible below the note.
+const sandboxDenialNote = `note: this ran inside the sandbox, where writes are confined to the working directory, /tmp, and dev caches — the failure below is probably that boundary. If this write is legitimate, retry with {"sandbox": false} and the user will be asked to approve the unsandboxed run.
+
+`
+
+// looksLikeSandboxDenial matches the shell's EACCES/EROFS phrases.
+func looksLikeSandboxDenial(out string) bool {
+	return strings.Contains(out, "Permission denied") ||
+		strings.Contains(out, "Read-only file system") ||
+		strings.Contains(out, "Operation not permitted")
 }
