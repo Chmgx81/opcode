@@ -844,6 +844,8 @@ func permTitle(tool string) string {
 		return "Edit file"
 	case "apply_patch":
 		return "Apply patch"
+	case "web_fetch":
+		return "Fetch web page"
 	default:
 		return tool
 	}
@@ -920,14 +922,12 @@ func (m *Model) permDialogView(req *permRequest, w int) string {
 // modeGlyph maps a permission mode to its footer glyph. The brand ~
 // belongs to the composer; each mode reads at a glance by shape.
 func modeGlyph(mode string) string {
-	switch mode {
-	case tools.ModeReadOnly:
-		return GlyphModeReadOnly
+	switch tools.NormalizeMode(mode) {
 	case tools.ModePlan:
 		return GlyphModePlan
 	case tools.ModeFullAuto:
 		return GlyphModeFullAuto
-	default:
-		return GlyphModeAsk
+	default: // build, unknown
+		return GlyphModeBuild
 	}
 }

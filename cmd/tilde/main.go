@@ -179,6 +179,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	registry.Register(tools.ReadFile{})
 	registry.Register(tools.ListDir{})
 	registry.Register(tools.Grep{})
+	registry.Register(tools.WebFetch{})
 	registry.Register(tools.Glob{})
 	registry.Register(tools.CurrentTime{})
 	registry.Register(tools.ApplyPatch{})

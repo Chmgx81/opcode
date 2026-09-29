@@ -141,7 +141,7 @@ var (
 	// the brand ~ stays the composer's alone.
 	GlyphModeReadOnly = "○"  // read-only: nothing will run
 	GlyphModePlan     = "⏸"  // plan: writes paused
-	GlyphModeAsk      = "›"  // ask: the ball is in your court
+	GlyphModeBuild    = "›"  // build: the ball is in your court
 	GlyphModeFullAuto = "⏵⏵" // full-auto: everything proceeds
 	GlyphThought      = "△"  // reasoning: the model's thinking block
 )
@@ -158,7 +158,7 @@ func adaptGlyphs(plain bool) {
 		GlyphDoing, GlyphTodoOn, GlyphTodoOff = "◐", "☑", "☐"
 		GlyphQueued, GlyphThought = "⏵", "△"
 		GlyphModeReadOnly, GlyphModePlan = "○", "⏸"
-		GlyphModeAsk, GlyphModeFullAuto = "›", "⏵⏵"
+		GlyphModeBuild, GlyphModeFullAuto = "›", "⏵⏵"
 		return
 	}
 	GlyphPrompt, GlyphUser, GlyphCaret = ">", ">", ">"
@@ -168,7 +168,7 @@ func adaptGlyphs(plain bool) {
 	GlyphDoing, GlyphTodoOn, GlyphTodoOff = "@", "[x]", "[ ]"
 	GlyphQueued, GlyphThought = ">", "^"
 	GlyphModeReadOnly, GlyphModePlan = "o", "="
-	GlyphModeAsk, GlyphModeFullAuto = ">", ">>"
+	GlyphModeBuild, GlyphModeFullAuto = ">", ">>"
 }
 
 // Spacing scale — the rhythm between blocks.

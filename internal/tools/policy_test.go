@@ -197,8 +197,11 @@ func TestModeAllowsTool(t *testing.T) {
 }
 
 func TestModeInstructionAndNormalization(t *testing.T) {
-	if NormalizeMode("ask") != ModeAsk {
-		t.Error(`"ask" is the canonical spelling`)
+	if NormalizeMode("build") != ModeBuild {
+		t.Error(`"build" is the canonical spelling`)
+	}
+	if NormalizeMode(ModeReadOnly) != ModePlan {
+		t.Error(`"read-only" is the legacy plan spelling`)
 	}
 	for _, mode := range Modes {
 		if !ValidMode(mode) {
@@ -216,17 +219,21 @@ func TestModeInstructionAndNormalization(t *testing.T) {
 }
 
 func TestLegacyModeAliases(t *testing.T) {
-	// The Phase 2 spelling and the removed fourth mode must keep old
-	// configs working, mapping onto ask.
-	for _, legacy := range []string{ModeAskEveryTime, ModeAutoAcceptSafe} {
-		if m := NormalizeMode(legacy); m != ModeAsk {
-			t.Errorf("%s = %q, want ask", legacy, m)
+	// The Phase 2/30 spellings keep old configs working, mapping
+	// onto the three-mode set: read-only onto plan, the ask family
+	// onto build.
+	if m := NormalizeMode(ModeReadOnly); m != ModePlan {
+		t.Errorf("read-only = %q, want plan", m)
+	}
+	for _, legacy := range []string{ModeAsk, ModeAskEveryTime, ModeAutoAcceptSafe} {
+		if m := NormalizeMode(legacy); m != ModeBuild {
+			t.Errorf("%s = %q, want build", legacy, m)
 		}
 	}
 	if ValidMode(ModeAutoAcceptSafe) {
 		t.Error("auto-accept-safe-ops is not a real mode anymore")
 	}
-	if len(Modes) != 4 {
-		t.Errorf("Modes = %v, want exactly four (read-only, plan, ask, full-auto)", Modes)
+	if len(Modes) != 3 {
+		t.Errorf("Modes = %v, want exactly three (plan, build, full-auto)", Modes)
 	}
 }

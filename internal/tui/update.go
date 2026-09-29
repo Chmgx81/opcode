@@ -246,8 +246,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			mode := m.opt.Mode
 			if v.auto {
 				mode = tools.ModeFullAuto
-			} else if mode == tools.ModeReadOnly || mode == tools.ModePlan {
-				mode = tools.ModeAsk
+			} else {
+				mode = tools.ModeBuild
 			}
 			if mode != m.opt.Mode {
 				return m, m.setMode(mode)
@@ -473,7 +473,7 @@ func (m *Model) cycleMode(dir int) tea.Cmd {
 			return m.setMode(next)
 		}
 	}
-	return m.setMode(tools.ModeAsk)
+	return m.setMode(tools.ModeBuild)
 }
 
 // submitInput handles Enter / Alt+Enter. Large pastes and @ mentions

@@ -12,45 +12,50 @@ import (
 // still checks each action's tier per call, so the promises below
 // are enforced per call, not hoped for.
 //
-// Phase 30 adopts Codex's posture — the sandbox is the safety,
-// approval the exception. The modes are look, plan, ask, act:
+// Three modes, Codex's preset triad (Read Only / Default / Full
+// Access) and Claude Code's plan/default/bypass at tilde's scale:
 //
-//   - read-only: read tools run free; every action-tier call asks
-//     the user. The tools are still offered, so the model can
-//     propose a write — the approval dialog is the posture.
-//   - plan: like read-only for actions, plus Draft-Only tools
-//     (present_plan) run free — the mechanical exit from planning.
-//   - ask: what the sandbox bounds runs without prompting —
-//     Landlock-confined shell commands and file writes inside the
-//     same writable roots. Everything that escapes (unsandboxed
-//     shell calls, writes outside the roots, or any action when
-//     Landlock is unavailable) asks.
+//   - plan: research posture. Read tools run free; Draft-Only tools
+//     (present_plan) run free — the mechanical exit from planning;
+//     every action-tier call asks the user. The tools are still
+//     offered, so the model can propose a write — the approval
+//     dialog is the posture.
+//   - build: what the sandbox bounds runs without prompting —
+//     Landlock-confined shell commands, file writes and patches
+//     inside the same writable roots. Everything that escapes
+//     (unsandboxed shell calls, writes outside the roots, web
+//     fetches, or any action when Landlock is unavailable) asks.
 //   - full-auto: everything runs, still logged.
 const (
-	ModeReadOnly = "read-only"
 	ModePlan     = "plan"
-	ModeAsk      = "ask"
+	ModeBuild    = "build"
 	ModeFullAuto = "full-auto"
 
-	// Legacy spellings from earlier phases; NormalizeMode maps both
-	// to ModeAsk. ask-every-time's Phase 2 semantics (prompt on
-	// every action) became ask's bounded-run semantics in Phase 30.
+	// Legacy spellings from earlier phases; NormalizeMode maps them
+	// so every existing config keeps working: Phase 30's read-only
+	// folded into plan (they were the same posture in the gate), and
+	// Phase 30's ask became build.
+	ModeReadOnly       = "read-only"
+	ModeAsk            = "ask"
 	ModeAskEveryTime   = "ask-every-time"
 	ModeAutoAcceptSafe = "auto-accept-safe-ops"
 )
 
-// Modes is the complete set, in display order: look, plan, ask, act.
-var Modes = []string{ModeReadOnly, ModePlan, ModeAsk, ModeFullAuto}
+// Modes is the complete set, in display order: plan, build, act.
+var Modes = []string{ModePlan, ModeBuild, ModeFullAuto}
 
 // NormalizeMode canonicalizes a configured mode name: the legacy
-// ask-every-time and auto-accept-safe-ops spellings map to ask.
-// Anything else unknown stays unknown (and behaves as ask in the
+// read-only spelling maps to plan (the merged research posture),
+// and ask / ask-every-time / auto-accept-safe-ops map to build.
+// Anything else unknown stays unknown (and behaves as build in the
 // policy) rather than being silently coerced to something
 // permissive.
 func NormalizeMode(mode string) string {
 	switch mode {
-	case ModeAskEveryTime, ModeAutoAcceptSafe:
-		return ModeAsk
+	case ModeReadOnly:
+		return ModePlan
+	case ModeAsk, ModeAskEveryTime, ModeAutoAcceptSafe:
+		return ModeBuild
 	}
 	return mode
 }
@@ -60,7 +65,7 @@ func NormalizeMode(mode string) string {
 // callers normalize first (config loading does).
 func ValidMode(mode string) bool {
 	switch mode {
-	case ModeReadOnly, ModePlan, ModeAsk, ModeFullAuto:
+	case ModePlan, ModeBuild, ModeFullAuto:
 		return true
 	}
 	return false
@@ -87,12 +92,10 @@ func ModeAllowsTier(mode string, tier Tier) bool {
 // determines the system prompt).
 func ModeInstruction(mode string) string {
 	switch NormalizeMode(mode) {
-	case ModeReadOnly:
-		return "Permission mode is read-only: read tools run freely. You may propose writes, edits, or shell commands, but each one asks the user for approval before running — propose only what the task truly needs."
 	case ModePlan:
-		return "Permission mode is plan: you cannot change anything yet. Research the codebase with read tools, then present exactly one plan with the present_plan tool — markdown with the goal, concrete steps, and risks — and stop. Wait for the user's decision; do not act before it. Any write or command you call asks the user."
-	case ModeAsk:
-		return "Permission mode is ask: shell commands run sandboxed — their writes are kernel-confined to the working directory, /tmp, and dev caches — and file writes inside those roots run too, both without prompting. Anything that escapes the bound (run_shell with \"sandbox\": false, writes outside those roots) asks the user first."
+		return "Permission mode is plan: research with the read tools (read_file, grep, glob, list_dir) and do not change anything yet — any write, command, or web fetch you call asks the user first. When you understand the task, present exactly one plan with the present_plan tool — markdown with the goal, concrete steps, and risks — and stop. Wait for the user's decision; do not act before it."
+	case ModeBuild:
+		return "Permission mode is build: sandboxed shell commands — writes kernel-confined to the working directory, /tmp, and dev caches — and file writes or patches inside those roots run without prompting. Anything that escapes the bound (run_shell with \"sandbox\": false, writes outside those roots, web fetches) asks the user first."
 	case ModeFullAuto:
 		return "Permission mode is full-auto: tool calls run without prompting and are logged."
 	}
@@ -105,13 +108,13 @@ func ModeInstruction(mode string) string {
 //   - Read-Only and Draft-Only tools are always allowed — running
 //     them cannot change state.
 //   - Action-Allowed tools in full-auto are always allowed.
-//   - Action-Allowed tools in ask mode run without prompting when
+//   - Action-Allowed tools in build mode run without prompting when
 //     the call is bounded (sandbox.Active() Landlock-confined shell
 //     command, or a file write inside the sandbox's writable
 //     roots); escapes prompt.
-//   - read-only and plan prompt for every action-tier call.
+//   - plan prompts for every action-tier call.
 //   - A nil prompt denies: fail closed, never open. Unknown modes
-//     behave as ask — a config typo must not widen permissions.
+//     behave as build — a config typo must not widen permissions.
 func PolicyDecide(mode string, prompt func(tool Tool, args string) bool) func(Tool, string) bool {
 	return func(tool Tool, args string) bool {
 		switch tool.Tier() {
@@ -121,12 +124,12 @@ func PolicyDecide(mode string, prompt func(tool Tool, args string) bool) func(To
 			switch NormalizeMode(mode) {
 			case ModeFullAuto:
 				return true
-			case ModeAsk:
+			case ModeBuild:
 				if boundedAction(tool, args) {
 					return true
 				}
 				return askPrompt(prompt, tool, args)
-			default:
+			default: // plan, unknown
 				return askPrompt(prompt, tool, args)
 			}
 		default:
