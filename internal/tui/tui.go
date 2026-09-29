@@ -182,6 +182,7 @@ const (
 	entrySubagent
 	entryPlan
 	entryReasoning
+	entryDiff
 )
 
 type entry struct {
@@ -385,6 +386,7 @@ var commands = []command{
 	{"/help", "show keys and commands"},
 	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
 	{"/theme", "pick the palette — live preview, esc restores"},
+	{"/diff", "show the working tree's git changes, colored"},
 	{"/help", "show keys and commands"},
 	{"/mode", "show or switch permission mode"},
 	{"/model", "pick or switch the model"},

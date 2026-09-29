@@ -565,6 +565,9 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	case "/theme":
 		m.handleThemeCommand(arg)
 		return nil
+	case "/diff":
+		m.showDiff()
+		return nil
 	}
 
 	if m.working {

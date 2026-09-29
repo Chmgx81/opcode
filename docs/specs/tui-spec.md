@@ -281,6 +281,17 @@ doubles, so entries can be appended freely.
   render cache that embeds the old palette (glamour renderers,
   per-entry markdown, the live stream); committed scrollback keeps
   its original colors — the one stated residual.
+- **`/diff`** (Phase 35): the working tree's git changes in the
+  transcript, colored with the verdict tokens (additions succeed,
+  deletions danger, hunks info, headers chrome). `git diff
+  --no-color HEAD` with a plain-diff fallback for repos with no
+  commits; `git status --porcelain` lists untracked files, which a
+  diff alone hides. Capped at 400 lines with an honest footer.
+  User-invoked and read-only like the `!` shell escape — no model
+  round trip, no permission prompt; output passes `safe.Text`, and
+  git's own C-style quoting makes hostile filenames inert printable
+  text. Every outcome is designed: not-a-repo and clean-tree notes,
+  a missing git binary named.
 - **`/doctor`** (Phase 33): one transcript entry, one line per
   subsystem — version, model/provider, api-key presence (never the
   key), config.json and models.json loader verdicts, the live
@@ -294,6 +305,6 @@ doubles, so entries can be appended freely.
 
 ## 6. Not yet built (the honest list)
 
-1. LaTeX conversion, `/diff`.
+1. LaTeX conversion.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.
