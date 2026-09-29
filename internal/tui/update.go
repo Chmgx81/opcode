@@ -556,6 +556,9 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	case "/mcp":
 		m.listMcp()
 		return nil
+	case "/doctor":
+		m.doctor()
+		return nil
 	}
 
 	if m.working {

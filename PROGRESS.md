@@ -2182,3 +2182,55 @@ unit tests cover every sequence form, the UTF-8 continuation-byte
 trap, unterminated sequences, and integration tests feed poisoned
 payloads through handleEvent, the tool line, the stream, and
 headless text mode.
+
+# Phase 33 — /doctor (status: complete, live-verified)
+
+Spec: [docs/specs/phase33-doctor.md](docs/specs/phase33-doctor.md)
+(The adoption doc's #7: "the first thing to suggest to a user whose
+setup broke.")
+
+## Built
+
+- `internal/tui/doctor.go` — `/doctor` renders one transcript entry,
+  one row per subsystem, each with a verdict glyph (✓ ok, ⚠ attention,
+  ✗ broken, · neutral fact) and the next step when something is
+  wrong: version, model + provider + base URL, api-key presence
+  (never the key itself — the test asserts the key bytes never reach
+  the report), config.json and models.json through the same loaders
+  the startup path uses, the live sandbox posture (active with the
+  Landlock ABI, off with the config key that turns it on, or
+  unavailable on this platform), project trust (trusted / untrusted /
+  changed with the changed-file count), skills and MCP counts, the
+  audit log's path and size (or the honest "created on the first
+  gated action"), and the terminal's color profile with TERM,
+  NO_COLOR, and the plain posture.
+- `GlyphInfo` ("·" / "-") added to the shared glyph vocabulary so
+  neutral rows degrade in the plain posture like every other glyph.
+- Palette entry and command dispatch; no new Options fields — the
+  checks read what was already wired (KeyFor, TildeHome, AuditPath,
+  Skills, MCPNames, Cwd).
+
+## Design choices
+
+- Doctor presents, never repairs: no writes, no migrations, no
+  network probe (a real API call costs money; a broken endpoint
+  already fails loudly at startup).
+- A nil KeyFor (headless wiring) reports "resolution not wired" as a
+  dim fact, not an error.
+- Missing config.json and models.json are the normal first-run case
+  and read as neutral facts, not warnings.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages; doctor tests cover the
+  healthy report (every row present, key bytes absent), the missing
+  key with its /login next step, the unwired-key posture, a malformed
+  config.json (verbatim error, the report survives), the empty-model
+  failure, and the not-yet-created audit log.
+- **PTY live**: /doctor through the palette in a real session — the
+  report rendered with live values: "model fixture/mini via fixture",
+  key resolved, "config.json — mode build", "sandbox: landlock v10",
+  "project trust: trusted", and the audit log honestly reading
+  "created on the first gated action" (no gated action ran). Clean
+  /exit, session saved.
+

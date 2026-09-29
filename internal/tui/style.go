@@ -130,6 +130,7 @@ var (
 	GlyphOK      = "✓" // success notes
 	GlyphError   = "✗" // errors
 	GlyphWarn    = "⚠" // warnings
+	GlyphInfo    = "·" // neutral facts (doctor rows)
 	GlyphDeleted = "−" // diff: removed
 	GlyphAdded   = "+" // diff: added
 	GlyphDoing   = "◐" // todo: the item in progress
@@ -153,7 +154,7 @@ func adaptGlyphs(plain bool) {
 	if !plain {
 		GlyphPrompt, GlyphUser, GlyphCaret = "❯", "❯", "❯"
 		GlyphBullet, GlyphBranch = "●", "⎿"
-		GlyphOK, GlyphError, GlyphWarn = "✓", "✗", "⚠"
+		GlyphOK, GlyphError, GlyphWarn, GlyphInfo = "✓", "✗", "⚠", "·"
 		GlyphDeleted, GlyphAdded = "−", "+"
 		GlyphDoing, GlyphTodoOn, GlyphTodoOff = "◐", "☑", "☐"
 		GlyphQueued, GlyphThought = "⏵", "△"
@@ -163,7 +164,7 @@ func adaptGlyphs(plain bool) {
 	}
 	GlyphPrompt, GlyphUser, GlyphCaret = ">", ">", ">"
 	GlyphBullet, GlyphBranch = "*", "\\-"
-	GlyphOK, GlyphError, GlyphWarn = "[ok]", "[x]", "[!]"
+	GlyphOK, GlyphError, GlyphWarn, GlyphInfo = "[ok]", "[x]", "[!]", "-"
 	GlyphDeleted, GlyphAdded = "-", "+"
 	GlyphDoing, GlyphTodoOn, GlyphTodoOff = "@", "[x]", "[ ]"
 	GlyphQueued, GlyphThought = ">", "^"
