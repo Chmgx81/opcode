@@ -2569,3 +2569,41 @@ Spec: [docs/specs/phase39-effort-knob.md](docs/specs/phase39-effort-knob.md)
   the `◐ medium` footer segment, and turn 2's wire carried
   "medium"; alt+, moved the footer to `◐ low` and turn 3's wire
   carried "low". The toast, the footer, and the wire agree.
+
+# Phase 40 — syntax-highlight guardrails (status: complete, verified)
+
+Spec: [docs/specs/phase40-highlight-guardrails.md](docs/specs/phase40-highlight-guardrails.md)
+(The adoption doc's small-gems list, closed out.)
+
+## Built
+
+- `highlightLine` now refuses lines over 4 KiB before chroma ever
+  sees them — the lexer is chosen from a model-provided file path,
+  so the highlight input is untrusted, and rendering must never be
+  hostage to a parser. One check at the function every highlight
+  path funnels through (write_file results, edit_file hunks, diff
+  source lines); the fallback returns the line unchanged, not
+  truncated.
+
+## The rest of the small-gems list, with dispositions
+
+- **Sanitized terminal title** — already adopted (sanitizeTitle
+  strips control and bidi characters and caps at 240 runes).
+- **Turn diff budget** — no-op for tilde: edit results render the
+  tool's before/after strings directly; there is no diff
+  computation to cap.
+- **One-shot screen-reader probe with a persisted marker** —
+  skipped: tilde's detection reads environment variables, no
+  terminal query; nothing expensive to remember.
+- **Session-log recording behind an env var** — deferred: a
+  development harness, not a product surface.
+- **Session ids on events** — deferred: a field nothing consumes
+  yet is padding; it becomes worth adding the day an async UI bug
+  needs one.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. The cap test pins:
+  a small line highlights (SGR present under a color profile), a
+  line one byte over 4 KiB renders byte-identical with no SGR
+  anywhere, and the boundary is the cap itself.
