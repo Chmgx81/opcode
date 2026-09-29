@@ -2710,3 +2710,16 @@ submitInput and turnEnded.)
   value AND the observable effect; the full pre-existing TUI
   suite (steer, queue, start, palette, shell escape) passed
   unchanged through the wrapper on the first run.
+
+## v0.3.0 released (2026-09-29)
+
+Everything since v0.2.1, shipped: the display-boundary sanitizer,
+/doctor, /theme, /diff, LaTeX math as Unicode, precise approval
+scopes, readable sandbox denials (plus the failing-tool output
+fixes), the reasoning-effort knob, highlight guardrails,
+growth-based compaction with the injection rule, and the typed
+input decision. CI green on the bump commit; the release pipeline
+built all five platform binaries (1m14s); the raw.githubusercontent
+install one-liner resolved v0.3.0 in a clean temp dir and the
+installed release binary prints "tilde v0.3.0" — the -X
+main.version injection verified in the real pipeline.
