@@ -200,6 +200,7 @@ store.
 | Ctrl+J | newline |
 | Alt+Enter | queue a follow-up |
 | Ctrl+R | expand / collapse results & thinking (live region only — committed text is frozen) |
+| Ctrl+O | transcript pager — the whole conversation, results expanded, ↑↓/pgup/pgdn scroll |
 | Ctrl+V | attach the clipboard image (png/jpeg/gif/webp, sniffed) |
 | Ctrl+E | edit the draft in `$VISUAL`/`$EDITOR` |
 | Tab / Shift+Tab | cycle permission mode |
@@ -231,6 +232,15 @@ doubles, so entries can be appended freely.
   parts to OpenAI-compatible and Anthropic models.
 - **Reasoning** streams into a dim `△` tail, then collapses to
   one expandable line. Never stored in history.
+- **Type-ahead guard**: for 400 ms after a dialog opens, keystrokes
+  are swallowed — a fast typist's stray "y" must not answer an
+  approval they never read (Codex blocks input the same way).
+- **Plain posture** (`--plain`, `TILDE_PLAIN`, or a detected screen
+  reader): every glyph degrades to ASCII (`✓` → `[ok]`, `⎿` → `\-`,
+  modes `○ ⏸ › ⏵⏵` → `o = > >>`), animations off; no glyph
+  disappears. The window title is sanitized (control and bidi
+  characters stripped, 240-rune cap) — OSC titles are an untrusted
+  text surface.
 - **Prompt history** (↑ recall) persists to `history.jsonl` under
   tilde's home (global, 500 entries, consecutive duplicates
   collapse, 0600). Login keys never enter it. The stored form is
@@ -254,9 +264,6 @@ doubles, so entries can be appended freely.
 
 1. **`safe/` sanitizer** — typed stripping of escape sequences
    from untrusted text.
-2. **Transcript view** (`Ctrl+O` full-detail pager).
-3. **Type-ahead protection** on dialogs (~400 ms input guard).
-4. **ASCII glyph fallbacks** and a `--plain` screen-reader mode.
-5. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
+2. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.

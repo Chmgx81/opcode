@@ -52,6 +52,7 @@ func run() error {
 	resume := flag.String("resume", "", "resume the session at this path")
 	cont := flag.Bool("continue", false, "resume the latest session")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	plain := flag.Bool("plain", false, "ASCII glyphs and no animation — the screen-reader posture")
 	showHelp := flag.Bool("help", false, "show usage and exit")
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, `tilde — a terminal coding agent
@@ -271,10 +272,20 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		resumeNote = fmt.Sprintf("resumed session %s (%d messages)", filepath.Base(path), len(s.History()))
 	}
 
-	// Screen-reader posture (Codex borrow): a detected reader reduces
-	// motion for the session when the user has not chosen explicitly;
-	// the config key always wins, and nothing is persisted silently.
-	if cfg.Animations == nil && config.ScreenReaderActive() {
+	// Screen-reader posture (Codex borrow): a detected reader — or
+	// --plain, or TILDE_PLAIN — reduces motion for the session when
+	// the user has not chosen explicitly; the config key always
+	// wins, and nothing is persisted silently.
+	plainMode := *plain || os.Getenv("TILDE_PLAIN") != "" || config.ScreenReaderActive()
+	if plainMode {
+		adapted := "--plain posture: ASCII glyphs"
+		if cfg.Animations == nil {
+			off := false
+			cfg.Animations = &off
+			adapted += ", animations off"
+		}
+		startupNotes = append(startupNotes, adapted)
+	} else if cfg.Animations == nil && config.ScreenReaderActive() {
 		off := false
 		cfg.Animations = &off
 		startupNotes = append(startupNotes, "screen reader detected — animations off (set \"animations\": true to override)")
@@ -417,6 +428,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		API:          providerCfg.API,
 		AuditPath:    auditPath,
 		Animations:   cfg.Animations == nil || *cfg.Animations,
+		Plain:        plainMode,
 		Skills:       &skillManager,
 		MCPNames: func() []string {
 			var names []string

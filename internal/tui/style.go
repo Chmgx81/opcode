@@ -115,10 +115,11 @@ func refreshTokens() {
 }
 
 // Glyph vocabulary — the spec's Section 2.4. A small, fixed set so
-// the timeline reads as a system rather than an assortment. (The
-// ASCII fallback set is a listed follow-up; today the Unicode forms
-// are the product's minimum requirement.)
-const (
+// the timeline reads as a system rather than an assortment. The
+// defaults are the Unicode forms; adaptGlyphs swaps in ASCII for
+// the plain posture (--plain, TILDE_PLAIN, or a detected screen
+// reader) so every glyph degrades, none disappears.
+var (
 	GlyphBrand   = "~" // the product's own name: header and composer prompt
 	GlyphShell   = "!" // the composer's shell-mode prompt
 	GlyphPrompt  = "❯" // composer prompt, picker filter, selection
@@ -144,6 +145,31 @@ const (
 	GlyphModeFullAuto = "⏵⏵" // full-auto: everything proceeds
 	GlyphThought      = "△"  // reasoning: the model's thinking block
 )
+
+// adaptGlyphs installs the vocabulary for the posture: Unicode by
+// default, ASCII when plain. Called once from Run; both directions
+// are explicit so the function is idempotent.
+func adaptGlyphs(plain bool) {
+	if !plain {
+		GlyphPrompt, GlyphUser, GlyphCaret = "❯", "❯", "❯"
+		GlyphBullet, GlyphBranch = "●", "⎿"
+		GlyphOK, GlyphError, GlyphWarn = "✓", "✗", "⚠"
+		GlyphDeleted, GlyphAdded = "−", "+"
+		GlyphDoing, GlyphTodoOn, GlyphTodoOff = "◐", "☑", "☐"
+		GlyphQueued, GlyphThought = "⏵", "△"
+		GlyphModeReadOnly, GlyphModePlan = "○", "⏸"
+		GlyphModeAsk, GlyphModeFullAuto = "›", "⏵⏵"
+		return
+	}
+	GlyphPrompt, GlyphUser, GlyphCaret = ">", ">", ">"
+	GlyphBullet, GlyphBranch = "*", "\\-"
+	GlyphOK, GlyphError, GlyphWarn = "[ok]", "[x]", "[!]"
+	GlyphDeleted, GlyphAdded = "-", "+"
+	GlyphDoing, GlyphTodoOn, GlyphTodoOff = "@", "[x]", "[ ]"
+	GlyphQueued, GlyphThought = ">", "^"
+	GlyphModeReadOnly, GlyphModePlan = "o", "="
+	GlyphModeAsk, GlyphModeFullAuto = ">", ">>"
+}
 
 // Spacing scale — the rhythm between blocks.
 const (

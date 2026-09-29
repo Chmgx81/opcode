@@ -125,6 +125,7 @@ actually confine.
 | **Ctrl+C / Ctrl+D** | press twice to exit — the first press interrupts a running turn |
 | **Tab** | cycle permission mode |
 | **Ctrl+R** | expand / collapse tool results & thinking |
+| **Ctrl+O** | transcript — scroll the whole conversation, results expanded |
 | **?** | everything else |
 
 `/model` switches models at runtime. `/models` browses every
@@ -138,6 +139,12 @@ model round trip. Big pastes collapse to a token.
 Exits are graceful: the first Ctrl+C interrupts and hints, the second
 quits, and tilde saves the session and says so on the way out —
 `~ tilde — session saved · resume it with /sessions`.
+
+Accessibility: for 400 ms after any dialog opens, keystrokes are
+swallowed (a fast typist cannot accidentally approve), and
+`tilde --plain` — or a detected screen reader — swaps every glyph for
+its ASCII form (`✓` → `[ok]`) with animation off. The window title is
+sanitized against control and bidi-character injection.
 
 ## Beyond the loop
 

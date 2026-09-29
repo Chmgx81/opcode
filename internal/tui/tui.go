@@ -59,6 +59,13 @@ type Options struct {
 	// posture, Codex's MotionMode at tilde's scale.
 	Animations bool
 
+	// Plain is the ASCII/screen-reader posture: --plain,
+	// TILDE_PLAIN, or a detected screen reader swap the glyph
+	// vocabulary for ASCII (adaptGlyphs). Color still follows the
+	// theme and NO_COLOR; the point is that no glyph disappears,
+	// every one degrades.
+	Plain bool
+
 	// Skills and MCP managers back the /skills and /mcp commands.
 	Skills   *skills.Manager
 	MCPNames func() []string // connected server names + tool counts
@@ -89,6 +96,7 @@ type TrustDecision struct {
 	ProjectDir string
 	Approved   []string
 	OnAnswer   func(trusted bool)
+	OpenedAt   time.Time // the type-ahead guard, as above
 }
 
 // permRequest is one pending permission decision. sel is the
@@ -96,12 +104,13 @@ type TrustDecision struct {
 // default, per spec 9.2); scope is option 2's literal "don't ask
 // again" grant, computed when the request opened.
 type permRequest struct {
-	tool  string
-	tier  tools.Tier
-	args  string
-	scope string
-	sel   int
-	reply chan bool
+	tool     string
+	tier     tools.Tier
+	args     string
+	scope    string
+	sel      int
+	openedAt time.Time // the type-ahead guard: keys inside typeAheadGuard cannot answer
+	reply    chan bool
 }
 
 type permRequestMsg struct{ req *permRequest }
@@ -109,8 +118,9 @@ type permRequestMsg struct{ req *permRequest }
 // planRequest is one pending plan decision: the model presented a
 // plan (present_plan tool); the reply carries the verdict.
 type planRequest struct {
-	plan  string
-	reply chan planVerdict
+	plan     string
+	openedAt time.Time // the type-ahead guard, as above
+	reply    chan planVerdict
 }
 
 type planVerdict struct {
@@ -289,6 +299,13 @@ type Model struct {
 	// the reference apps' dynamic microcopy.
 	workingVerb string
 
+	// The ctrl+O transcript pager: an overlay over the whole
+	// conversation (committed and live, results expanded), scrolled
+	// by transcriptTop. Navigation, not history — the pager reads
+	// what scrolled away.
+	transcriptOpen bool
+	transcriptTop  int
+
 	// quitArmedAt is when the first ctrl+c (or ctrl+d) armed the
 	// exit — Codex's double-press quit: only a second press inside
 	// quitWindow (update.go) exits; the first just hints (and
@@ -437,7 +454,12 @@ func New(opt Options) *Model {
 // directory, like the reference apps' window titles.
 func (m *Model) Init() tea.Cmd {
 	if m.opt.Cwd != "" {
-		return tea.Batch(textarea.Blink, tea.SetWindowTitle("tilde — "+m.opt.Cwd))
+		// OSC titles are an untrusted-text injection surface
+		// (control and bidi characters can hijack the terminal
+		// window title); the cwd is user-controlled text, so it
+		// is sanitized before it reaches the terminal.
+		return tea.Batch(textarea.Blink,
+			tea.SetWindowTitle(sanitizeTitle("tilde — "+m.opt.Cwd)))
 	}
 	return textarea.Blink
 }
@@ -482,6 +504,10 @@ func Run(m *Model) error {
 		}
 	}
 	adaptTheme(dark)
+	adaptGlyphs(m.opt.Plain)
+	// The textarea read the glyph at construction, before the plain
+	// vocabulary was installed — re-read it now that it is final.
+	m.composer.Prompt = GlyphPrompt + " "
 
 	// Move to top: clear the visible screen and home the cursor
 	// before the program takes over, so the frame always starts at
