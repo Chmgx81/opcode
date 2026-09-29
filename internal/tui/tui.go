@@ -616,9 +616,13 @@ func (m *Model) sessionGrants(tool, args string) bool {
 	return false
 }
 
-// alwaysScope computes option 2's literal grant: the shell command's
-// program + subcommand as a prefix rule (displayed "<prefix>:*"),
-// or the tool name for everything else.
+// alwaysScope computes option 2's literal grant: for a plain
+// program+subcommand, that prefix displayed "<scope>:*". When the
+// second field is a flag, the grant must carry the whole command
+// verbatim — the naive two-field rule would approve every other
+// value of that flag (a grant from "git -C /tmp push" must not
+// cover "git -C /etc reset --hard"), and exactly what the user read
+// on the dialog is the safe width.
 func alwaysScope(tool, args string) string {
 	if tool != "bash" {
 		return tool
@@ -633,10 +637,17 @@ func alwaysScope(tool, args string) string {
 	if len(fields) == 0 {
 		return tool
 	}
-	if len(fields) > 1 {
-		return fields[0] + " " + fields[1] + ":*"
+	end := len(fields)
+	if len(fields) == 1 || !strings.HasPrefix(fields[1], "-") {
+		// Plain form: program + subcommand covers its longer forms
+		// ("cargo build" covers "cargo build --release").
+		if len(fields) > 1 {
+			end = 2
+		} else {
+			end = 1
+		}
 	}
-	return fields[0] + ":*"
+	return strings.Join(fields[:end], " ") + ":*"
 }
 
 // prefixRule is the stored form of a shell always-allow: the program

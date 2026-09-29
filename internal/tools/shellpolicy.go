@@ -17,12 +17,41 @@ type ShellAllowlist struct {
 	prefixes [][]string
 }
 
+// flagSynonyms are long/short flag pairs that mean the same thing
+// across every major tool that has them. Applied to both stored
+// grants and checked commands at match time, so a grant written one
+// way matches its synonym written the other. Deliberately tiny: a
+// pair that differs in ANY common tool would widen a grant past what
+// the user read (--all/-a is excluded — grep -a is --text, not
+// --all).
+var flagSynonyms = map[string]string{
+	"--yes":       "-y",
+	"--quiet":     "-q",
+	"--force":     "-f",
+	"--verbose":   "-v",
+	"--recursive": "-r",
+}
+
+// canonicalTokens normalizes flag tokens through the synonym table.
+// The same pass runs on grants and on checked commands, so both
+// sides agree; everything else stays verbatim.
+func canonicalTokens(toks []string) []string {
+	out := make([]string, len(toks))
+	for i, t := range toks {
+		if s, ok := flagSynonyms[t]; ok {
+			t = s
+		}
+		out[i] = t
+	}
+	return out
+}
+
 // NewShellAllowlist tokenizes each configured prefix. Prefixes that do
 // not tokenize cleanly are dropped, not guessed at.
 func NewShellAllowlist(raw []string) *ShellAllowlist {
 	a := &ShellAllowlist{}
 	for _, p := range raw {
-		if toks := shellWords(p); len(toks) > 0 {
+		if toks := canonicalTokens(shellWords(p)); len(toks) > 0 {
 			a.prefixes = append(a.prefixes, toks)
 		}
 	}
@@ -40,12 +69,14 @@ func NewShellAllowlist(raw []string) *ShellAllowlist {
 // with two innocent tokens.
 const unsafeShellChars = ";|&$`<>()"
 
-// Allows reports whether command matches any configured prefix.
+// Allows reports whether command matches any configured prefix. Both
+// sides pass the synonym table, so a grant stored one way matches its
+// flags written the other.
 func (a *ShellAllowlist) Allows(command string) bool {
 	if a == nil {
 		return false
 	}
-	toks := shellWords(command)
+	toks := canonicalTokens(shellWords(command))
 	if len(toks) == 0 {
 		return false
 	}

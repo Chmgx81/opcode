@@ -2424,3 +2424,49 @@ Every item the tui-spec ever deferred has now landed as its own
 phase, verified live: safe sanitization, /doctor, the themes
 picker, /diff, and LaTeX conversion. The spec's "Not yet built"
 section says so.
+
+# Phase 37 — precise approval scopes (status: complete, live-verified)
+
+Spec: [docs/specs/phase37-grant-scopes.md](docs/specs/phase37-grant-scopes.md)
+(The adoption doc's #1, canonicalized approvals.)
+
+## Built
+
+- **The over-broad grant, closed.** alwaysScope built the
+  "don't ask again" rule from the command's first two whitespace
+  fields — so a flag in second position produced a grant that
+  approved every other value of that flag: approving
+  `git -C /tmp push` granted `git -C:*`, which auto-ran
+  `git -C /etc reset --hard`. Now the grant is never wider than
+  the dialog shows: a plain program+subcommand stays a two-token
+  prefix (`cargo build:*` covers `cargo build --release`); a flag
+  in second position carries the whole command verbatim
+  (`git -C /tmp push:*` matches exactly that and its longer
+  forms).
+- **Flag-synonym canonicalization** (`tools.ShellAllowlist`): a
+  curated table of genuinely universal long/short pairs
+  (--yes/-y, --quiet/-q, --force/-f, --verbose/-v, --recursive/-r)
+  runs on both stored grants and checked commands, so a grant
+  matches its flags written either way. Deliberately tiny: pairs
+  that differ across tools do not merge (--all/-a is excluded —
+  grep -a is --text, not --all); a synonym that merged two
+  distinct flags would widen a grant past what the user read.
+- Fail-closed matching unchanged: metacharacters deny,
+  unterminated quotes deny, untokenizable grants are dropped.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. New tests pin the
+  security property directly: a grant from `git -C /tmp push`
+  does not match `git -C /etc reset --hard` (the old code's hole)
+  or `git -C /tmp status`, while still covering the approved
+  command and its longer forms; synonyms match both directions;
+  non-synonyms (--all/-a) do not merge; fail-closed unchanged.
+- **PTY live**: a fixture asked for `git -C <proj> status` three
+  times — approved with "always", the dialog showing the precise
+  `git -C <proj> status:*` scope and the toast naming it; the
+  exact same command re-ran with NO second prompt (the grant
+  covered it); `git -C /etc status` prompted again (the grant
+  did not widen). The sandboxed command auto-ran without any
+  prompt in build mode, as designed — the dialogs are the
+  unsandboxed escape, which is what the fixture exercised.
