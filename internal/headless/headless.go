@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/safe"
 )
 
 // Options for a one-shot run.
@@ -38,26 +39,33 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 	events := orch.Send(ctx, prompt)
 	var err error
 	for ev := range events {
+		// Text mode prints untrusted bytes straight to the terminal,
+		// so they are sanitized here. JSON mode does not need it:
+		// encoding/json escapes every control character, so a JSON
+		// line can never carry a live sequence — downstream tools
+		// get the honest bytes.
+		text, args, result := safe.Text(ev.Text),
+			safe.Text(ev.ToolCall.Arguments), safe.Text(ev.ToolResult)
 		switch ev.Kind {
 		case orchestrator.EventText:
 			if opt.JSON {
 				enc.Encode(map[string]any{"kind": "text", "text": ev.Text})
 			} else {
-				fmt.Fprint(w, ev.Text)
+				fmt.Fprint(w, text)
 			}
 		case orchestrator.EventToolStart:
 			if opt.JSON {
 				enc.Encode(map[string]any{
 					"kind": "tool", "tool": ev.ToolCall.Name, "args": ev.ToolCall.Arguments})
 			} else {
-				fmt.Fprintf(w, "\n[tool] %s %s\n", ev.ToolCall.Name, ev.ToolCall.Arguments)
+				fmt.Fprintf(w, "\n[tool] %s %s\n", ev.ToolCall.Name, args)
 			}
 		case orchestrator.EventToolResult:
 			if opt.JSON {
 				enc.Encode(map[string]any{
 					"kind": "tool_result", "tool": ev.ToolCall.Name, "result": ev.ToolResult})
 			} else {
-				fmt.Fprintf(w, "[result] %s\n", oneLine(ev.ToolResult))
+				fmt.Fprintf(w, "[result] %s\n", oneLine(result))
 			}
 		case orchestrator.EventUsage:
 			if opt.JSON {

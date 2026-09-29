@@ -2139,3 +2139,46 @@ carries.
 Verified live in a PTY: the composer's ! shell escape ran
 `echo bash-runs-$(printf x)y` through the tool and printed
 bash-runs-xy; full suite green across all 12 packages.
+
+# The safe/ sanitizer (status: complete, live-verified)
+
+The first item off the honest list. Untrusted text — file contents,
+shell output, fetched pages, model output, tool arguments — flowed
+into the display raw. A file containing `ESC]0;pwned BEL` could
+retitle the window; `ESC[2J` could clear it; `ESC[?1h` could remap
+the keyboard. Tool results were data, but the terminal executes what
+it is handed.
+
+Built `internal/safe`: `safe.Text` scans by rune (UTF-8 survives
+untouched — an em-dash encodes 0x80 as a continuation byte, and
+byte-level C1 stripping would corrupt it) and strips every
+ESC-initiated sequence with a typed parser: CSI up to its 0x40-0x7E
+final byte, OSC/DCS/SOS/PM/APC to BEL or ST, the nF intermediates
+(`ESC (B`), and the two-rune Fe/Fs forms — plus C0 minus newline and
+tab, DEL, and the C1 runes some terminals execute as 8-bit controls.
+An unterminated sequence is consumed, never passed on: the failure
+direction is display fidelity, never terminal control. An OSC that
+never sees its BEL ends at the next newline or bare ESC instead of
+swallowing the rest of the file.
+
+The boundary is the display, not the context. The orchestrator's
+copy — what the model reasons over — keeps the honest bytes;
+sanitizing there would corrupt file contents the model is reading.
+Wired at the TUI event choke point (stream text, reasoning, tool
+arguments, results, subagent output, error text), the permission
+dialog's display copy of args (grant matching and execution keep
+raw), the plan dialog, and headless text mode. JSON headless output
+is exempt: encoding/json escapes every control character, so
+downstream tools get honest data and a JSON line can never carry a
+live sequence.
+
+Verified live in a PTY: a fixture model read a poisoned file
+(title grab, screen clear, keyboard remap, lone trailing ESC) and
+the rendered result line showed the readable text "prepostend" —
+the 29 escape bytes in the capture were all tilde's own UI styling
+and cursor addressing, "pwned" never reached the terminal, and the
+window title survived. Full suite green across all 13 packages;
+unit tests cover every sequence form, the UTF-8 continuation-byte
+trap, unterminated sequences, and integration tests feed poisoned
+payloads through handleEvent, the tool line, the stream, and
+headless text mode.

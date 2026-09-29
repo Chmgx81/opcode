@@ -249,6 +249,19 @@ doubles, so entries can be appended freely.
   mentions stay raw and re-read fresh at submit; a paste whose
   expansion exceeds ~4 KB keeps the typed token, visibly dead on
   recall, rather than bloating the file.
+- **Untrusted text is sanitized at the display boundary**
+  (`internal/safe`, Phase 32): everything the model or a tool
+  produced — streamed text, reasoning, tool arguments, results,
+  subagent output, plan and approval dialog bodies, error text,
+  headless text-mode lines — passes `safe.Text` before it can reach
+  the terminal. A typed parser strips CSI/OSC/DCS/SOS/PM/APC and the
+  intermediate and two-rune escape forms, plus C0 (except `\n`,
+  `\t`), DEL, and C1 runes; scanning is by rune so UTF-8 survives
+  intact. Unterminated sequences never leak bytes. What the model
+  sees in its own context is untouched — the boundary is the
+  display, not the context. JSON headless output is exempt
+  (`encoding/json` escapes control characters; downstream tools get
+  the honest bytes).
 - **Errors** always read as the provider's message, never a raw
   JSON dump; every error names the next step.
 - **Sandbox** (Linux): shell writes confined to the project dir,
@@ -262,8 +275,6 @@ doubles, so entries can be appended freely.
 
 ## 6. Not yet built (the honest list)
 
-1. **`safe/` sanitizer** — typed stripping of escape sequences
-   from untrusted text.
-2. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
+1. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.
