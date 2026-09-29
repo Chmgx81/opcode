@@ -2356,3 +2356,71 @@ Spec: [docs/specs/phase35-diff.md](docs/specs/phase35-diff.md)
   line in danger, the added line in success, the `@@` hunk in info,
   and "1 untracked: fresh.txt" as a dim row. The only BEL in the
   capture is tilde's own window-title OSC. Clean /exit.
+
+# Phase 36 — LaTeX conversion (status: complete, live-verified)
+
+Spec: [docs/specs/phase36-latex.md](docs/specs/phase36-latex.md)
+(The honest list's last item.)
+
+## Built
+
+- `internal/tui/latex.go` — assistant math converts to Unicode at
+  the display boundary. Applied at the top of `renderMarkdown`, the
+  one choke point behind finished entries, the in-flight stream,
+  and plan bodies, so every markdown surface converts and the
+  model's context keeps the raw LaTeX.
+- Delimiters: `\(...\)` and `\[...\]` and `$$...$$` always convert.
+  Single `$...$` converts only when the content carries a math
+  signal (`\`, `^`, or `_`), has no leading/trailing space, and no
+  backtick — so "costs $5 and $10" and "run $HOME and $PATH" are
+  byte-identical after conversion. Unclosed delimiters stay raw:
+  a half-streamed region renders raw until its close lands, and
+  the failure direction is fidelity, never corruption.
+- `mathToText`: greek letters, relations, arrows, big operators,
+  set notation from a curated symbol table; `\frac` flattens with
+  precedence-preserving parens (only a genuinely compound side —
+  an operator, or long enough to read as a product — gets them;
+  `aᵢ` is one symbol); `\sqrt` takes the radical; super- and
+  subscripts map to Unicode when every character has a form, else
+  keep the readable `^(...)`/`_(...)` fallback; script arguments
+  convert their commands first (`x^{\alpha}` maps); `\text`-family
+  and `\mathbb` handled; unknown commands degrade to their bare
+  name instead of vanishing; group braces drop; `~` becomes a
+  space.
+- Fenced code blocks are skipped line by line, and backtick spans
+  are skipped like code — dollars and backslashes inside code are
+  literal, not math.
+
+## Found and fixed during verification
+
+- Byte-vs-rune traps caught by the tests: the super/subscript
+  glyphs are multi-byte (the maps are rune-keyed), and `frac`'s
+  compound test was byte-length — `aᵢ` (2 runes after conversion)
+  got parenthesized as if compound. Now rune-counted and
+  operator-aware.
+- Mid-stream frames legitimately show raw markup until a region's
+  closing delimiter arrives; the frozen streaming scrollback keeps
+  those frames (same as every streaming artifact), while the
+  final frame converts everything.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. Table-driven tests
+  cover every construct, the degradations, and the anti-cases
+  (currency, shell variables, backtick spans, fenced code,
+  unclosed delimiters); a byte-identical plain-text test proves
+  the converter is invisible when unused; an integration test
+  proves renderMarkdown carries the conversion.
+- **PTY live**: a fixture answer carrying `$\alpha + \beta^2$`,
+  `$$\sum_{i=1}^{n} \frac{a_i}{b_i} \to \infty$$`, and
+  `$\sqrt{2} \approx 1.41$` rendered as "α + β²", "∑ᵢ₌₁ⁿ aᵢ/bᵢ → ∞",
+  and "√2 ≈ 1.41" in the final frame — while the same answer's
+  "$HOME and $PATH" and "$5 to $10" stayed raw. No LaTeX markup in
+  the final frame.
+
+## The honest list is empty
+
+Every item the tui-spec ever deferred has now landed as its own
+phase, verified live: safe sanitization, /doctor, the themes
+picker, /diff, and LaTeX conversion. The spec's "Not yet built"
+section says so.

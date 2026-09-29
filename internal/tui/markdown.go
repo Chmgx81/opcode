@@ -138,8 +138,10 @@ func mdRenderer(width int) (*glamour.TermRenderer, error) {
 
 // renderMarkdown renders one finished assistant message. Any glamour
 // failure falls back to the plain renderer — a styling problem must
-// never cost content.
+// never cost content. LaTeX math converts to Unicode first (Phase
+// 36): the reader sees α, not \alpha.
 func renderMarkdown(text string, width int) []string {
+	text = convertMath(text)
 	r, err := mdRenderer(maxInt(width-4, 20))
 	if err != nil {
 		return wrapAll(text, width)

@@ -281,6 +281,21 @@ doubles, so entries can be appended freely.
   render cache that embeds the old palette (glamour renderers,
   per-entry markdown, the live stream); committed scrollback keeps
   its original colors — the one stated residual.
+- **LaTeX math converts to Unicode** (Phase 36, `internal/tui/latex.go`):
+  assistant math renders as readable text — α, not `\alpha`. Applied
+  at the renderMarkdown choke point, so finished entries, the
+  in-flight stream, and plan bodies all convert. `\(...\)`,
+  `\[...\]`, and `$$...$$` always convert; single `$...$` converts
+  only when the content carries a math signal (`\`, `^`, `_`), so
+  currency and shell variables survive byte for byte. Fenced code
+  blocks and backtick spans are skipped; unclosed delimiters stay
+  raw (a half-arrived stream region renders raw until its close
+  lands). Fractions flatten with precedence-preserving parens,
+  roots take the radical, super/subscripts map to Unicode when
+  every character has a form (else the readable `^(...)` fallback),
+  and unknown commands degrade to their bare name instead of
+  vanishing. The model's context keeps the raw LaTeX — display
+  only.
 - **`/diff`** (Phase 35): the working tree's git changes in the
   transcript, colored with the verdict tokens (additions succeed,
   deletions danger, hunks info, headers chrome). `git diff
@@ -305,6 +320,7 @@ doubles, so entries can be appended freely.
 
 ## 6. Not yet built (the honest list)
 
-1. LaTeX conversion.
+Nothing. Every deferred item has landed as its own phase, verified
+live, logged in PROGRESS.md.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.
