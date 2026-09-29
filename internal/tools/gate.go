@@ -79,9 +79,9 @@ func (l *AuditLog) record(e auditEntry) error {
 }
 
 // Gate is the single permission decision point for every tool call
-// (Section 3.6). Decide says allow/deny; Phase 0's implementation always
-// allows — the point of building the gate now is that logging and the
-// tier plumbing exist before the modes arrive in Phase 2.
+// (Section 3.6): Decide says allow/deny, and every call is audited
+// with its tier. A nil Decide allows everything (the test/CI
+// posture); production wires PolicyDecide.
 type Gate struct {
 	// Decide returns true to allow the call. Never nil.
 	Decide func(tool Tool, args string) bool

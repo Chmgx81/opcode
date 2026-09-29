@@ -66,6 +66,7 @@ Flags:
   --json         headless: emit one JSON event object per line
   --resume PATH  resume the session at this path
   --continue     resume the latest session
+  --plain        ASCII glyphs and no animation (screen-reader posture)
   --trust        pre-approve the project's executable surface (CI posture)
   --version      print the version and exit
   --help         show this help and exit
@@ -230,9 +231,8 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 
 	// Subagents (Section 3.3): another orchestrator instance per
 	// spawn, same provider and gate (same trust boundary), narrower
-	// prompt and tool subset. The emitter is settable so the TUI —
-	// which does not exist yet — can become the sink right after it is
-	// built.
+	// prompt and tool subset. The emitter is settable so the TUI can
+	// become the progress sink right after it is built below.
 	provider := llm.New(providerCfg.API, providerCfg.BaseURL, key.Value)
 	spawnEmitter := &subagent.Emitter{}
 	// orch is created below, after the runner: the subagent's effort
@@ -294,6 +294,9 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// --plain, or TILDE_PLAIN — reduces motion for the session when
 	// the user has not chosen explicitly; the config key always
 	// wins, and nothing is persisted silently.
+	// A screen reader implies the plain posture; the note says so
+	// instead of a separate branch that could never run (plainMode
+	// already includes the detection).
 	plainMode := *plain || os.Getenv("TILDE_PLAIN") != "" || config.ScreenReaderActive()
 	if plainMode {
 		adapted := "--plain posture: ASCII glyphs"
@@ -302,11 +305,10 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			cfg.Animations = &off
 			adapted += ", animations off"
 		}
+		if !*plain && os.Getenv("TILDE_PLAIN") == "" {
+			adapted += " (screen reader detected; set \"animations\": true to override)"
+		}
 		startupNotes = append(startupNotes, adapted)
-	} else if cfg.Animations == nil && config.ScreenReaderActive() {
-		off := false
-		cfg.Animations = &off
-		startupNotes = append(startupNotes, "screen reader detected — animations off (set \"animations\": true to override)")
 	}
 
 	// Landlock sandbox (Phase 21): confine shell-command writes to the
@@ -449,16 +451,10 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		Animations:   cfg.Animations == nil || *cfg.Animations,
 		Plain:        plainMode,
 		Skills:       &skillManager,
-		MCPNames: func() []string {
-			var names []string
-			for _, note := range mcpManager.Notes() {
-				names = append(names, note)
-			}
-			return names
-		},
-		Models:      models,
-		SwitchModel: switchModel,
-		Theme:       cfg.Theme,
+		MCPNames:     mcpManager.Notes,
+		Models:       models,
+		SwitchModel:  switchModel,
+		Theme:        cfg.Theme,
 		SetTheme: func(name string) error {
 			return config.SaveTheme(userDir, name)
 		},

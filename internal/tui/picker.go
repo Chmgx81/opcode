@@ -4,9 +4,10 @@ import (
 	"strings"
 )
 
-// A reusable filterable overlay picker, the interaction behind /model
-// and /sessions: type to filter, arrows (or ctrl+n/p) to move, Enter to
-// select, Esc to close. Each command builds its items and interprets the
+// A reusable filterable overlay picker, the interaction behind
+// /model, /sessions, /theme, /models, and /login: type to filter,
+// arrows (or ctrl+n/p) to move, Enter to select, Esc to close. Each
+// command builds its items and interprets the
 // selection; the picker owns only the list mechanics.
 
 type pickerItem struct {

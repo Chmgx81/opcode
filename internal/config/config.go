@@ -15,9 +15,8 @@ import (
 	"github.com/Chmgx81/tilde/internal/tools"
 )
 
-// DefaultPermissionMode is used when config.json does not set one.
-// Phase 0's gate always allows and only logs, so this value is carried but
-// not yet enforced; permission modes land in Phase 2.
+// DefaultPermissionMode is used when config.json does not set one;
+// the gate enforces it on every call.
 const DefaultPermissionMode = "ask"
 
 // Config holds the preferences from ~/.tilde/config.json.
@@ -88,7 +87,7 @@ func LoadConfig(dir string) (Config, error) {
 	// at load time, not silently behave like something permissive.
 	cfg.PermissionMode = tools.NormalizeMode(cfg.PermissionMode)
 	if !tools.ValidMode(cfg.PermissionMode) {
-		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: read-only, plan, ask, full-auto; legacy: ask-every-time, auto-accept-safe-ops)",
+		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: plan, build, full-auto; legacy: ask, read-only, ask-every-time, auto-accept-safe-ops)",
 			cfg.PermissionMode)
 	}
 	switch cfg.ReasoningEffort {

@@ -20,8 +20,8 @@ type Options struct {
 	// JSON switches output from human text to one JSON event object
 	// per line.
 	JSON bool
-	// SubagentEmit receives subagent progress (labeled lines in text
-	// mode, events in JSON mode).
+	// Out receives subagent progress (labeled lines in text mode,
+	// events in JSON mode); main wires the spawn emitter into it.
 	Out io.Writer
 }
 
