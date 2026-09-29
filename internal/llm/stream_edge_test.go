@@ -92,9 +92,12 @@ func TestAnthropicFlushesToolUseAtEOF(t *testing.T) {
 }
 
 func TestOpenAIIndexLessFragmentJoinsSoloCall(t *testing.T) {
+	// A second fragment for the same call with no "index" field —
+	// servers that omit it must still reassemble one call, not split
+	// it into a half-JSON tool call aimed at nothing.
 	srv := sseServer(t, []string{
 		toolFragment(0, "call_1", "read_file", `{"path": "a`),
-		`{"choices": [{"delta": {"tool_calls": [{"function": {"arguments": "\"a.go\"}"}}]}}]}`,
+		`{"choices": [{"delta": {"tool_calls": [{"function": {"arguments": ".go\"}"}}]}}]}`,
 		finish("tool_calls"),
 	}, nil, 0)
 	defer srv.Close()
