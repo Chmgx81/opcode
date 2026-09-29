@@ -151,9 +151,18 @@ terminals, never the mode.
 ```
 
 Plain-words title and tier, the literal command verbatim, **No
-preselected**. Option 2 grants a session-scoped prefix rule
-(`npm init:*` covers `npm init --yes`, never `npm install`;
-metacharacters fail closed). Toast confirms what was granted.
+preselected**. Option 2 grants a session-scoped prefix rule, and the
+grant is never wider than what the dialog shows (Phase 37): a plain
+program+subcommand covers its longer forms (`npm init:*` covers
+`npm init --yes`, never `npm install`); when the second field is a
+flag the grant carries the whole command verbatim (`git -C /tmp
+push:*` covers exactly that and its longer forms, never `git -C
+/etc reset --hard`). Both sides pass a tiny universal flag-synonym
+table (`--yes`/`-y`, `--quiet`/`-q`, `--force`/`-f`, `--verbose`/
+`-v`, `--recursive`/`-r`) so a grant matches its flags written either
+way; pairs that differ across tools deliberately do not merge
+(`--all`/`-a` — `grep -a` is `--text`). Metacharacters and
+untokenizable commands fail closed. Toast confirms what was granted.
 
 ### 3.5 Pickers and palette
 
