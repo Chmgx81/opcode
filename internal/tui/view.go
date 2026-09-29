@@ -187,9 +187,41 @@ func stripANSI(s string) string {
 	return b.String()
 }
 
+// sanitizeTitle makes a string safe for the terminal window title:
+// control characters, C1 bytes, and bidi/isolating overrides are
+// dropped, and the result is capped at 240 runes. OSC titles are an
+// untrusted-text injection surface — a crafted directory name must
+// not hijack the window title (codex-tui-audit notable 13).
+func sanitizeTitle(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			continue
+		}
+		switch r {
+		case 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, // bidi overrides
+			0x2066, 0x2067, 0x2068, 0x2069: // isolating marks
+			continue
+		}
+		b.WriteRune(r)
+	}
+	out := strings.TrimSpace(b.String())
+	if runes := []rune(out); len(runes) > 240 {
+		return string(runes[:240])
+	}
+	return out
+}
+
 // renderEntry maps one structured entry to view lines. Assistant text
 // renders as markdown, cached per width on the entry: View runs every
 // frame and re-running glamour per frame would visibly cost.
+// expandingResults reports whether tool results and thinking render
+// expanded: the ctrl+r toggle, or the ctrl+O transcript pager, whose
+// whole point is the full detail.
+func (m *Model) expandingResults() bool {
+	return m.expandResults || m.transcriptOpen
+}
+
 func (m *Model) renderEntry(e *entry) []string {
 	w := m.termWidth()
 	switch e.kind {
@@ -229,7 +261,7 @@ func (m *Model) renderEntry(e *entry) []string {
 		// ctrl+r (the results toggle) expands the text, windowed.
 		head := dimStyle.Render(GlyphThought) + dimStyle.Render(
 			fmt.Sprintf(" thought for %s · %d chars", e.dur, len(e.text)))
-		if !m.expandResults {
+		if !m.expandingResults() {
 			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
 		}
 		out := []string{head}
@@ -266,7 +298,7 @@ func (m *Model) renderResult(e entry, w int) []string {
 		lines := strings.Split(strings.TrimRight(e.full, "\n"), "\n")
 		head := prefix + dimStyle.Render(fmt.Sprintf("wrote %s ", e.path)) +
 			okStyle.Render(fmt.Sprintf("%s%d", GlyphAdded, len(lines)))
-		if !m.expandResults {
+		if !m.expandingResults() {
 			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
 		}
 		out := []string{head}
@@ -291,7 +323,7 @@ func (m *Model) renderResult(e entry, w int) []string {
 		head := prefix + dimStyle.Render(fmt.Sprintf("updated %s ", e.path)) +
 			okStyle.Render(fmt.Sprintf("%s%d", GlyphAdded, adds)) + " " +
 			dangerStyle.Render(fmt.Sprintf("%s%d", GlyphDeleted, dels))
-		if !m.expandResults {
+		if !m.expandingResults() {
 			return []string{head + dimStyle.Render("  (ctrl+r to expand)")}
 		}
 		out := []string{head}
@@ -306,7 +338,7 @@ func (m *Model) renderResult(e entry, w int) []string {
 		}
 		return out
 	}
-	if m.expandResults && e.full != "" {
+	if m.expandingResults() && e.full != "" {
 		out := []string{prefix + dimStyle.Render(e.summary)}
 		for _, l := range wrapAll(e.full, w-4) {
 			out = append(out, dimStyle.Render("      "+l))
@@ -353,6 +385,9 @@ func (m *Model) floatingView() []string {
 	var out []string
 	w := m.termWidth()
 
+	if m.transcriptOpen {
+		out = append(out, "", m.transcriptView(w))
+	}
 	if m.awaitingTrust != nil {
 		files := strings.Join(m.awaitingTrust.Approved, ", ")
 		out = append(out, "",
@@ -395,6 +430,62 @@ func (m *Model) floatingView() []string {
 		out = append(out, "", style.Render(glyph+" "+m.toast))
 	}
 	return out
+}
+
+// transcriptView is the ctrl+O pager over the whole conversation —
+// committed and live entries alike, results and thinking expanded,
+// windowed around transcriptTop. The overlay self-bounds so it can
+// never push the composer off-screen.
+func (m *Model) transcriptView(w int) string {
+	lines := m.transcriptLines()
+	// Reserve the composer block (rules, input, mode line) and the
+	// working line; the overlay never exceeds that.
+	visible := m.height - m.composer.Height() - 8
+	if visible < 3 {
+		visible = 3
+	}
+	if maxTop := len(lines) - visible; m.transcriptTop > maxTop {
+		m.transcriptTop = maxInt(maxTop, 0)
+	}
+	shown := []string{accentStyle.Render(GlyphBullet+" transcript") +
+		dimStyle.Render("  ↑↓ scroll · pgup/pgdn · ctrl+o or esc close")}
+	if m.transcriptTop > 0 {
+		shown = append(shown, dimStyle.Render(
+			fmt.Sprintf("  … %d lines above", m.transcriptTop)))
+	}
+	end := m.transcriptTop + visible
+	if end > len(lines) {
+		end = len(lines)
+	}
+	shown = append(shown, lines[m.transcriptTop:end]...)
+	if end < len(lines) {
+		shown = append(shown, dimStyle.Render(
+			fmt.Sprintf("  … %d lines below", len(lines)-end)))
+	}
+	return paletteStyle.Width(w - 4).Render(strings.Join(shown, "\n"))
+}
+
+// transcriptLines renders the entire conversation with the breathing
+// rhythm — committed entries included, since the pager's whole point
+// is reading what scrolled away. Expansion follows expandingResults,
+// which is true while the pager is open.
+func (m *Model) transcriptLines() []string {
+	var out []string
+	prevKind := entryKind(-1)
+	prevSub := ""
+	for i := range m.entries {
+		e := &m.entries[i]
+		if blankBefore(e, prevKind, prevSub) {
+			out = append(out, "")
+		}
+		out = append(out, m.renderEntry(e)...)
+		prevKind, prevSub = e.kind, e.subTitle
+	}
+	if s := strings.TrimSpace(m.stream.String()); s != "" {
+		out = append(out, "")
+		out = append(out, m.renderStream(s, m.termWidth())...)
+	}
+	return collapseBlanks(out)
 }
 
 // composerView renders the working status line, the composer box, and
@@ -598,6 +689,7 @@ func (m *Model) helpView(w int) string {
 		dimStyle.Render("  ctrl+d       exit, the same double-press"),
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
 		dimStyle.Render("  ctrl+r       expand / collapse results & thinking"),
+		dimStyle.Render("  ctrl+o       transcript — scroll the whole conversation"),
 		dimStyle.Render("  ! command    run a shell command directly"),
 		dimStyle.Render("  @path        attach a file's contents"),
 		dimStyle.Render("  /            command palette"),

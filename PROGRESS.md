@@ -1996,3 +1996,41 @@ running, the second exits cleanly, and the farewell line appears
 after the frame. Pinned by TestCtrlCDoublePressExits,
 TestCtrlCHintWhenIdle, and TestCtrlDIsTheSameDoublePress. Full
 suite green.
+
+# Accessibility & navigation (status: complete, live-verified)
+
+A pass over the Codex audits for the issues that bite real users,
+four items:
+
+Type-ahead guard: for 400 ms after the permission, plan, or trust
+dialog opens, keystrokes are swallowed — a fast typist's stray "y"
+landing on a just-rendered approval can no longer answer it (Codex's
+block_terminal_input_for_pending_startup_events, adoption item 9;
+spec §6 item 3 retired). The plan tests that answer instantly now
+fast-forward past the guard, which is the honest fix: the guard is
+the feature.
+
+Ctrl+O transcript pager: an overlay over the whole conversation —
+committed entries included (the pager's point is reading what
+scrolled into native scrollback), results and thinking expanded,
+↑↓/pgup/pgdn scrolling with count markers, esc closes. While open
+it owns the keyboard: typing goes nowhere until it closes (spec §6
+item 4 retired).
+
+--plain / TILDE_PLAIN / detected screen reader: the glyph vocabulary
+becomes vars, adaptGlyphs swaps every one for ASCII — ✓→[ok], ⎿→\-,
+○⏸›⏵⏵→o=>>> — no glyph disappears (spec §6 item 6 retired). The
+composer prompt re-reads the glyph after the swap (the textarea
+captured it at construction). Animation follows the existing
+animations:false key.
+
+Sanitized window title: control characters, C1 bytes, and bidi
+overrides are stripped and the title capped at 240 runes before it
+reaches the OSC surface — a crafted directory name can no longer
+hijack the terminal window title (tui-audit notable 13).
+
+Verified live in a PTY under TILDE_PLAIN: zero Unicode glyphs remain
+in the log (mode line "> ask", composer ">", pager header rendered
+after ctrl+O), clean double-press exit. Pinned by TestTypeAheadGuard,
+TestPlanTypeAheadGuard, TestTranscriptPager, TestAdaptGlyphs,
+TestSanitizeTitle. The spec's not-yet list is down to two items.

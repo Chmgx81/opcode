@@ -57,10 +57,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case permRequestMsg:
+		msg.req.openedAt = time.Now()
 		m.awaitingPerm = msg.req
 		return m, nil
 
 	case planRequestMsg:
+		msg.req.openedAt = time.Now()
 		m.awaitingPlan = msg.req
 		// The plan lands in the transcript rendered as markdown; the
 		// approval prompt below the composer carries the decision.
@@ -105,6 +107,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// The trust prompt owns the keyboard first.
 	if m.awaitingTrust != nil {
+		if time.Since(m.awaitingTrust.OpenedAt) < typeAheadGuard {
+			return m, nil
+		}
 		switch msg.String() {
 		case "y", "Y":
 			m.answerTrust(true)
@@ -117,6 +122,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// selects, y/a/n are the fast paths, esc denies.
 	if m.awaitingPerm != nil {
 		req := m.awaitingPerm
+		if time.Since(req.openedAt) < typeAheadGuard {
+			return m, nil
+		}
 		m.awaitingPerm = nil
 		switch msg.String() {
 		case "y", "Y", "1":
@@ -215,6 +223,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Then the plan decision: approve (optionally auto-accept), or
 	// keep planning.
 	if m.awaitingPlan != nil {
+		if time.Since(m.awaitingPlan.openedAt) < typeAheadGuard {
+			return m, nil
+		}
 		var v planVerdict
 		switch msg.String() {
 		case "y", "Y":
@@ -245,7 +256,30 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The transcript pager owns the keyboard while open: arrows and
+	// page keys scroll it, everything else but closing it is
+	// swallowed — typing goes nowhere until it closes.
+	if m.transcriptOpen {
+		switch msg.String() {
+		case "ctrl+o", "esc":
+			m.transcriptOpen = false
+		case "up":
+			m.transcriptTop = maxInt(m.transcriptTop-1, 0)
+		case "down":
+			m.transcriptTop++
+		case "pgup":
+			m.transcriptTop = maxInt(m.transcriptTop-10, 0)
+		case "pgdown":
+			m.transcriptTop += 10
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
+	case "ctrl+o":
+		m.transcriptOpen = true
+		m.transcriptTop = 0
+		return m, nil
 	case "ctrl+c", "ctrl+d":
 		// Codex's double-press exit: the first press arms a short
 		// window — and interrupts a running turn — the toast says
@@ -350,6 +384,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.composer, cmd = m.composer.Update(msg)
 	return m, cmd
 }
+
+// typeAheadGuard is how long after a dialog opens that keystrokes
+// are swallowed: a fast typist's stray "y" must not answer an
+// approval they never read. Codex blocks input the same way
+// (block_terminal_input_for_pending_startup_events).
+const typeAheadGuard = 400 * time.Millisecond
 
 // quitWindow is how long the first ctrl+c keeps the exit armed —
 // the toast hint shows for the same span, so the promise on screen
