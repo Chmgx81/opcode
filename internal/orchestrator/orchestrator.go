@@ -85,6 +85,13 @@ type Orchestrator struct {
 
 	// lastPromptTokens is the provider-reported prompt size of the
 	// most recent request — the compaction trigger signal.
+	// baselineTokens/baselineSet anchor the prefill: the first
+	// report of the session (or of the stretch since the last
+	// compaction). Compaction reacts to GROWTH past the baseline,
+	// never to the baseline itself — a resumed session at 80% of
+	// the window must not compact on arrival.
+	baselineTokens   int
+	baselineSet      bool
 	lastPromptTokens int
 
 	history []llm.Message
@@ -205,7 +212,13 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		for _, steer := range o.drainSteer() {
 			o.history = append(o.history, llm.Message{Role: "user", Content: steer})
 		}
-		if note, err := o.maybeCompact(ctx); err != nil {
+		pos := InjectRecapFirst
+		if round > 0 {
+			// Mid-turn: the history ends in tool results and the
+			// recap belongs at the end, where attention lives.
+			pos = InjectRecapLast
+		}
+		if note, err := o.maybeCompact(ctx, pos); err != nil {
 			// Compaction failure must not kill the turn: the
 			// conversation continues uncompacted and the user sees it.
 			events <- Event{Kind: EventError, Err: fmt.Errorf("compaction skipped: %w", err)}
@@ -339,15 +352,50 @@ const CompactionFraction = 0.75
 // verbatim; everything older becomes the recap.
 const keepRecent = 4
 
+// InjectionPos says where a compaction recap lands in the history.
+// Two values, because there are exactly two right answers: pre-turn
+// compaction must not bury the user's message, and mid-turn
+// compaction must not bury the recap. The enum makes the wrong
+// placement unrepresentable at the call site.
+type InjectionPos int
+
+const (
+	// InjectRecapFirst: pre-turn (round 0, history ending in the
+	// user's new message). The recap opens the history; the turn's
+	// exchange stays at the end, where models are trained to find
+	// it.
+	InjectRecapFirst InjectionPos = iota
+	// InjectRecapLast: mid-turn (after tool rounds, history ending
+	// in tool results). The recap is the most recent item — the
+	// end of the window is where attention lives.
+	InjectRecapLast
+)
+
 // maybeCompact summarizes the oldest history into a recap when the
-// previous round's prompt size crossed the configured threshold. A
-// note is returned when compaction happened; an error means it was
+// conversation has GROWN past the prefill baseline by
+// CompactionFraction of the window's remaining space. A note is
+// returned when compaction happened; an error means it was
 // attempted and failed (the caller continues regardless).
-func (o *Orchestrator) maybeCompact(ctx context.Context) (string, error) {
+func (o *Orchestrator) maybeCompact(ctx context.Context, pos InjectionPos) (string, error) {
 	if o.ContextWindow <= 0 || o.lastPromptTokens == 0 {
 		return "", nil
 	}
-	if o.lastPromptTokens < int(float64(o.ContextWindow)*CompactionFraction) {
+	if !o.baselineSet {
+		// The prefill anchor: the first report of the session, or
+		// of the stretch since the last compaction. A heavy
+		// prefill — a resumed session, a long system prompt — is
+		// the starting point, not growth.
+		o.baselineTokens = o.lastPromptTokens
+		o.baselineSet = true
+	}
+	remaining := o.ContextWindow - o.baselineTokens
+	if remaining < 0 {
+		// The window is already over-full at the baseline; any
+		// growth must trigger.
+		remaining = 0
+	}
+	growth := o.lastPromptTokens - o.baselineTokens
+	if growth < int(float64(remaining)*CompactionFraction) {
 		return "", nil
 	}
 	if len(o.history) <= keepRecent+2 {
@@ -361,10 +409,17 @@ func (o *Orchestrator) maybeCompact(ctx context.Context) (string, error) {
 		return "", err
 	}
 	recap := llm.Message{Role: "user", Content: "Context recap (earlier conversation, auto-summarized):\n" + summary}
-	o.history = append([]llm.Message{recap}, recent...)
-	// Reset the signal so the next round reports fresh size rather than
-	// immediately re-triggering.
+	switch pos {
+	case InjectRecapLast:
+		o.history = append(recent, recap)
+	default:
+		o.history = append([]llm.Message{recap}, recent...)
+	}
+	// Reset the signal AND the baseline: the compacted size is the
+	// new anchor, so the next report measures fresh growth instead
+	// of instantly re-triggering.
 	o.lastPromptTokens = 0
+	o.baselineTokens, o.baselineSet = 0, false
 	return fmt.Sprintf("summarized %d older messages into a recap (%d kept verbatim)", len(old), keepRecent), nil
 }
 

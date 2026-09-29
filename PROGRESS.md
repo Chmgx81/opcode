@@ -2620,3 +2620,54 @@ sandbox itself ("No such file or directory"). The fix, found
 
 The host's gh is authenticated; the same call also works for
 `gh run list` to watch CI.
+
+# Phase 41 — compaction: baseline accounting + the injection rule (status: complete, verified)
+
+Spec: [docs/specs/phase41-compaction-baseline.md](docs/specs/phase41-compaction-baseline.md)
+(The adoption doc's #3, both subtleties.)
+
+## Built
+
+- **Window-baseline accounting.** Compaction triggered on absolute
+  prompt size: a session resumed at 80% of the window compacted on
+  its very next round, rewriting a conversation the user had not
+  added anything to. The first reported prompt size of the session
+  (or of the stretch since the last compaction) now anchors a
+  prefill baseline; the trigger is GROWTH past the baseline
+  reaching 75% of the window's REMAINING space. A heavy prefill
+  shrinks the space growth is measured against but never triggers
+  on its own; a baseline at or beyond the window means any growth
+  triggers. After a compaction the baseline resets with the token
+  signal — the compacted size anchors fresh growth, so nothing
+  re-compacts instantly.
+- **The injection rule, as an enum.** `InjectionPos`
+  (`InjectRecapFirst` / `InjectRecapLast`): pre-turn compaction
+  (round 0, history ending in the user's message) keeps the recap
+  first and the user message last, where models are trained to
+  find it; mid-turn compaction (after tool rounds, history ending
+  in tool results) places the recap as the MOST RECENT history
+  item — the end of the window is where attention lives. The old
+  code always put the recap first, which put a mid-turn recap at
+  position 0, the stalest possible position.
+
+## Found while updating the tests
+
+The three existing trigger tests used a single 800-of-1000 report
+— exactly the pathology this phase fixes (a prefilled window
+compacting on arrival), which is why they had to move to the
+two-report growth pattern rather than just pass. And designing the
+pre-turn test surfaced the real rule: a pre-turn trigger can only
+come from a turn's FINAL report crossing the line, because a
+mid-round crossing compacts mid-turn first — the test's first
+draft assumed otherwise and failed honestly.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. Seven compaction
+  tests now: the prefilled window does NOT compact on arrival
+  (800 baseline, 810 growth — nothing happens, history untouched);
+  growth past 75% of the remaining space compacts with the recap
+  LAST and the baseline re-anchored; a pre-turn compaction (the
+  final report crossing the line) keeps the recap FIRST and the
+  new user message last; the configured-model, disabled, and
+  failure paths are unchanged.

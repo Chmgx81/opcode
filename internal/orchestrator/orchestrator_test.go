@@ -530,10 +530,19 @@ func TestCompactionTriggersOnThreshold(t *testing.T) {
 	// Round 1 answers with usage that crosses 75% of a 1000-token
 	// window; the scripted provider's next request must then start
 	// with the recap instead of the original history.
+	// Two reports: the first (400) anchors the baseline, the second
+	// (900) grows past 75% of the remaining space — the growth the
+	// baseline accounting reacts to. The 800-of-1000 single report
+	// this test used before was the exact pathology Phase 41 fixed:
+	// a prefilled window compacting on arrival.
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
 			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
-			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 800, CompletionTokens: 1}}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 400, CompletionTokens: 1}}},
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 900, CompletionTokens: 1}}},
+		{{Type: llm.TextEvent, Text: "the summary"}},
 		{{Type: llm.TextEvent, Text: "answer two"}},
 	}}
 	orch, _ := newTestOrchestrator(p, nil, dir)
@@ -557,20 +566,23 @@ func TestCompactionTriggersOnThreshold(t *testing.T) {
 	if !compacted {
 		t.Fatalf("no compaction event; events = %+v", events)
 	}
-	// Request order: [0] round 1, [1] the summarizer, [2] the
-	// post-compaction round, which must start with the recap.
-	if len(p.gotRequests) < 3 {
-		t.Fatalf("got %d requests, want round1 + summarizer + round2", len(p.gotRequests))
+	// Request order: [0] round 1, [1] round 2, [2] the summarizer,
+	// [3] the post-compaction round. The compaction is MID-TURN
+	// (round 2's check after the tool result), so the recap lands
+	// LAST — the most recent item, where attention lives.
+	if len(p.gotRequests) < 4 {
+		t.Fatalf("got %d requests, want r1 + r2 + summarizer + r3", len(p.gotRequests))
 	}
-	if !strings.Contains(p.gotRequests[1].System, "Summarize") {
-		t.Errorf("request 1 should be the summarizer round: %q", p.gotRequests[1].System)
+	if !strings.Contains(p.gotRequests[2].System, "Summarize") {
+		t.Errorf("request 2 should be the summarizer round: %q", p.gotRequests[2].System)
 	}
-	req := p.gotRequests[2]
-	if !strings.Contains(req.Messages[0].Content, "Context recap") {
-		t.Errorf("post-compaction request does not start with the recap: %+v", req.Messages[0])
+	req := p.gotRequests[3]
+	last := req.Messages[len(req.Messages)-1]
+	if !strings.Contains(last.Content, "Context recap") {
+		t.Errorf("mid-tcompaction recap is not the last message: %+v", last)
 	}
-	if len(req.Messages) != 1+keepRecent {
-		t.Errorf("post-compaction history = %d messages, want recap + %d", len(req.Messages), keepRecent)
+	if len(req.Messages) != keepRecent+1 {
+		t.Errorf("post-compaction history = %d messages, want %d + recap", len(req.Messages), keepRecent)
 	}
 }
 
@@ -579,6 +591,9 @@ func TestCompactionUsesConfiguredModel(t *testing.T) {
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
 			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 300}}},
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
 			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 900}}},
 		{{Type: llm.TextEvent, Text: "the summary"}},
 		{{Type: llm.TextEvent, Text: "final"}},
@@ -594,18 +609,21 @@ func TestCompactionUsesConfiguredModel(t *testing.T) {
 	})
 	drain(t, orch.Send(context.Background(), "go"))
 
-	// The summarizer round is request index 1 and must use the cheap
-	// model with the summarizer system prompt.
-	sumReq := p.gotRequests[1]
+	// The summarizer round is request index 2 (after two tool
+	// rounds) and must use the cheap model with the summarizer
+	// system prompt.
+	sumReq := p.gotRequests[2]
 	if sumReq.Model != "cheap/summarizer" {
 		t.Errorf("summarizer model = %q, want cheap/summarizer", sumReq.Model)
 	}
 	if !strings.Contains(sumReq.System, "Summarize") {
 		t.Errorf("summarizer prompt missing: %q", sumReq.System)
 	}
-	// The recap carries the summarizer's output.
-	if !strings.Contains(p.gotRequests[2].Messages[0].Content, "the summary") {
-		t.Errorf("recap does not contain the summary: %q", p.gotRequests[2].Messages[0].Content)
+	// The recap carries the summarizer's output, as the LAST
+	// message (mid-turn injection).
+	post := p.gotRequests[3].Messages
+	if !strings.Contains(post[len(post)-1].Content, "the summary") {
+		t.Errorf("recap does not contain the summary: %q", post[len(post)-1].Content)
 	}
 }
 
@@ -642,7 +660,10 @@ func TestCompactionFailureIsNotFatal(t *testing.T) {
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
 			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
-			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 800}}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 300}}},
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 900}}},
 		{{Type: llm.ErrorEvent, Err: fmt.Errorf("summarizer down")}},
 		{{Type: llm.TextEvent, Text: "carried on"}},
 	}}
@@ -731,5 +752,145 @@ func TestToolFailureKeepsOutput(t *testing.T) {
 	}
 	if !strings.Contains(got, "boom") {
 		t.Errorf("result dropped the tool's own output: %q", got)
+	}
+}
+
+// TestPrefilledWindowDoesNotCompactOnArrival: the baseline
+// accounting's whole point — a resumed session at 80% of the window
+// must not compact before the user adds anything. The first report
+// anchors the baseline; only growth past 75% of the remaining space
+// triggers.
+func TestPrefilledWindowDoesNotCompactOnArrival(t *testing.T) {
+	dir := t.TempDir()
+	// Round 1 reports 800 of a 1000-token window — yesterday this
+	// compacted immediately. Round 2 reports 810: growth of 10
+	// against a remaining 200 — far under the 150 trigger.
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 800}}},
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 810}}},
+		{{Type: llm.TextEvent, Text: "done"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "go"},
+	})
+	for _, ev := range drain(t, orch.Send(context.Background(), "go")) {
+		if ev.Kind == EventCompaction {
+			t.Fatal("the prefilled window compacted on arrival")
+		}
+	}
+	// The history must be untouched: no summarizer round ran.
+	if len(p.gotRequests) != 3 {
+		t.Errorf("got %d requests, want 3 plain rounds", len(p.gotRequests))
+	}
+	if !strings.Contains(p.gotRequests[0].Messages[0].Content, "q1") {
+		t.Error("history was rewritten without a compaction")
+	}
+}
+
+// TestGrowthPastRemainingSpaceTriggers: the same 800 baseline, but
+// growth to 960 — past 75% of the remaining 200 — compacts, and the
+// baseline resets so the compacted size anchors fresh growth.
+func TestGrowthPastRemainingSpaceTriggers(t *testing.T) {
+	dir := t.TempDir()
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 800}}},
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 960}}},
+		{{Type: llm.TextEvent, Text: "the summary"}},
+		{{Type: llm.TextEvent, Text: "done"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "go"},
+	})
+	compacted := false
+	for _, ev := range drain(t, orch.Send(context.Background(), "go")) {
+		if ev.Kind == EventCompaction {
+			compacted = true
+		}
+	}
+	if !compacted {
+		t.Fatal("growth past the remaining space did not compact")
+	}
+	// Mid-turn injection: the recap is the LAST message.
+	post := p.gotRequests[3].Messages
+	if !strings.Contains(post[len(post)-1].Content, "Context recap") {
+		t.Errorf("mid-turn recap not last: %+v", post[len(post)-1])
+	}
+	// The baseline re-anchored: the next report measures fresh
+	// growth instead of instantly re-triggering.
+	if orch.baselineSet {
+		t.Error("baseline not reset after compaction")
+	}
+}
+
+// TestPreTurnCompactionKeepsRecapFirst: when the trigger lands on a
+// turn's ROUND 0 — the previous turn's report crossed the line —
+// the recap opens the history and the new user message stays near
+// the end, where models are trained to find it.
+func TestPreTurnCompactionKeepsRecapFirst(t *testing.T) {
+	dir := t.TempDir()
+	// Turn 1: growth to 960 compacts nothing yet (it reports at the
+	// END of the turn). Turn 2's round 0 check sees 960 — pre-turn
+	// position — and compacts with the recap FIRST.
+	// Turn 1: round 1 anchors the baseline (500), round 2 stays under
+	// the trigger (600), and the FINAL round reports 960 — the turn
+	// ends before another compaction check can see it, so the line is
+	// crossed pre-turn instead.
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 500}}},
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 600}}},
+		{{Type: llm.TextEvent, Text: "turn one done"},
+			{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 960}}},
+		{{Type: llm.TextEvent, Text: "the summary"}},
+		{{Type: llm.TextEvent, Text: "turn two done"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+	})
+	drain(t, orch.Send(context.Background(), "first"))
+	// The second turn starts with the compacted history: recap
+	// first, the newest user message at the end.
+	var post []llm.Message
+	var compacted bool
+	for _, ev := range drain(t, orch.Send(context.Background(), "second")) {
+		if ev.Kind == EventCompaction {
+			compacted = true
+		}
+	}
+	// The last request of turn 2 carries the post-compaction shape.
+	post = p.gotRequests[len(p.gotRequests)-1].Messages
+	if !compacted {
+		t.Fatal("pre-turn compaction did not run")
+	}
+	if !strings.Contains(post[0].Content, "Context recap") {
+		t.Errorf("pre-turn recap not first: %+v", post[0])
+	}
+	if post[len(post)-1].Content != "second" {
+		t.Errorf("the turn's user message is not last: %+v", post[len(post)-1])
 	}
 }
