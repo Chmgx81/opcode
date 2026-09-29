@@ -139,7 +139,9 @@ trust, MCP, terminal — one line per subsystem with the next step
 when something is wrong.
 Typing `@` opens a live file picker (type to filter, enter to attach);
 `!` turns the composer amber — shell mode, Enter runs it directly, no
-model round trip. Big pastes collapse to a token.
+model round trip. Big pastes collapse to a token. LaTeX math in
+answers renders as readable Unicode (`\alpha` → α); code, shell
+variables, and currency are never touched.
 
 Exits are graceful: the first Ctrl+C interrupts and hints, the second
 quits, and tilde saves the session and says so on the way out —
