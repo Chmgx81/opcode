@@ -44,7 +44,7 @@ func newTestOrchestrator(p llm.Provider, gate *tools.Gate, dir string) (*Orchest
 	reg.Register(tools.ReadFile{})
 	reg.Register(tools.WriteFile{})
 	reg.Register(tools.EditFile{})
-	reg.Register(tools.RunShell{})
+	reg.Register(tools.Bash{})
 	reg.Register(tools.PresentPlan{Approve: func(string) (bool, bool) { return false, false }})
 	if gate == nil {
 		gate = &tools.Gate{}
@@ -456,7 +456,7 @@ func TestPlanModeOffersAllTools(t *testing.T) {
 	for _, tt := range req.Tools {
 		names[tt.Name] = true
 	}
-	for _, want := range []string{"read_file", "write_file", "edit_file", "run_shell", "present_plan"} {
+	for _, want := range []string{"read_file", "write_file", "edit_file", "bash", "present_plan"} {
 		if !names[want] {
 			t.Errorf("plan mode must still offer %s, got %v", want, names)
 		}
@@ -692,7 +692,7 @@ func TestPlanModeAdvertisesResearchAndPlanTools(t *testing.T) {
 	}
 	// Phase 30: action tools are offered too — proposing is not
 	// running; the gate prompts for each call.
-	for _, offered := range []string{"write_file", "edit_file", "run_shell"} {
+	for _, offered := range []string{"write_file", "edit_file", "bash"} {
 		if !names[offered] {
 			t.Errorf("plan mode must still offer %s (the gate prompts), got %v", offered, names)
 		}

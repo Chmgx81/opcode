@@ -503,7 +503,7 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 	if strings.HasPrefix(raw, "!") && len(raw) > 1 {
 		cmd := strings.TrimSpace(strings.TrimPrefix(raw, "!"))
 		m.add(entry{kind: entryUser, text: dimStyle.Render("! " + cmd)})
-		out, err := (tools.RunShell{}).Execute(context.Background(), `{"command": `+mustJSON(cmd)+`}`)
+		out, err := (tools.Bash{}).Execute(context.Background(), `{"command": `+mustJSON(cmd)+`}`)
 		if err != nil {
 			m.add(entry{kind: entryErr, text: out + " " + err.Error()})
 		} else {

@@ -27,7 +27,7 @@ func TestAssemblerInterleavedCalls(t *testing.T) {
 	// each call's fragments first appeared.
 	var asm toolCallAssembler
 	asm.add(0, "call-a", "read_file", `{"path": "a`)
-	asm.add(1, "call-b", "run_shell", `{"command": "ls`)
+	asm.add(1, "call-b", "bash", `{"command": "ls`)
 	asm.add(0, "", "", `.txt"}`)
 	asm.add(1, "", "", ` -la"}`)
 
@@ -39,7 +39,7 @@ func TestAssemblerInterleavedCalls(t *testing.T) {
 		calls[0].Arguments != `{"path": "a.txt"}` {
 		t.Errorf("call 0 = %+v", calls[0])
 	}
-	if calls[1].ID != "call-b" || calls[1].Name != "run_shell" ||
+	if calls[1].ID != "call-b" || calls[1].Name != "bash" ||
 		calls[1].Arguments != `{"command": "ls -la"}` {
 		t.Errorf("call 1 = %+v", calls[1])
 	}

@@ -61,7 +61,7 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 	var reg tools.Registry
 	reg.Register(tools.ReadFile{})
 	reg.Register(tools.WriteFile{})
-	reg.Register(tools.RunShell{})
+	reg.Register(tools.Bash{})
 	orch := orchestrator.New(fp, "test-model", "sys", &reg, &tools.Gate{})
 	orch.SetMode(tools.ModeBuild)
 	m := New(Options{
@@ -494,7 +494,7 @@ func TestCtrlRTogglesResultExpansion(t *testing.T) {
 
 	m.Update(orchestratorMsg(orchestrator.Event{
 		Kind:       orchestrator.EventToolResult,
-		ToolCall:   llm.ToolCall{Name: "run_shell"},
+		ToolCall:   llm.ToolCall{Name: "bash"},
 		ToolResult: strings.Repeat("line\n", 30) + "the end",
 	}))
 	collapsed := m.View()
@@ -726,7 +726,7 @@ func TestViewLayoutFitsTerminal(t *testing.T) {
 	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventText, Text: "I'll look at the failing test first."}))
 	m.Update(orchestratorMsg(orchestrator.Event{
 		Kind:     orchestrator.EventToolStart,
-		ToolCall: llm.ToolCall{Name: "run_shell", Arguments: `{"command": "go test ./..."}`}}))
+		ToolCall: llm.ToolCall{Name: "bash", Arguments: `{"command": "go test ./..."}`}}))
 	m.Update(orchestratorMsg(orchestrator.Event{Kind: orchestrator.EventUsage,
 		Usage: llm.Usage{PromptTokens: 1240, CompletionTokens: 96}}))
 	req := &permRequest{tool: "write_file", tier: tools.TierActionAllowed,
@@ -1560,7 +1560,7 @@ func TestBlockBreathingSpace(t *testing.T) {
 		{kind: entryTool, tool: "read_file"},
 		{kind: entryResult, tool: "read_file"},
 		{kind: entryResult, tool: "read_file"}, // second result stays tight
-		{kind: entryTool, tool: "run_shell"},   // same tool group: no blank
+		{kind: entryTool, tool: "bash"},        // same tool group: no blank
 		{kind: entryAssistant, text: "done"},
 		{kind: entryReasoning, text: "hm", dur: "1s"},
 		{kind: entryUser, text: "next"},

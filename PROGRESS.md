@@ -2119,3 +2119,23 @@ back, all three glyphs on the mode line. Full suite green across
 all 12 packages; mode tests rewritten for the triad (the
 decision-matrix rows, the legacy-alias expectations, the tab-cycle
 sequence, the footer degradation).
+
+# run_shell became bash (status: complete, live-verified)
+
+The last naming wart. An audit of the whole vocabulary against the
+references: grep/glob/apply_patch/current_time match their
+Claude/Codex counterparts exactly (the names models emit fluently
+from training data), todo_write matches Claude's TodoWrite, and
+read_file/write_file/edit_file/list_dir/present_plan are tilde's
+own self-describing verb_noun school — clearer than Claude's bare
+Read/Write/Edit. The one name diverging from every reference was
+run_shell. Renamed to bash — Claude Code's name, and the name the
+approval dialog already used as its title ("Bash command") — and
+the tool now literally runs bash -c instead of sh -c so the name is
+true rather than aspirational. Claude Code made the same choice;
+the cost is bash as a dependency, which every dev workstation
+carries.
+
+Verified live in a PTY: the composer's ! shell escape ran
+`echo bash-runs-$(printf x)y` through the tool and printed
+bash-runs-xy; full suite green across all 12 packages.

@@ -17,7 +17,7 @@ func TestTypeAheadGuard(t *testing.T) {
 
 	// The permission dialog just opened.
 	req := &permRequest{
-		tool: "run_shell", tier: "action-allowed", args: `{"command": "ls"}`,
+		tool: "bash", tier: "action-allowed", args: `{"command": "ls"}`,
 		scope: "ls:*", sel: 2, openedAt: time.Now(),
 		reply: make(chan bool, 1),
 	}

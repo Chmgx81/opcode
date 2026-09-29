@@ -836,7 +836,7 @@ func plural(n int) string {
 // permTitle is the dialog's title in plain words (spec 9.1).
 func permTitle(tool string) string {
 	switch tool {
-	case "run_shell":
+	case "bash":
 		return "Bash command"
 	case "write_file":
 		return "Write file"
@@ -857,7 +857,7 @@ func permTitle(tool string) string {
 // write-confinement.
 func permTierWords(tool, args string) string {
 	switch tool {
-	case "run_shell":
+	case "bash":
 		if tools.ShellEscaped(args) {
 			return "Runs a command without the sandbox"
 		}

@@ -24,7 +24,7 @@ func TestPermDialogRender(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	m.width = 80
-	req := newPermReq("run_shell", `{"command": "npm init -y"}`)
+	req := newPermReq("bash", `{"command": "npm init -y"}`)
 	m.awaitingPerm = req
 
 	view := m.View()
@@ -50,7 +50,7 @@ func TestPermDialogRender(t *testing.T) {
 func TestPermDialogKeys(t *testing.T) {
 	answer := func(m *Model, keys ...string) bool {
 		t.Helper()
-		req := newPermReq("run_shell", `{"command": "go test ./..."}`)
+		req := newPermReq("bash", `{"command": "go test ./..."}`)
 		m.awaitingPerm = req
 		for _, k := range keys {
 			m.Update(keyMsg(k))
@@ -108,7 +108,7 @@ func TestPermSessionGrantEndToEnd(t *testing.T) {
 	m.program = nil // decide() must not need the program for granted calls
 
 	// Grant "npm init" via option 2 on the first ask.
-	req := newPermReq("run_shell", `{"command": "npm init -y"}`)
+	req := newPermReq("bash", `{"command": "npm init -y"}`)
 	m.awaitingPerm = req
 	m.Update(keyMsg("2"))
 	if v := <-req.reply; !v {
@@ -142,7 +142,7 @@ func TestPermSessionGrantEndToEnd(t *testing.T) {
 
 type runShellTool struct{}
 
-func (runShellTool) Name() string                { return "run_shell" }
+func (runShellTool) Name() string                { return "bash" }
 func (runShellTool) Description() string         { return "" }
 func (runShellTool) Parameters() json.RawMessage { return nil }
 func (runShellTool) Tier() tools.Tier            { return tools.TierActionAllowed }
