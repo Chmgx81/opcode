@@ -842,6 +842,8 @@ func permTitle(tool string) string {
 		return "Write file"
 	case "edit_file":
 		return "Edit file"
+	case "apply_patch":
+		return "Apply patch"
 	default:
 		return tool
 	}

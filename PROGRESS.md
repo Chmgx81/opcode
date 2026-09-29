@@ -2034,3 +2034,43 @@ in the log (mode line "> ask", composer ">", pager header rendered
 after ctrl+O), clean double-press exit. Pinned by TestTypeAheadGuard,
 TestPlanTypeAheadGuard, TestTranscriptPager, TestAdaptGlyphs,
 TestSanitizeTitle. The spec's not-yet list is down to two items.
+
+# More tools, more capability (status: complete, live-verified)
+
+Against Codex's tool inventory (shell, apply_patch, view_image,
+update_plan, current_time, get_context_remaining, request_*, MCP)
+and the agent-definition tool lists (Bash, Glob, Grep, Read,
+WebFetch, TodoWrite), tilde had three real gaps. Filled:
+
+- search_files (Grep): regex content search over a tree —
+  path:line:text matches, binary/.git skipped, 50-match cap with a
+  count note. Read-Only tier, so read-only and plan modes can now
+  FIND things, not just read what they guessed at.
+- glob_files (Glob): pattern-based file finding; ** crosses
+  directory separators, single * does not, 200-match cap. Read-Only
+  tier.
+- current_time: RFC 1123 + UTC/local + weekday — models have no
+  clock. Read-Only tier.
+- apply_patch (Codex's signature tool): V4A patches — Update File
+  with @@ context hunks (exact match first, then a
+  leading-whitespace-normalized pass, as Codex's seek_sequence
+  does), Add File, Delete File, in one call; the optional
+  <<'EOF' heredoc wrapper is accepted. A hunk whose context is
+  absent fails loudly instead of guessing, and the error says how
+  many earlier files were already changed. Action tier, and the
+  gate credits it as bounded only when EVERY touched path sits
+  inside the sandbox's writable roots — a partial bound is no
+  bound; anything touching outside prompts.
+
+Verified live: read-only mode searched a work directory through
+search_files (haystack.txt:1: the needle is here) and answered,
+zero dialogs. apply_patch end-to-end, bad-context rejection, and
+boundedness are unit-pinned (7 new tests; the boundedness test
+proved its worth by catching a test that chdir'd the package and
+poisoned the writable-roots check for the tests after it).
+Deliberately not built: WebFetch/WebSearch (network egress needs
+its own policy conversation), view_image (tilde attaches images on
+input), request_user_input (tilde asks through the plan and
+permission surfaces). Agent definitions with named tool subsets —
+the codex screenshot's pattern — are a possible later phase on top
+of subagents.

@@ -178,6 +178,10 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	var registry tools.Registry
 	registry.Register(tools.ReadFile{})
 	registry.Register(tools.ListDir{})
+	registry.Register(tools.SearchFiles{})
+	registry.Register(tools.GlobFiles{})
+	registry.Register(tools.CurrentTime{})
+	registry.Register(tools.ApplyPatch{})
 	registry.Register(tools.WriteFile{})
 	registry.Register(tools.EditFile{})
 	registry.Register(tools.RunShell{})
