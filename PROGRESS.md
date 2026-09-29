@@ -2234,3 +2234,73 @@ setup broke.")
   "created on the first gated action" (no gated action ran). Clean
   /exit, session saved.
 
+
+# Phase 34 — the themes picker (status: complete, live-verified)
+
+Spec: [docs/specs/phase34-themes.md](docs/specs/phase34-themes.md)
+(The tui audit's theme_picker: live preview + cancel-restore.)
+
+## Built
+
+- **The theme table** (`internal/tui/style.go`): three curated
+  palettes — `dark` (the teal default), `light` (the existing
+  light-legible set), and `green` (the original Phase 7 brand stack,
+  electric green on near-black, kept alive as a choice).
+  `applyThemeName` swaps every Hex token, refreshes every derived
+  style, and drops the glamour renderer cache; `adaptTheme` is now a
+  thin wrapper over the table, so the background probe and the
+  picker share one mechanism. Unknown names change nothing and
+  report false.
+- **`/theme`** (`internal/tui/theme.go`): the shared picker with
+  the active theme marked. Moving the highlight applies the
+  highlighted theme live — the whole session re-skins in place;
+  Esc restores the theme active when the picker opened (a cancelled
+  preview never strands its palette, including Enter-with-zero-
+  matches); Enter applies and persists via `Options.SetTheme`.
+  `/theme <name>` switches directly. Without a SetTheme writer the
+  note says "this session only" instead of lying.
+- **Persistence**: config.json's `theme` key. `config.SaveTheme`
+  edits the file as a raw JSON object, so unknown sibling keys
+  survive; a missing file is created (0600). An explicit config
+  theme wins over the background probe at startup; empty keeps the
+  probe (TILDE_THEME=light|dark still forces the posture). Unknown
+  names fail loudly at startup in cmd/tilde via `tui.ValidTheme`.
+- **Render-cache discipline**: applying a theme clears the per-entry
+  markdown caches and the in-flight stream cache — both embed the
+  old palette's ANSI codes. Committed native scrollback keeps its
+  original colors (stated residual).
+
+## Found and fixed during verification
+
+- **The composer's prompt survived every theme switch in the old
+  palette** — found live in the PTY: a persisted green startup
+  rendered green rules but a teal "❯". Root cause is a bubbles
+  footgun: textarea.Model holds its active style as a *pointer into
+  the struct it was focused on*, and New returns the model by value,
+  so the copy's pointer still aims at the original — every later
+  FocusedStyle write renders in the construction-time color.
+  `syncComposerPrompt` now re-seats the pointer (Focus/Blur) after
+  writing styles, and Run does the same for the startup path. The
+  shell-mode amber prompt worked only by luck of the Update cycle
+  re-seating for us; that luck is now a guarantee.
+  TestComposerPromptFollowsTheme pins it at the byte level.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages; theme tests cover the
+  token swap (and that a failed apply changes nothing), the picker
+  (backup on open, live preview on move, restore on cancel,
+  persist on select, restore on empty-match close), the direct
+  command (including the unknown-name error entry), the session-only
+  note without a writer, the render-cache clearing, and the composer
+  prompt regression. config's SaveTheme is tested for creation,
+  overwrite, unknown-key preservation, and refusal over a
+  non-object file.
+- **PTY live, truecolor forced so accents are exact RGB**: /theme
+  opened with the teal accent live; two downs rendered the session
+  green with zero teal bytes; Esc restored teal with zero green
+  bytes plus the "theme restored" note; /theme green saved (note +
+  config.json carrying theme while preserving model and
+  permission_mode); a second run started fully green — zero teal
+  bytes in the entire capture, the prompt regression fix confirmed
+  on screen.

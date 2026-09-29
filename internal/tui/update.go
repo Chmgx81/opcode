@@ -174,6 +174,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if sel != nil {
 				return m, m.pickerSelect(*sel)
 			}
+			// Live preview while the theme picker is open; restore on
+			// a close that selected nothing.
+			m.themePreview()
 			return m, nil
 		}
 	}
@@ -558,6 +561,9 @@ func (m *Model) submitInput(alt bool) tea.Cmd {
 		return nil
 	case "/doctor":
 		m.doctor()
+		return nil
+	case "/theme":
+		m.handleThemeCommand(arg)
 		return nil
 	}
 
@@ -1245,6 +1251,10 @@ func firstUserText(s *session.Session) string {
 // picker itself is closed before this runs), and a fetch returns the
 // Cmd so the async model list actually starts.
 func (m *Model) pickerSelect(it pickerItem) tea.Cmd {
+	if it.Theme != "" {
+		m.selectTheme(it.Theme)
+		return nil
+	}
 	if it.Path != "" {
 		m.resumeSession(it.Path, it.Label)
 		return nil

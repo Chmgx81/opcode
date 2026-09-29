@@ -35,28 +35,109 @@ var (
 // background. Dark is the default posture (and what undetectable
 // terminals fall back to); a light background gets the spec's light
 // tokens — light text on a white terminal is invisible, and that is
-// the failure this exists to prevent.
+// the failure this exists to prevent. A thin wrapper over the theme
+// table so the background probe and the /theme picker share one
+// mechanism.
 func adaptTheme(dark bool) {
 	if dark {
+		applyThemeName("dark")
 		return
 	}
-	HexAccent = "#0f766e"
-	HexInfo = "#1d4ed8"
-	HexDeep = "#c5cad1"
-	HexDeep2 = "#eef0f3"
-	HexCode = "#f5f6f8"
+	applyThemeName("light")
+}
+
+// theme is one named palette: every Hex token plus the one-line
+// description the picker shows. Curated, not user-extensible — a
+// hand-typed hex that renders illegibly is a support ticket, not a
+// feature.
+type theme struct {
+	name, desc string
+	hex        [10]string // accent, info, deep, deep2, code, success, danger, warning, dim, subtle
+}
+
+// themes are ordered as the picker lists them. "dark" is the teal
+// default; "green" is the original Phase 7 brand stack (electric
+// green on near-black) kept alive as a choice.
+var themes = []theme{
+	{"dark", "teal accent on dark — the default", [10]string{
+		"#2dd4bf", "#60a5fa", "#3f4650", "#262a31", "#1c2026",
+		"#4ade80", "#f87171", "#fbbf24", "#9aa0a6", "#6b7280"}},
+	{"light", "for light terminal backgrounds", [10]string{
+		"#0f766e", "#1d4ed8", "#c5cad1", "#eef0f3", "#f5f6f8",
+		"#15803d", "#b91c1c", "#b45309", "#5f6368", "#80868b"}},
+	{"green", "the original brand stack — electric green on near-black", [10]string{
+		"#16db65", "#60a5fa", "#1d4a30", "#0d2818", "#0a1f14",
+		"#4ade80", "#f87171", "#fbbf24", "#8fa898", "#5b6b5d"}},
+}
+
+// ThemeNames lists the valid theme names, in picker order.
+func ThemeNames() []string {
+	names := make([]string, len(themes))
+	for i, t := range themes {
+		names[i] = t.name
+	}
+	return names
+}
+
+// ValidTheme reports whether name is a real theme.
+func ValidTheme(name string) bool {
+	for _, t := range themes {
+		if t.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ThemeDesc returns the picker's one-line description for a theme.
+func ThemeDesc(name string) string {
+	for _, t := range themes {
+		if t.name == name {
+			return t.desc
+		}
+	}
+	return ""
+}
+
+// curPalette records which named palette is installed; Run seeds the
+// model's curTheme from it when the theme is auto (probe-decided).
+var curPalette = "dark"
+
+// applyThemeName installs a named palette: every Hex token, every
+// derived style, and a dropped glamour cache (renderers embed the
+// palette at creation). Unknown names change nothing and report
+// false — the caller falls back to its own posture.
+func applyThemeName(name string) bool {
+	var t theme
+	found := false
+	for _, cand := range themes {
+		if cand.name == name {
+			t, found = cand, true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	curPalette = t.name
+	HexAccent = t.hex[0]
+	HexInfo = t.hex[1]
+	HexDeep = t.hex[2]
+	HexDeep2 = t.hex[3]
+	HexCode = t.hex[4]
 	HexText = ""
-	HexSuccess = "#15803d"
-	HexDanger = "#b91c1c"
-	HexWarning = "#b45309"
-	HexDim = "#5f6368"
-	HexSubtle = "#80868b"
+	HexSuccess = t.hex[5]
+	HexDanger = t.hex[6]
+	HexWarning = t.hex[7]
+	HexDim = t.hex[8]
+	HexSubtle = t.hex[9]
 	refreshTokens()
 	// Glamour renderers embed the style config at creation; drop the
-	// cache so post-adapt renders pick up the swapped palette.
+	// cache so post-switch renders pick up the swapped palette.
 	mdMu.Lock()
 	mdRenderers = map[int]*glamour.TermRenderer{}
 	mdMu.Unlock()
+	return true
 }
 
 // Design tokens derived from the palette; refreshTokens (re)builds

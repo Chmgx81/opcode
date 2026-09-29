@@ -270,6 +270,17 @@ doubles, so entries can be appended freely.
   and interrupts.
 - **Headless** (`tilde -p`) imports no TUI package (CI-enforced),
   prompts never, fails closed.
+- **`/theme`** (Phase 34): the palette as a user choice — `dark`
+  (teal default), `light`, `green` (the original Phase 7 brand
+  stack). The shared picker previews live (moving the highlight
+  re-skins the session), Esc restores the theme active when it
+  opened, Enter persists to config.json's `theme` key (raw-object
+  edit, unknown keys preserved). An explicit config theme wins over
+  the background probe; empty keeps the probe with
+  TILDE_THEME=light|dark forcing the posture. Applying clears every
+  render cache that embeds the old palette (glamour renderers,
+  per-entry markdown, the live stream); committed scrollback keeps
+  its original colors — the one stated residual.
 - **`/doctor`** (Phase 33): one transcript entry, one line per
   subsystem — version, model/provider, api-key presence (never the
   key), config.json and models.json loader verdicts, the live
@@ -283,6 +294,6 @@ doubles, so entries can be appended freely.
 
 ## 6. Not yet built (the honest list)
 
-1. **Themes picker**, LaTeX conversion, `/diff`.
+1. LaTeX conversion, `/diff`.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.
