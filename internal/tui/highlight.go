@@ -32,8 +32,15 @@ func lexerFor(path string) chroma.Lexer {
 // highlightLine colorizes one source line. No lexer or a tokenise
 // failure returns the line untouched — highlighting must never cost
 // content.
+// highlightCap is the largest line that ever reaches chroma. The
+// lexer is chosen from a model-provided path, so the input is
+// untrusted: a pathological line must fall back to plain text
+// rather than hold the render hostage inside a parser. (Codex's
+// guardrail: display never stalls on highlighting.)
+const highlightCap = 4 * 1024
+
 func highlightLine(src string, l chroma.Lexer) string {
-	if l == nil {
+	if l == nil || len(src) > highlightCap {
 		return src
 	}
 	it, err := l.Tokenise(nil, src)
