@@ -130,7 +130,7 @@ func TestBashNonzeroExitReportsOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on nonzero exit")
 	}
-	if !strings.Contains(err.Error(), "exit status") {
+	if !strings.Contains(err.Error(), "exited with status") {
 		t.Errorf("err = %v", err)
 	}
 	if !strings.Contains(out, "boom") {

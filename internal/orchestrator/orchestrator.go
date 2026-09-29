@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/tools"
@@ -27,7 +28,13 @@ const (
 	EventUsage        = "usage"         // token usage for one model round
 	EventCompaction   = "compaction"    // history was auto-summarized
 	EventTurnComplete = "turn_complete" // the model stopped calling tools
-	EventError        = "error"
+	EventError        = "error"         // the turn is OVER; Err carries why
+	// EventCompactionFailed: compaction was attempted and failed —
+	// the turn CONTINUES uncompacted. This is deliberately not
+	// EventError: the TUI ends the turn on EventError, and a turn
+	// wrongly marked dead while its goroutine still runs lets a
+	// second Send race the first (audit C2).
+	EventCompactionFailed = "compaction_failed"
 )
 
 // ErrCancelled is the turn error surfaced when the user cancels a run.
@@ -94,6 +101,16 @@ type Orchestrator struct {
 	baselineSet      bool
 	lastPromptTokens int
 
+	// turnWg tracks the in-flight turn goroutine so the exit path can
+	// wait for it (see WaitIdle) instead of racing it.
+	turnWg sync.WaitGroup
+
+	// cfgMu guards the per-request knobs (Provider, Model, Mode,
+	// ReasoningEffort) against mid-turn writes from the UI — a mode
+	// or effort switch, a re-login. The turn loop snapshots them
+	// under the lock when it builds a request (audit C6).
+	cfgMu sync.Mutex
+
 	history []llm.Message
 
 	steerMu sync.Mutex
@@ -120,6 +137,8 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 // SetEffort switches the reasoning effort; the next model request
 // carries it.
 func (o *Orchestrator) SetEffort(effort string) {
+	o.cfgMu.Lock()
+	defer o.cfgMu.Unlock()
 	o.ReasoningEffort = effort
 }
 
@@ -127,7 +146,17 @@ func (o *Orchestrator) SetEffort(effort string) {
 // up the new mode instruction; the gate's Decide callback is the
 // caller's to rebuild.
 func (o *Orchestrator) SetMode(mode string) {
+	o.cfgMu.Lock()
+	defer o.cfgMu.Unlock()
 	o.Mode = tools.NormalizeMode(mode)
+}
+
+// SetProvider swaps the LLM provider (a re-login or key change does
+// this mid-session). The next model request uses it.
+func (o *Orchestrator) SetProvider(p llm.Provider) {
+	o.cfgMu.Lock()
+	defer o.cfgMu.Unlock()
+	o.Provider = p
 }
 
 // systemPrompt composes the base prompt, the skills index, and the
@@ -143,6 +172,22 @@ func (o *Orchestrator) systemPrompt() string {
 		parts = append(parts, instr)
 	}
 	return strings.Join(parts, "\n")
+}
+
+// WaitIdle blocks until no turn goroutine is running, or the timeout
+// passes. The exit path calls it after cancelling the turn: the session
+// save must not race a live turn's appends to history (audit C3). A
+// wedged provider cannot hold the exit hostage — the timeout keeps
+// quitting bounded.
+func (o *Orchestrator) WaitIdle(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() { o.turnWg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // History returns the conversation so far (a copy) — session storage
@@ -189,8 +234,10 @@ func (o *Orchestrator) Send(ctx context.Context, userText string) <-chan Event {
 // model saw once, it sees again on resume.
 func (o *Orchestrator) SendImages(ctx context.Context, userText string, images []llm.Image) <-chan Event {
 	events := make(chan Event, 32)
+	o.turnWg.Add(1)
 	go func() {
 		defer close(events)
+		defer o.turnWg.Done()
 		o.history = append(o.history, llm.Message{Role: "user", Content: userText, Images: images})
 		if err := o.runTurn(ctx, events); err != nil {
 			if ctx.Err() != nil {
@@ -223,24 +270,30 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		}
 		if note, err := o.maybeCompact(ctx, pos); err != nil {
 			// Compaction failure must not kill the turn: the
-			// conversation continues uncompacted and the user sees it.
-			events <- Event{Kind: EventError, Err: fmt.Errorf("compaction skipped: %w", err)}
+			// conversation continues uncompacted and the user sees it
+			// — as a non-terminal notice, never EventError.
+			events <- Event{Kind: EventCompactionFailed, Err: err}
 		} else if note != "" {
 			events <- Event{Kind: EventCompaction, Text: note}
 		}
 		// Copy: the request must be a snapshot. Handing out the live
 		// slice lets any later append (the next turn, a subagent)
-		// reach into a request that already went out.
+		// reach into a request that already went out. The knobs come
+		// off the same snapshot, read under cfgMu so a mid-turn mode
+		// or effort switch cannot tear the request.
 		msgs := make([]llm.Message, len(o.history))
 		copy(msgs, o.history)
+		o.cfgMu.Lock()
+		provider, model, system, effort := o.Provider, o.Model, o.systemPrompt(), o.ReasoningEffort
+		o.cfgMu.Unlock()
 		req := llm.ChatRequest{
-			Model:           o.Model,
-			System:          o.systemPrompt(),
+			Model:           model,
+			System:          system,
 			Messages:        msgs,
 			Tools:           o.toolDefs(),
-			ReasoningEffort: o.ReasoningEffort,
+			ReasoningEffort: effort,
 		}
-		stream, err := o.Provider.StreamChat(ctx, req)
+		stream, err := provider.StreamChat(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ErrCancelled
@@ -426,12 +479,15 @@ func (o *Orchestrator) maybeCompact(ctx context.Context, pos InjectionPos) (stri
 // interface, optionally a cheaper model (Section 3.2: keep the
 // summarizer swappable).
 func (o *Orchestrator) summarize(ctx context.Context, old []llm.Message) (string, error) {
-	model := o.CompactionModel
-	if model == "" {
-		model = o.Model
+	o.cfgMu.Lock()
+	compactionModel := o.CompactionModel
+	if compactionModel == "" {
+		compactionModel = o.Model
 	}
-	stream, err := o.Provider.StreamChat(ctx, llm.ChatRequest{
-		Model:    model,
+	provider := o.Provider
+	o.cfgMu.Unlock()
+	stream, err := provider.StreamChat(ctx, llm.ChatRequest{
+		Model:    compactionModel,
 		System:   "Summarize this conversation compactly: the tasks, decisions, results, and open threads. Reply with the summary only.",
 		Messages: old,
 	})

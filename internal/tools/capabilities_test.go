@@ -235,6 +235,10 @@ func TestGlobFiles(t *testing.T) {
 }
 
 func TestWebFetch(t *testing.T) {
+	// The fixture serves on loopback; the local-fetch guard is the
+	// user's explicit opt-in (TILDE_ALLOW_LOCAL_FETCH), and this test
+	// is that user.
+	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/page":
@@ -307,5 +311,33 @@ func TestWebFetchPromptsInBuild(t *testing.T) {
 	promptCalled = false
 	if !plan(WebFetch{}, `{"url": "https://example.test"}`) || !promptCalled {
 		t.Error("web_fetch must prompt in plan mode")
+	}
+}
+
+// TestWebFetchRefusesLocalTargets: the SSRF guard (audit S3) — the
+// model may not fetch the machine's own interfaces, and an external
+// redirect may not pivot there either. TILDE_ALLOW_LOCAL_FETCH is the
+// user's explicit opt-out of the guard.
+func TestWebFetchRefusesLocalTargets(t *testing.T) {
+	for _, raw := range []string{
+		`{"url": "http://127.0.0.1:8080/admin"}`,
+		`{"url": "http://localhost/status"}`,
+		`{"url": "http://[::1]/metrics"}`,
+		`{"url": "http://169.254.169.254/latest/meta-data/"}`,
+	} {
+		if _, err := run(t, WebFetch{}, raw); err == nil {
+			t.Errorf("%s: the local target was fetched", raw)
+		} else if !strings.Contains(err.Error(), "off-limits") {
+			t.Errorf("%s: wrong refusal: %v", raw, err)
+		}
+	}
+	// The user's explicit opt-in lifts the guard.
+	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("local fine"))
+	}))
+	defer srv.Close()
+	if _, err := run(t, WebFetch{}, `{"url": "`+srv.URL+`"}`); err != nil {
+		t.Errorf("opt-in fetch failed: %v", err)
 	}
 }

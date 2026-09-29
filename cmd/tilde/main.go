@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/headless"
@@ -92,9 +93,22 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	if err != nil {
 		return err
 	}
+	// Create ~/.tilde on the very first run: every error below names
+	// a file inside it, and a "set model in ~/.tilde/config.json"
+	// that points at a directory that does not exist yet is a dead
+	// end for a new user.
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		return fmt.Errorf("create %s: %w", userDir, err)
+	}
+	// A malformed config file stops the run rather than guessing;
+	// the hint names the way out instead of leaving the user at a
+	// bare parse error.
+	loadErr := func(err error) error {
+		return fmt.Errorf("%w — fix or delete the file and start tilde again", err)
+	}
 	cfg, err := config.LoadConfig(userDir)
 	if err != nil {
-		return err
+		return loadErr(err)
 	}
 	// The tui package owns the palette list; an unknown name fails
 	// loudly here rather than silently probing (an explicit choice
@@ -105,12 +119,12 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	}
 	models, err := config.LoadModels(userDir)
 	if err != nil {
-		return err
+		return loadErr(err)
 	}
 
 	auth, warnings, err := config.LoadAuth(userDir)
 	if err != nil {
-		return err
+		return loadErr(err)
 	}
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
@@ -136,22 +150,30 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	if providerCfg.BaseURL == "" {
 		return fmt.Errorf("provider %q has no base_url configured in models.json", providerName)
 	}
-	// A keyless local server is fine; a keyless remote one will fail on
-	// the first request, so say so up front instead.
-	isLocal := strings.Contains(providerCfg.BaseURL, "localhost") ||
-		strings.Contains(providerCfg.BaseURL, "127.0.0.1")
-	if !hasKey && !isLocal && providerCfg.APIKeyEnv != "" {
-		fmt.Fprintf(os.Stderr,
-			"warning: no API key for provider %q (set %s, run tilde and use /login, or add it to %s)\n",
-			providerName, providerCfg.APIKeyEnv, filepath.Join(userDir, "auth.json"))
+	// A keyless local server is fine; a keyless remote one will fail
+	// on the first request, so say so up front — as a startup note
+	// the TUI shows, not a stderr line the alt-screen immediately
+	// clears (audit U2).
+	var startupNotes []string
+	if !hasKey && !config.IsLocalBaseURL(providerCfg.BaseURL) && providerCfg.APIKeyEnv != "" {
+		startupNotes = append(startupNotes, fmt.Sprintf(
+			"no API key for provider %q — set %s, use /login %s, or add it to %s",
+			providerName, providerCfg.APIKeyEnv, providerName, filepath.Join(userDir, "auth.json")))
 	}
 
-	if err := os.MkdirAll(userDir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", userDir, err)
-	}
 	auditPath := filepath.Join(userDir, "audit.jsonl")
+	// One redactor holds EVERY known secret (audit S4/S5): every
+	// auth.json value — not just the active provider's — plus the
+	// resolved key, and /login or /model adds live. The audit log and
+	// the session save both read it, so a key can never be redacted
+	// in one and leak through the other.
+	redactor := tools.NewRedactor()
+	for _, v := range auth {
+		redactor.Add(v)
+	}
+	redactor.Add(key.Value)
 	gate := &tools.Gate{
-		Audit: tools.NewAuditLog(auditPath, tools.NewRedactor(key.Value)),
+		Audit: tools.NewAuditLog(auditPath, redactor),
 	}
 	// Project trust (Section 7): project-level skills only load once
 	// the project's executable surface is approved. --trust pre-approves
@@ -212,7 +234,6 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	mcpManager := mcp.NewManager()
 	defer mcpManager.Close()
 
-	var startupNotes []string
 	userMcpTools, notes := mcpManager.Connect(context.Background(), userMcp)
 	startupNotes = append(startupNotes, notes...)
 	for _, t := range userMcpTools {
@@ -261,6 +282,9 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 
 	orch = orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
 	orch.ReasoningEffort = cfg.ReasoningEffort
+	// One version everywhere: the banner, --version, and the fetch
+	// UA agree (audit X22).
+	tools.WebFetchUA = "tilde/" + strings.TrimPrefix(buildVersion(), "tilde ") + " (+https://github.com/Chmgx81/tilde)"
 	orch.SetMode(cfg.PermissionMode)
 	orch.SkillsIndex = skillManager.Index()
 	orch.ContextWindow = cfg.ContextWindow
@@ -284,7 +308,15 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			}
 		}
 		if err != nil {
-			return err
+			// A raw parse error reads like a bug in tilde; say what
+			// it almost always is and where the alternatives are
+			// (audit U6).
+			what := *resume
+			if what == "" {
+				what = path
+			}
+			return fmt.Errorf("could not resume %s: %w — the file may be damaged or written by a newer tilde; pick another with /sessions",
+				filepath.Base(what), err)
 		}
 		orch.Seed(s.History())
 		resumeNote = fmt.Sprintf("resumed session %s (%d messages)", filepath.Base(path), len(s.History()))
@@ -354,7 +386,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// session file, credentials redacted (Section 3.7).
 	saveSession := func() {
 		s := session.FromHistory(cfg.Model, cfg.PermissionMode, orch.History())
-		if err := s.Save(session.NewFile(userDir), []string{key.Value}); err != nil {
+		if err := s.Save(session.NewFile(userDir), redactor.Secrets()); err != nil {
 			fmt.Fprintf(os.Stderr, "tilde: could not save session: %v\n", err)
 		}
 	}
@@ -385,8 +417,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		if err != nil {
 			return err
 		}
-		if !hasKey && pc.APIKeyEnv != "" &&
-			!strings.Contains(pc.BaseURL, "localhost") && !strings.Contains(pc.BaseURL, "127.0.0.1") {
+		if !hasKey && pc.APIKeyEnv != "" && !config.IsLocalBaseURL(pc.BaseURL) {
 			return fmt.Errorf("no API key for provider %q (set %s, /login, or auth.json)",
 				providerName, pc.APIKeyEnv)
 		}
@@ -395,9 +426,10 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		orch.Model = model
 		subRunner.Provider = newProvider
 		subRunner.Model = model
-		// The redactor protects the stored key; the new key is a new
-		// secret to redact.
-		gate.Audit = tools.NewAuditLog(auditPath, tools.NewRedactor(k.Value))
+		// The new key is a new secret; the redactor accumulates it
+		// so the audit log and session saves cover every key ever
+		// active this session.
+		redactor.Add(k.Value)
 		return nil
 	}
 
@@ -414,7 +446,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// Headless (Section 3.9): one turn, no UI. Permissions fail closed
 	// with nobody to ask; use full-auto for unattended automation.
 	if *prompt != "" {
-		gate.Decide = tools.PolicyDecide(cfg.PermissionMode, nil)
+		gate.SetDecide(tools.PolicyDecide(cfg.PermissionMode, nil))
 		if resumeNote != "" && !*jsonOut {
 			fmt.Fprintf(os.Stderr, "~ %s\n", resumeNote)
 		}
@@ -430,6 +462,9 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			JSON: *jsonOut,
 			Out:  os.Stdout,
 		})
+		// Same discipline as the TUI exit: one turn, but the
+		// session save must not race it.
+		orch.WaitIdle(2 * time.Second)
 		saveSession()
 		return err
 	}
@@ -440,6 +475,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	ui := tui.New(tui.Options{
 		Orch:         orch,
 		Effort:       cfg.ReasoningEffort,
+		Redactor:     redactor,
 		Model:        cfg.Model,
 		Mode:         cfg.PermissionMode,
 		Cwd:          cwd,
@@ -479,7 +515,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	})
 	// The gate's decision policy is wired after the UI exists: prompts
 	// surface in the TUI and block the orchestrator until answered.
-	gate.Decide = tools.PolicyDecide(cfg.PermissionMode, ui.Prompt())
+	gate.SetDecide(tools.PolicyDecide(cfg.PermissionMode, ui.Prompt()))
 	planTool.Approve = ui.PlanApprove()
 	todoList.OnChange = ui.TodosChanged()
 
@@ -490,6 +526,11 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	})
 
 	runErr := tui.Run(ui)
+	// The turn goroutine may still be running when the UI returns
+	// (quit mid-turn). Wait for it before snapshotting the session —
+	// a concurrent history append would race the save (audit C3).
+	// Bounded: a wedged provider cannot hang the exit.
+	orch.WaitIdle(2 * time.Second)
 	saveSession()
 	// The graceful exit: one line that says what happened (the
 	// session was saved) and the way back in. Codex names itself in

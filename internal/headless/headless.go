@@ -29,9 +29,19 @@ type Options struct {
 func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, opt Options) error {
 	w := opt.Out
 	enc := json.NewEncoder(w)
+	// A JSON consumer piping our output deserves to know the stream
+	// broke (a closed pipe, a full disk) rather than receiving a
+	// silently truncated one; the first encode error wins and is
+	// returned alongside any turn error (audit C11).
+	var encodeErr error
+	emit := func(v map[string]any) {
+		if encodeErr == nil {
+			encodeErr = enc.Encode(v)
+		}
+	}
 
 	if opt.JSON {
-		enc.Encode(map[string]any{"kind": "start", "prompt": prompt})
+		emit(map[string]any{"kind": "start", "prompt": prompt})
 	} else {
 		fmt.Fprintf(w, "~ %s\n", prompt)
 	}
@@ -49,46 +59,55 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 		switch ev.Kind {
 		case orchestrator.EventText:
 			if opt.JSON {
-				enc.Encode(map[string]any{"kind": "text", "text": ev.Text})
+				emit(map[string]any{"kind": "text", "text": ev.Text})
 			} else {
 				fmt.Fprint(w, text)
 			}
 		case orchestrator.EventToolStart:
 			if opt.JSON {
-				enc.Encode(map[string]any{
+				emit(map[string]any{
 					"kind": "tool", "tool": ev.ToolCall.Name, "args": ev.ToolCall.Arguments})
 			} else {
 				fmt.Fprintf(w, "\n[tool] %s %s\n", ev.ToolCall.Name, args)
 			}
 		case orchestrator.EventToolResult:
 			if opt.JSON {
-				enc.Encode(map[string]any{
+				emit(map[string]any{
 					"kind": "tool_result", "tool": ev.ToolCall.Name, "result": ev.ToolResult})
 			} else {
 				fmt.Fprintf(w, "[result] %s\n", oneLine(result))
 			}
 		case orchestrator.EventUsage:
 			if opt.JSON {
-				enc.Encode(map[string]any{
+				emit(map[string]any{
 					"kind": "usage", "prompt_tokens": ev.Usage.PromptTokens,
 					"completion_tokens": ev.Usage.CompletionTokens})
 			}
 		case orchestrator.EventTurnComplete:
 			if opt.JSON {
-				enc.Encode(map[string]any{"kind": "done"})
+				emit(map[string]any{"kind": "done"})
 			} else if !opt.JSON {
 				fmt.Fprintln(w)
+			}
+		case orchestrator.EventCompactionFailed:
+			if opt.JSON {
+				emit(map[string]any{"kind": "compaction_failed", "error": ev.Err.Error()})
+			} else {
+				fmt.Fprintf(w, "[compaction skipped] %s\n", ev.Err.Error())
 			}
 		case orchestrator.EventError:
 			err = ev.Err
 			if opt.JSON {
-				enc.Encode(map[string]any{"kind": "error", "error": ev.Err.Error()})
+				emit(map[string]any{"kind": "error", "error": ev.Err.Error()})
 			} else {
 				fmt.Fprintf(w, "\nerror: %v\n", ev.Err)
 			}
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return encodeErr
 }
 
 func oneLine(s string) string {

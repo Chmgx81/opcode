@@ -11,23 +11,50 @@ import (
 )
 
 // Redactor replaces known credential values with a placeholder before
-// anything is written to the audit log (Section 3.10: credentials never
-// leak out through tilde's own records).
+// anything is written to the audit log or a session file (Section
+// 3.10: credentials never leak out through tilde's own records).
+//
+// It is the ONE list of what counts as a secret: the audit log and
+// the session save both read it, and /login adds to it live — a key
+// stored mid-session is redacted everywhere from that moment, and a
+// key that was never active this session is still covered because
+// every auth.json value is loaded at startup (audit findings S4/S5).
 type Redactor struct {
+	mu      sync.Mutex
 	secrets []string
 }
 
 func NewRedactor(secrets ...string) *Redactor {
 	var r Redactor
+	r.Add(secrets...)
+	return &r
+}
+
+// Add registers more secret values. Empty values are ignored; the
+// same value twice is harmless (Redact is idempotent).
+func (r *Redactor) Add(secrets ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, s := range secrets {
 		if s != "" {
 			r.secrets = append(r.secrets, s)
 		}
 	}
-	return &r
+}
+
+// Secrets returns a copy of everything currently known to be secret
+// — session save passes it to the writer.
+func (r *Redactor) Secrets() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, len(r.secrets))
+	copy(out, r.secrets)
+	return out
 }
 
 func (r *Redactor) Redact(s string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, secret := range r.secrets {
 		s = strings.ReplaceAll(s, secret, "[redacted]")
 	}
@@ -83,12 +110,23 @@ func (l *AuditLog) record(e auditEntry) error {
 // with its tier. A nil Decide allows everything (the test/CI
 // posture); production wires PolicyDecide.
 type Gate struct {
-	// Decide returns true to allow the call. Never nil.
+	// Decide returns true to allow the call. Never nil. Writers must
+	// go through SetDecide: the UI can rebuild the policy mid-turn
+	// while the dispatch goroutine reads it here.
 	Decide func(tool Tool, args string) bool
 	// Audit receives one entry per gate pass. If nil, nothing is logged.
 	Audit *AuditLog
 	// Clock is injectable for tests; defaults to wall clock.
 	Clock func() time.Time
+
+	decideMu sync.RWMutex
+}
+
+// SetDecide swaps the policy callback safely against a live turn.
+func (g *Gate) SetDecide(fn func(tool Tool, args string) bool) {
+	g.decideMu.Lock()
+	defer g.decideMu.Unlock()
+	g.Decide = fn
 }
 
 func (g *Gate) now() time.Time {
@@ -99,10 +137,13 @@ func (g *Gate) now() time.Time {
 }
 
 func (g *Gate) allow(tool Tool, args string) bool {
-	if g.Decide == nil {
+	g.decideMu.RLock()
+	fn := g.Decide
+	g.decideMu.RUnlock()
+	if fn == nil {
 		return true
 	}
-	return g.Decide(tool, args)
+	return fn(tool, args)
 }
 
 // Execute is the one path a tool call takes: permission decision, then
@@ -121,10 +162,16 @@ func (g *Gate) Execute(ctx context.Context, tool Tool, args string) (string, err
 	}
 	if !allowed {
 		entry.Error = "denied by permission gate"
+		denied := fmt.Errorf("permission denied for %s (tier %s)", tool.Name(), tool.Tier())
 		if g.Audit != nil {
-			_ = g.Audit.record(entry)
+			// A denied call is exactly the entry a security review
+			// wants on record; a failed write must not be silent
+			// (audit C9) — but it must also not mask the denial.
+			if err := g.Audit.record(entry); err != nil {
+				return "", fmt.Errorf("%w (audit log write failed: %v)", denied, err)
+			}
 		}
-		return "", fmt.Errorf("permission denied for %s (tier %s)", tool.Name(), tool.Tier())
+		return "", denied
 	}
 
 	result, err := tool.Execute(ctx, args)

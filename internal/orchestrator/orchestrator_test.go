@@ -679,8 +679,11 @@ func TestCompactionFailureIsNotFatal(t *testing.T) {
 
 	var skipped, completed bool
 	for _, ev := range events {
-		if ev.Kind == EventError && strings.Contains(ev.Err.Error(), "compaction skipped") {
+		if ev.Kind == EventCompactionFailed {
 			skipped = true
+		}
+		if ev.Kind == EventError {
+			t.Errorf("compaction failure surfaced as a terminal EventError: %v", ev.Err)
 		}
 		if ev.Kind == EventTurnComplete {
 			completed = true
@@ -747,7 +750,7 @@ func TestToolFailureKeepsOutput(t *testing.T) {
 			got = ev.ToolResult
 		}
 	}
-	if !strings.Contains(got, "error: exit status") {
+	if !strings.Contains(got, "error: exited with status 3") {
 		t.Errorf("result missing the error headline: %q", got)
 	}
 	if !strings.Contains(got, "boom") {

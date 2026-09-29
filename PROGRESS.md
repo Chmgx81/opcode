@@ -2723,3 +2723,75 @@ built all five platform binaries (1m14s); the raw.githubusercontent
 install one-liner resolved v0.3.0 in a clean temp dir and the
 installed release binary prints "tilde v0.3.0" — the -X
 main.version injection verified in the real pipeline.
+
+## Phase 43: production audit (2026-09-29)
+
+Four read-only audit passes (security, concurrency, UX, slop) over
+the whole codebase; findings triaged in
+docs/specs/phase43-production-audit.md, then fixed in three
+commits: the slop sweep, the security/concurrency batch, and the UX
+batch. All deferred and rejected calls are named below — nothing
+was silently dropped.
+
+### Shipped — slop (commit: "the slop sweep")
+Dead code out (pendingPick, ModeAllowsTool/ModeAllowsTier and their
+constant-tests, Session.BranchIDs, unreachable plainMode branch,
+pointless MCPNames copy), stale comments told the truth, /help
+deduped, /quit added to the palette, --plain added to --help,
+x.txt untracked, three version constants collapsed into the one
+buildVersion feeds.
+
+### Shipped — security + concurrency
+- S3/S9: web_fetch refuses loopback/link-local targets and
+  revalidates every redirect hop (TILDE_ALLOW_LOCAL_FETCH opts out);
+  config.IsLocalBaseURL parses the URL host instead of
+  substring-matching "localhost".
+- S4/S5/X21/X22: one shared mutex-guarded Redactor holds every
+  auth.json value plus each live key; the gate is never forked, so
+  subagents, audit log, and session saves all redact the same set.
+- S6: write-bound checks resolve the full path including symlinks
+  (Lstat on the base component too).
+- S7: MCP children get an allowlist environment, not the parent's.
+- C1: anthropic resp.Body closed on every path (closingReader).
+- C2: compaction failure is a non-terminal EventCompactionFailed —
+  a skip must not end the turn as EventError.
+- C3: WaitIdle(2s) on both exit paths before saveSession, so the
+  save cannot race a live turn (and a wedged provider cannot hang
+  the exit).
+- C4/C5/C6: grant state under grantMu; cancelTurn answers pending
+  permission/plan prompts (quit can no longer wedge the dispatch
+  goroutine); orchestrator per-request knobs under cfgMu with
+  SetMode/SetEffort/SetProvider, and Gate.SetDecide for the policy
+  swap — all three mid-turn writers are now synchronized.
+- C9/C11/C12: denied-audit write errors surface in the returned
+  error; headless returns the first JSON encode error; /models
+  fails fast with "no key — /login <provider>" instead of a bare
+  401 round-trip.
+
+### Shipped — UX
+U1 mkdir ~/.tilde before any error references it; U2/U3/U4/U5/U6
+startup, key, config, resume, and provider errors now name the
+next step (key note rides in StartupNotes instead of stderr);
+U7 "exited with status N" instead of the doubled "exit status:
+exit status N"; U9 /sessions reports skipped unreadable files;
+U10 /skills and /mcp empty states say where skills and servers
+come from; U13 help overlay documents ctrl+e, alt+./alt+,, and
+steering; U15/X24 palette /quit; U17 README mkdir -p; U18 README
+names the real tool (glob).
+
+### Deferred (named, not hidden)
+- S1 read-tier arbitrary paths, S2 bash network egress: design
+  work beyond this phase (path allowlist design; seccomp/netns).
+  Blunted by S4/S21: credentials cannot leak through logs or saves.
+- S8 installer checksum, S11 clipboard PATH lookup, C7 process-
+  group kill for bash grandchildren, C8 chatty-MCP buffer wedge,
+  C10 LLM client hard timeout, C13 !-escape audit entry: each a
+  self-contained follow-up; none is a data-loss or auth risk.
+- U14 REJECTED: the ? guard is correct — users must be able to
+  type "?" mid-composer.
+
+### Verified for real
+`go build ./...`, `go vet ./...`, `gofmt -l .` clean, and
+`go test -count=1 ./...` green across all packages after each
+batch, with the two exit-status wording assertions updated to the
+new message.

@@ -84,6 +84,10 @@ type Options struct {
 	// Effort seeds the reasoning-effort knob ("" = provider
 	// default); alt+. / alt+, cycle it live.
 	Effort string
+	// Redactor is the process-wide secret list — /login adds the
+	// new key here so the audit log AND session saves redact it
+	// (audit S4/S5). Nil means /login cannot update redaction.
+	Redactor *tools.Redactor
 	// KeyFor resolves a provider's API key through the credential
 	// chain (auth.json, explicit env, derived env) — the /models
 	// picker needs it to fetch live model lists. Missing is fine:
@@ -231,11 +235,14 @@ type Model struct {
 	awaitingTrust *TrustDecision
 	awaitingPerm  *permRequest
 	awaitingPlan  *planRequest
-	allowAll      bool // legacy global grant: skip every action-tier prompt this session
+	grantMu       sync.Mutex // guards sessionRules/sessionAllow/toolAllows
 
 	// Session-scoped "don't ask again" grants from the approval
 	// dialog: shell commands by token prefix (fail-closed matching,
 	// the same rules the config allowlist uses), other tools by name.
+	// decide() reads these on the ORCHESTRATOR's dispatch goroutine
+	// while grantAlways() writes on the tea goroutine — every access
+	// goes through grantMu (audit C4).
 	sessionRules []string
 	sessionAllow *tools.ShellAllowlist
 	toolAllows   map[string]bool
@@ -577,9 +584,7 @@ func (m *Model) Prompt() func(tool tools.Tool, args string) bool {
 }
 
 func (m *Model) decide(tool tools.Tool, args string) bool {
-	if m.allowAll {
-		return true
-	}
+
 	// Session-scoped grants from a previous "don't ask again": shell
 	// commands by token prefix (fail-closed on metacharacters, the
 	// same matching the config allowlist uses), other tools by name.
@@ -609,6 +614,8 @@ func (m *Model) decide(tool tools.Tool, args string) bool {
 // sessionGrants reports whether a tool call is covered by a
 // session-scoped always-allow rule.
 func (m *Model) sessionGrants(tool, args string) bool {
+	m.grantMu.Lock()
+	defer m.grantMu.Unlock()
 	if m.toolAllows[tool] {
 		return true
 	}
@@ -672,6 +679,10 @@ func prefixRule(scope string) string {
 // grantAlways applies option 2: a session-scoped rule, never a file
 // on disk, never a provider-side change.
 func (m *Model) grantAlways(req *permRequest) {
+	// The write side of the C4 race: the dispatch goroutine may be
+	// reading these grants in decide() right now.
+	m.grantMu.Lock()
+	defer m.grantMu.Unlock()
 	if req.tool == "bash" {
 		if rule := prefixRule(req.scope); rule != "" {
 			m.sessionRules = append(m.sessionRules, rule)
@@ -727,6 +738,25 @@ func (m *Model) startTurn(text string, images []llm.Image) {
 }
 
 func (m *Model) cancelTurn() {
+	// A pending prompt blocks the orchestrator's goroutine on its
+	// reply channel. Answer it before tearing down so quitting
+	// cannot wedge the dispatch loop (audit C5). Both channels are
+	// buffered, so a user who answered a moment earlier keeps their
+	// verdict — the select simply finds them full.
+	if req := m.awaitingPerm; req != nil {
+		select {
+		case req.reply <- false:
+		default:
+		}
+		m.awaitingPerm = nil
+	}
+	if req := m.awaitingPlan; req != nil {
+		select {
+		case req.reply <- planVerdict{}:
+		default:
+		}
+		m.awaitingPlan = nil
+	}
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil

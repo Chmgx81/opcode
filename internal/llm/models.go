@@ -90,12 +90,12 @@ func fetchAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]ModelI
 func getJSON(ctx context.Context, req *http.Request, into any) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("request %s: %w", req.URL, err)
+		return fmt.Errorf("could not reach %s: %w", req.URL.Host, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("%s: %s", resp.Status, readableProviderError(msg))
+		return statusError(resp, msg)
 	}
 	dec := json.NewDecoder(resp.Body)
 	if err := dec.Decode(into); err != nil {

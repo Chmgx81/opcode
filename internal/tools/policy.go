@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -203,17 +204,37 @@ func ShellEscaped(args string) bool {
 // pathInWritableRoots reports whether path resolves inside one of
 // the sandbox's writable roots — the identical bound a sandboxed
 // shell command gets. In-process writes cannot be Landlocked, so
-// the gate bounds them by path, resolving the parent directory's
-// symlinks first: a lexical in-tree path that points outside must
-// not auto-run.
+// the gate bounds them by path, resolving symlinks along the whole
+// path: a lexical in-tree path that points outside must not
+// auto-run. The full path is resolved when it exists (EvalSymlinks
+// fails on a not-yet-created file), and the base component is
+// Lstat-checked so a planted in-tree symlink to an outside file
+// cannot slip the bound — the parent-dir-only resolution left that
+// hole open (audit S6).
 func pathInWritableRoots(path string) bool {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return false
 	}
-	dir, base := filepath.Split(abs)
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	} else if dir, base := filepath.Split(abs); base != "" {
+		// The target itself does not exist (or is not resolvable) —
+		// resolve the parent and honor a symlink at the base.
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return false
+		}
 		abs = filepath.Join(resolved, base)
+		if fi, err := os.Lstat(abs); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			// Follow the final link and re-check: a symlink planted in
+			// the writable root pointing outside must fail the bound.
+			target, err := filepath.EvalSymlinks(abs)
+			if err != nil {
+				return false
+			}
+			abs = target
+		}
 	}
 	for _, root := range sandbox.WritableRoots() {
 		if withinDir(abs, root) {

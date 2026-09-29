@@ -197,13 +197,38 @@ func (c *Client) Start(ctx context.Context) error {
 	return nil
 }
 
+// envAllowlist is what an MCP server may inherit. Everything else —
+// in particular any *_KEY / *_TOKEN / *_SECRET — is dropped; the
+// server's own mcp.json env config is appended after, so a server
+// that genuinely needs a credential gets it explicitly, in a file
+// the user wrote, not by ambient inheritance.
+var envAllowlist = []string{"PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"}
+
+func scrubbedEnv() []string {
+	allowed := map[string]bool{}
+	for _, k := range envAllowlist {
+		allowed[k] = true
+	}
+	var out []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if allowed[k] {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
 func (c *Client) start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.stopLocked()
 
 	cmd := exec.Command(c.cfg.Command, c.cfg.Args...)
-	cmd.Env = os.Environ()
+	// Least privilege (audit S7): the server sees PATH, HOME, and
+	// the locale basics — not the user's API keys. A project server
+	// the user just trusted should not also inherit OPENROUTER_API_KEY.
+	cmd.Env = scrubbedEnv()
 	for k, v := range c.cfg.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
