@@ -131,7 +131,9 @@ func (g *Gate) Execute(ctx context.Context, tool Tool, args string) (string, err
 	entry.Result = result
 	if err != nil {
 		entry.Error = err.Error()
-		result = ""
+		// The output stays: it is the evidence of what failed —
+		// a shell's stderr, a sandbox-denial note — and the
+		// orchestrator forwards it beside the error headline.
 	}
 	if g.Audit != nil {
 		if logErr := g.Audit.record(entry); logErr != nil && err == nil {

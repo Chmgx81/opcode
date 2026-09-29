@@ -261,9 +261,17 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 					return ErrCancelled
 				}
 				// Tool failures go back to the model as the tool
-				// result; it can correct itself. Only harness-level
-				// errors end the turn.
+				// result; it can correct itself. The tool's own
+				// output — the shell's stderr, a sandbox-denial
+				// note — is the evidence of what actually failed,
+				// so it stays beside the error headline; without
+				// it the model could not see the failure's cause.
+				// Only harness-level errors end the turn.
+				out := strings.TrimSpace(result)
 				result = "error: " + err.Error()
+				if out != "" {
+					result += "\n" + out
+				}
 			}
 			o.history = append(o.history, llm.Message{
 				Role:       "tool",
