@@ -2074,3 +2074,16 @@ input), request_user_input (tilde asks through the plan and
 permission surfaces). Agent definitions with named tool subsets —
 the codex screenshot's pattern — are a possible later phase on top
 of subagents.
+
+# grep and glob, by name (status: complete, unit-verified)
+
+search_files and glob_files became grep and glob. Not taste —
+training data: the reference agents' Grep/Glob are the names models
+emit fluently, and a tool the model reaches for without prompting
+is worth more than a naming convention. The rest of the vocabulary
+stays verb_noun snake_case (read_file, write_file, apply_patch,
+run_shell, todo_write); these two are the deliberate exceptions,
+the way Codex's own shell tool is "shell" and Claude Code's is
+"Bash" rather than run_shell_command. No compat shim needed: tool
+names are not persisted in sessions, and no external user ever saw
+the old names.

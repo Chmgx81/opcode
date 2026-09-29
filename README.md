@@ -71,7 +71,7 @@ manager at first use), then the environment — the provider's
 
 | Mode | What the model gets |
 |---|---|
-| `read-only` | read tools run free (read_file, list_dir, search_files, glob_files, current_time); every write or command it proposes asks you first |
+| `read-only` | read tools run free (read_file, list_dir, grep, glob, current_time); every write or command it proposes asks you first |
 | `plan` | reads free, `present_plan` free; writes and commands ask. It researches, presents a plan, you approve |
 | `ask` | the sandbox is the safety: sandboxed commands and in-tree writes run without prompting; sandbox escapes and out-of-tree writes ask — the default |
 | `full-auto` | runs without prompting, still logged |
@@ -140,8 +140,7 @@ Exits are graceful: the first Ctrl+C interrupts and hints, the second
 quits, and tilde saves the session and says so on the way out —
 `~ tilde — session saved · resume it with /sessions`.
 
-The model's built-in tools: read_file, list_dir, search_files
-(content grep), glob_files (pattern find), current_time, apply_patch
+The model's built-in tools: read_file, list_dir, grep (content search), glob_files (pattern find), current_time, apply_patch
 (V4A multi-file patches — the format Codex uses), write_file,
 edit_file, run_shell, plus skills, MCP tools, subagents, todo
 tracking, and present_plan. Read-tier tools are free in every mode;

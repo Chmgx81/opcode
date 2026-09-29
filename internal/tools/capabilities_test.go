@@ -25,7 +25,7 @@ func TestSearchFiles(t *testing.T) {
 	write("bin.dat", "Hello\x00binary")
 	write(".git/config", "Hello in git")
 
-	out, err := run(t, SearchFiles{}, `{"pattern": "Hello", "path": "`+dir+`"}`)
+	out, err := run(t, Grep{}, `{"pattern": "Hello", "path": "`+dir+`"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestSearchFiles(t *testing.T) {
 	}
 
 	// Glob filter narrows by base name.
-	out, err = run(t, SearchFiles{}, `{"pattern": "Hello", "path": "`+dir+`", "glob": "*.go"}`)
+	out, err = run(t, Grep{}, `{"pattern": "Hello", "path": "`+dir+`", "glob": "*.go"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -52,13 +52,13 @@ func TestSearchFiles(t *testing.T) {
 	}
 
 	// No matches say so; a bad pattern errors loudly.
-	if out, err = run(t, SearchFiles{}, `{"pattern": "zzzznope", "path": "`+dir+`"}`); err != nil || out != "no matches" {
+	if out, err = run(t, Grep{}, `{"pattern": "zzzznope", "path": "`+dir+`"}`); err != nil || out != "no matches" {
 		t.Errorf("no-match case = (%q, %v)", out, err)
 	}
-	if _, err = run(t, SearchFiles{}, `{"pattern": "["}`); err == nil {
+	if _, err = run(t, Grep{}, `{"pattern": "["}`); err == nil {
 		t.Error("bad regex must error")
 	}
-	if _, err = run(t, SearchFiles{}, `{}`); err == nil {
+	if _, err = run(t, Grep{}, `{}`); err == nil {
 		t.Error("missing pattern must error")
 	}
 }
@@ -72,7 +72,7 @@ func TestSearchFilesCapsHugeResults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "big.txt"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := run(t, SearchFiles{}, `{"pattern": "needle", "path": "`+dir+`"}`)
+	out, err := run(t, Grep{}, `{"pattern": "needle", "path": "`+dir+`"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestGlobFiles(t *testing.T) {
 	write("sub/deep/c.go")
 	write(".git/hidden.go")
 
-	out, err := run(t, GlobFiles{}, `{"pattern": "**/*_test.go", "path": "`+dir+`"}`)
+	out, err := run(t, Glob{}, `{"pattern": "**/*_test.go", "path": "`+dir+`"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestGlobFiles(t *testing.T) {
 		t.Errorf("** glob wrong: %s", out)
 	}
 
-	out, err = run(t, GlobFiles{}, `{"pattern": "*.go", "path": "`+dir+`"}`)
+	out, err = run(t, Glob{}, `{"pattern": "*.go", "path": "`+dir+`"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -224,10 +224,10 @@ func TestGlobFiles(t *testing.T) {
 		t.Errorf("single-star glob crossed directories: %s", out)
 	}
 
-	if out, err = run(t, GlobFiles{}, `{"pattern": "zzz.*", "path": "`+dir+`"}`); err != nil || out != "no matches" {
+	if out, err = run(t, Glob{}, `{"pattern": "zzz.*", "path": "`+dir+`"}`); err != nil || out != "no matches" {
 		t.Errorf("no-match case = (%q, %v)", out, err)
 	}
-	if _, err = run(t, GlobFiles{}, `{}`); err == nil {
+	if _, err = run(t, Glob{}, `{}`); err == nil {
 		t.Error("missing pattern must error")
 	}
 }
