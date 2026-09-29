@@ -166,6 +166,19 @@ func boundedAction(tool Tool, args string) bool {
 			return false
 		}
 		return pathInWritableRoots(a.Path)
+	case ApplyPatch:
+		// A patch is bounded only when every file it touches is
+		// inside the roots — a partial bound is no bound.
+		paths := patchPaths(args)
+		if len(paths) == 0 {
+			return false
+		}
+		for _, p := range paths {
+			if !pathInWritableRoots(p) {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
