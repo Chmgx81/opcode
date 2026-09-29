@@ -1170,7 +1170,7 @@ func TestPlanApprovalLifecycle(t *testing.T) {
 
 	// The model presents a plan; the prompt owns the keyboard.
 	reply := make(chan planVerdict, 1)
-m.Update(planRequestMsg{req: &planRequest{plan: "## Goal\nship it", reply: reply}})
+	m.Update(planRequestMsg{req: &planRequest{plan: "## Goal\nship it", reply: reply}})
 	m.awaitingPlan.openedAt = time.Now().Add(-typeAheadGuard) // past the guard: tests answer instantly
 	if m.awaitingPlan == nil {
 		t.Fatal("plan prompt not shown")
@@ -1199,7 +1199,7 @@ m.Update(planRequestMsg{req: &planRequest{plan: "## Goal\nship it", reply: reply
 	m.opt.Mode = tools.ModePlan
 	m.opt.Orch.SetMode(tools.ModePlan)
 	reply2 := make(chan planVerdict, 1)
-m.Update(planRequestMsg{req: &planRequest{plan: "again", reply: reply2}})
+	m.Update(planRequestMsg{req: &planRequest{plan: "again", reply: reply2}})
 	m.awaitingPlan.openedAt = time.Now().Add(-typeAheadGuard) // past the guard: tests answer instantly
 	m.Update(keyMsg("a"))
 	v2 := <-reply2
@@ -1214,7 +1214,7 @@ m.Update(planRequestMsg{req: &planRequest{plan: "again", reply: reply2}})
 	m.opt.Mode = tools.ModePlan
 	m.opt.Orch.SetMode(tools.ModePlan)
 	reply3 := make(chan planVerdict, 1)
-m.Update(planRequestMsg{req: &planRequest{plan: "third", reply: reply3}})
+	m.Update(planRequestMsg{req: &planRequest{plan: "third", reply: reply3}})
 	m.awaitingPlan.openedAt = time.Now().Add(-typeAheadGuard) // past the guard: tests answer instantly
 	m.Update(keyMsg("n"))
 	if v3 := <-reply3; v3.proceed {
