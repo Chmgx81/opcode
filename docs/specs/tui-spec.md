@@ -69,6 +69,13 @@ or word rides along.
 
 ## 3. The Screen
 
+At launch the frame moves to the terminal's top: the visible
+screen is cleared and the cursor homed before the program starts,
+so tilde always begins at row one regardless of where the shell
+prompt left the cursor (scrollback above survives; only the
+visible screen is erased). Maximizing the window itself is the
+window manager's job — a terminal app cannot do it.
+
 One frame, top to bottom: **scrollback** (committed turns) →
 **live region** (the current turn's entries, working line, streaming
 tail) → **composer or dialog** → **footer**. Finished turns commit
@@ -133,7 +140,7 @@ terminals, never the mode.
 ╭─ Bash command · Runs a command ───────────────────────────╮
 │ npm init -y                                               │
 │                                                           │
-│ This command requires approval. Do you want to proceed?  │
+│ tilde needs your approval to run this. Do you want to proceed? │
 │                                                           │
 │ ❯ 1. Yes                                                  │
 │   2. Yes, and don't ask again for: npm init:*             │

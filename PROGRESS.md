@@ -1947,3 +1947,29 @@ matrix, bounded/escaping shell and write paths, the symlink
 resolution, the no-sandbox fail-closed, mode offering, legacy
 aliases, plus a headless bounded-write test. Full suite green
 across all 12 packages.
+
+# Move to top + the brand says its name (status: complete, live-verified)
+
+Two asks from a live session: tilde should start at the top of the
+terminal, and — like Codex, which names itself in everything it
+shows — tilde's copy should say tilde.
+
+Move to top: Run clears the visible screen and homes the cursor
+(ESC[H ESC[2J) before the program takes over, so the frame always
+starts at row one instead of wherever the shell prompt left the
+cursor. Scrollback above survives — only the visible screen is
+erased — so the per-turn scrollback commits from the earlier phase
+still land in the terminal's own history. Maximize-the-window
+itself is the window manager's job; no terminal app can do it
+(that's ptyxis' maximize button).
+
+Brand: the approval dialog now reads "tilde needs your approval to
+run this" and the trust dialog "tilde would be able to run: ..." —
+the two surfaces where Codex says "Codex". The greeting, window
+title, and composer placeholder already carried the name; the ~ in
+the footer stays reserved to the composer per the earlier glyph
+decision.
+
+Verified live in a PTY: junk lines printed first, then the log shows
+clear+home immediately followed by the banner at the top row. Full
+suite green.

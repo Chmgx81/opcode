@@ -8,6 +8,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -475,6 +476,16 @@ func Run(m *Model) error {
 		}
 	}
 	adaptTheme(dark)
+
+	// Move to top: clear the visible screen and home the cursor
+	// before the program takes over, so the frame always starts at
+	// the terminal's top row instead of wherever the shell prompt
+	// left the cursor. Only the visible screen is erased — the
+	// scrollback above survives. (Maximizing the terminal window
+	// itself is the window manager's job; no terminal app can do
+	// it — ptyxis' own preference or the window's maximize button
+	// is the lever for that.)
+	fmt.Fprint(os.Stdout, "\x1b[H\x1b[2J")
 
 	p := tea.NewProgram(m)
 	m.program = p
