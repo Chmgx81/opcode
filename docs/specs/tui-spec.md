@@ -270,11 +270,19 @@ doubles, so entries can be appended freely.
   and interrupts.
 - **Headless** (`tilde -p`) imports no TUI package (CI-enforced),
   prompts never, fails closed.
+- **`/doctor`** (Phase 33): one transcript entry, one line per
+  subsystem — version, model/provider, api-key presence (never the
+  key), config.json and models.json loader verdicts, the live
+  sandbox posture, project trust, skills and MCP counts, the audit
+  log, and the terminal's color profile. Every verdict glyph carries
+  the next step when something is wrong (✓ / ⚠ / ✗ / ·); the check
+  re-reads the same loaders the startup path uses and never repairs
+  or writes anything.
 
 ---
 
 ## 6. Not yet built (the honest list)
 
-1. **Themes picker**, LaTeX conversion, `/doctor`, `/diff`.
+1. **Themes picker**, LaTeX conversion, `/diff`.
 
 Each lands as its own phase, verified live, logged in PROGRESS.md.

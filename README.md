@@ -131,7 +131,9 @@ actually confine.
 `/model` switches models at runtime. `/models` browses every
 provider's models — fetched live from the provider, never a cached
 list — and switching provider + model applies without a restart.
-`/sessions` resumes one.
+`/sessions` resumes one. `/doctor` diagnoses the whole setup —
+config, key, sandbox, trust, MCP, terminal — one line per subsystem
+with the next step when something is wrong.
 Typing `@` opens a live file picker (type to filter, enter to attach);
 `!` turns the composer amber — shell mode, Enter runs it directly, no
 model round trip. Big pastes collapse to a token.

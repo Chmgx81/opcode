@@ -372,6 +372,8 @@ type command struct {
 var commands = []command{
 	{"/exit", "quit tilde"},
 	{"/help", "show keys and commands"},
+	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
+	{"/help", "show keys and commands"},
 	{"/mode", "show or switch permission mode"},
 	{"/model", "pick or switch the model"},
 	{"/sessions", "browse and resume a saved session"},
