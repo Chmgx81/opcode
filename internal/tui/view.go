@@ -697,12 +697,16 @@ func (m *Model) helpView(w int) string {
 		dimStyle.Render("  esc          interrupt the turn"),
 		dimStyle.Render("  ctrl+c       press twice to exit — the first press interrupts a turn"),
 		dimStyle.Render("  ctrl+d       exit, the same double-press"),
+		dimStyle.Render("  ctrl+e       open the prompt in $EDITOR"),
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
+		dimStyle.Render("  alt+. / alt+, cycle reasoning effort (up / down)"),
 		dimStyle.Render("  ctrl+r       expand / collapse results & thinking"),
 		dimStyle.Render("  ctrl+o       transcript — scroll the whole conversation"),
 		dimStyle.Render("  ! command    run a shell command directly"),
 		dimStyle.Render("  @path        attach a file's contents"),
 		dimStyle.Render("  /            command palette"),
+		dimStyle.Render("  while working: type and press enter to steer the turn;"),
+		dimStyle.Render("  alt+enter queues a follow-up for when it finishes"),
 		accentStyle.Render("commands"),
 	}
 	for _, c := range commands {

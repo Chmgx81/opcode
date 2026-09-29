@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -40,8 +43,39 @@ const (
 	webFetchTimeout   = 20 * time.Second
 	webFetchMaxBytes  = 256 << 10
 	webFetchMaxRedirs = 5
-	webFetchUA        = "tilde/0.2 (+https://github.com/Chmgx81/tilde)"
 )
+
+// WebFetchUA is the fetch user agent; cmd/tilde sets it to the
+// binary's real version so the UA never disagrees with --version.
+var WebFetchUA = "tilde/0.3 (+https://github.com/Chmgx81/tilde)"
+
+// blockedFetchHosts are the hostnames and address blocks the model
+// may not fetch: the loopback (tilde itself or local services), and
+// the cloud metadata endpoints every provider warns about. The
+// model's input is untrusted; the machine's own interfaces are not
+// its reading material.
+func checkFetchTarget(rawURL string) error {
+	// The user's explicit opt-in (a developer pointing the model at
+	// a local dev server); the default is the safe refusal.
+	if os.Getenv("TILDE_ALLOW_LOCAL_FETCH") != "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("web_fetch: %w", err)
+	}
+	host := u.Hostname()
+	blocked := host == "localhost"
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			blocked = true
+		}
+	}
+	if blocked {
+		return fmt.Errorf("web_fetch: refusing to fetch %s — loopback and local addresses are off-limits", host)
+	}
+	return nil
+}
 
 func (WebFetch) Execute(ctx context.Context, args string) (string, error) {
 	var a struct {
@@ -53,6 +87,9 @@ func (WebFetch) Execute(ctx context.Context, args string) (string, error) {
 	u := strings.TrimSpace(a.URL)
 	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 		return "", fmt.Errorf("web_fetch: url must be absolute http:// or https://")
+	}
+	if err := checkFetchTarget(u); err != nil {
+		return "", err
 	}
 
 	if _, ok := ctx.Deadline(); !ok {
@@ -66,14 +103,17 @@ func (WebFetch) Execute(ctx context.Context, args string) (string, error) {
 			if len(via) >= webFetchMaxRedirs {
 				return fmt.Errorf("web_fetch: stopped after %d redirects", webFetchMaxRedirs)
 			}
-			return nil
+			// Every redirect hop is re-validated: an external URL
+			// bouncing to the machine's own services is the classic
+			// SSRF pivot.
+			return checkFetchTarget(req.URL.String())
 		},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", fmt.Errorf("web_fetch: %w", err)
 	}
-	req.Header.Set("User-Agent", webFetchUA)
+	req.Header.Set("User-Agent", WebFetchUA)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("web_fetch: %w", err)

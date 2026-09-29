@@ -27,6 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bas
 ## Quick start
 
 ```sh
+mkdir -p ~/.tilde
 echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.tilde/config.json   # 1. any OpenAI-compatible model
 tilde                                                                   # 2. run it in a project
 ```
@@ -148,7 +149,7 @@ Exits are graceful: the first Ctrl+C interrupts and hints, the second
 quits, and tilde saves the session and says so on the way out —
 `~ tilde — session saved · resume it with /sessions`.
 
-The model's built-in tools: read_file, list_dir, grep (content search), glob_files (pattern find), current_time, apply_patch
+The model's built-in tools: read_file, list_dir, grep (content search), glob (pattern find), current_time, apply_patch
 (V4A multi-file patches — the format Codex uses), write_file,
 edit_file, bash, plus skills, MCP tools, subagents, todo
 tracking, and present_plan. Read-tier tools are free in every mode;

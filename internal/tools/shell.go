@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -78,8 +79,11 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	if err != nil {
 		// Nonzero exit is a tool result the model can act on, not a
 		// harness failure: report the output and the exit status.
-		if _, ok := err.(*exec.ExitError); ok {
-			return string(out), fmt.Errorf("exit status: %s", err)
+		// exec's own error already reads "exit status N" — wrapping
+		// it again printed "exit status: exit status N" (audit U7).
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return string(out), fmt.Errorf("exited with status %d", exitErr.ExitCode())
 		}
 		return string(out), fmt.Errorf("bash: %w", err)
 	}

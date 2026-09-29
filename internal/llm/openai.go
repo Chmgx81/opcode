@@ -138,6 +138,30 @@ func readableProviderError(body []byte) string {
 	return s
 }
 
+// statusError renders a non-200 response for the transcript. Auth
+// failures name the way out — a bare "401 Unauthorized" leaves the
+// user guessing what to do next (audit U3). Other statuses keep the
+// provider's own message.
+func statusError(resp *http.Response, body []byte) error {
+	detail := readableProviderError(body)
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		if detail != "" {
+			return fmt.Errorf("%s: %s — use /login <provider> to set a new key", resp.Status, detail)
+		}
+		return fmt.Errorf("%s — the API key was rejected; use /login <provider> to set a new key", resp.Status)
+	case http.StatusForbidden:
+		if detail != "" {
+			return fmt.Errorf("%s: %s — this key lacks access; use /login <provider> or /model to switch", resp.Status, detail)
+		}
+		return fmt.Errorf("%s — this key lacks access; use /login <provider> or /model to switch", resp.Status)
+	}
+	if detail != "" {
+		return fmt.Errorf("%s: %s", resp.Status, detail)
+	}
+	return fmt.Errorf("%s", resp.Status)
+}
+
 // toWire converts tilde's message history into the wire format.
 func toWire(req ChatRequest) wireRequest {
 	msgs := make([]wireMessage, 0, len(req.Messages)+1)
@@ -209,12 +233,14 @@ func (p *OpenAICompat) StreamChat(ctx context.Context, req ChatRequest) (<-chan 
 
 	resp, err := p.Client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("request %s: %w", httpReq.URL, err)
+		// The host is enough for a human to recognize; the full URL
+		// plus a raw net error is noise (audit U4).
+		return nil, fmt.Errorf("could not reach %s: %w", httpReq.URL.Host, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("%s: %s", resp.Status, readableProviderError(msg))
+		return nil, statusError(resp, msg)
 	}
 
 	events := make(chan ChatEvent, 16)

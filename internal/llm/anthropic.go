@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // anthropicVersion is the required API version header.
@@ -237,24 +238,43 @@ func (a *Anthropic) StreamChat(ctx context.Context, req ChatRequest) (<-chan Cha
 
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("request %s: %w", httpReq.URL, err)
+		// Host only, and in plain words — the full URL plus a raw
+		// net error is noise (audit U4).
+		return nil, fmt.Errorf("could not reach %s: %w", httpReq.URL.Host, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("%s: %s", resp.Status, readableProviderError(msg))
+		return nil, statusError(resp, msg)
 	}
 
 	events := make(chan ChatEvent, 32)
-	go a.consume(resp.Body, events)
+	// The stream reader owns the body now: consume closes `events`
+	// on every path, and Close follows in its defer. Without this,
+	// every Anthropic turn leaked the response body and its TCP
+	// connection (audit C1) — a long session would exhaust fds.
+	go a.consume(&closingReader{r: resp.Body, closer: resp.Body}, events)
 	return events, nil
 }
+
+// closingReader closes the HTTP response body exactly once when the
+// consume goroutine finishes, on success or error alike.
+type closingReader struct {
+	r      io.Reader
+	closer io.Closer
+	once   sync.Once
+}
+
+func (c *closingReader) Read(p []byte) (int, error) { return c.r.Read(p) }
+
+func (c *closingReader) Close() { c.once.Do(func() { _ = c.closer.Close() }) }
 
 // consume parses the SSE stream into ChatEvents. Tool calls arrive
 // as input_json_delta fragments and are emitted complete at
 // content_block_stop — the same policy as the OpenAI client.
-func (a *Anthropic) consume(r io.Reader, events chan<- ChatEvent) {
+func (a *Anthropic) consume(r *closingReader, events chan<- ChatEvent) {
 	defer close(events)
+	defer r.Close()
 
 	type block struct {
 		kind string // "text" | "thinking" | "tool_use"

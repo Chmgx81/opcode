@@ -549,7 +549,9 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 		m.add(entry{kind: entryUser, text: dimStyle.Render("! " + cmd)})
 		out, err := (tools.Bash{}).Execute(context.Background(), `{"command": `+mustJSON(cmd)+`}`)
 		if err != nil {
-			m.add(entry{kind: entryErr, text: out + " " + err.Error()})
+			// Output first, cause on its own line — one glued-together
+			// line was unreadable (audit U7).
+			m.add(entry{kind: entryErr, text: strings.TrimSpace(out) + "\n" + err.Error()})
 		} else {
 			m.add(entry{kind: entryDim, text: out})
 		}
@@ -830,7 +832,10 @@ func (m *Model) listSkills() {
 	}
 	names := m.opt.Skills.Names()
 	if len(names) == 0 {
-		m.add(entry{kind: entryDim, text: "no skills loaded"})
+		// An empty state with a way forward beats a bare "none"
+		// (audit U10): where skills come from, and the way out.
+		m.add(entry{kind: entryDim,
+			text: "no skills loaded — add one under ~/.tilde/skills/ or .tilde/skills/ (a folder with SKILL.md); esc closes this view"})
 		return
 	}
 	var rows []string
@@ -852,21 +857,25 @@ func (m *Model) listMcp() {
 	}
 	names := m.opt.MCPNames()
 	if len(names) == 0 {
-		m.add(entry{kind: entryDim, text: "no MCP servers connected"})
+		// Same empty-state rule: where servers come from, and the
+		// way out (audit U10). mcp.json is read from ~/.tilde/.
+		m.add(entry{kind: entryDim,
+			text: "no MCP servers connected — add one to ~/.tilde/mcp.json and restart tilde; esc closes this view"})
 		return
 	}
 	m.add(entry{kind: entryDim, text: strings.Join(names, "\n")})
 }
 
-// applyNewKey rebuilds the provider and the audit redactor so /login
-// and /logout take effect without a restart.
-func (m *Model) applyNewKey(provider, key string) {
-	m.opt.Orch.Provider = llm.New(m.opt.API, m.opt.BaseURL, key)
-	m.opt.Orch.Gate = &tools.Gate{
-		Decide: tools.PolicyDecide(m.opt.Mode, m.Prompt()),
-		Audit:  tools.NewAuditLog(m.opt.AuditPath, tools.NewRedactor(key)),
+// applyNewKey points the orchestrator at a new provider and adds the
+// key to the SHARED redactor so /login takes effect without a restart
+// (audit X21/S5). The gate object is never replaced: subagents hold
+// the same pointer, so the audit log, the session save, and the
+// subagent runner all see the new secret.
+func (m *Model) applyNewKey(key string) {
+	m.opt.Orch.SetProvider(llm.New(m.opt.API, m.opt.BaseURL, key))
+	if m.opt.Redactor != nil {
+		m.opt.Redactor.Add(key)
 	}
-	_ = provider
 }
 
 // beginLogin starts the masked key capture. An explicit provider names
@@ -898,7 +907,7 @@ func (m *Model) submitLogin() tea.Cmd {
 	// active provider — a different provider's key is stored for its
 	// next session, not applied to this one's requests.
 	if provider == m.opt.ProviderName {
-		m.applyNewKey(provider, key)
+		m.applyNewKey(key)
 		m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — future requests use it"})
 	} else {
 		m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — used when " + provider + " is the active provider"})
@@ -923,7 +932,11 @@ func (m *Model) logout(provider string) {
 		return
 	}
 	if provider == m.opt.ProviderName {
-		m.applyNewKey(provider, "")
+		// The active provider's key is gone: rebuild the client with
+		// the empty value so requests fail with the honest 401 (and
+		// the user is pointed at /login) instead of silently keeping
+		// the revoked key.
+		m.applyNewKey("")
 	}
 	m.add(entry{kind: entryOK,
 		text: "removed the stored key for " + provider +
@@ -951,7 +964,6 @@ func (m *Model) setMode(arg string) tea.Cmd {
 	m.opt.Orch.SetMode(mode)
 	m.rebuildGate(mode)
 	m.opt.Mode = mode
-	m.allowAll = false
 	note := "mode switched to " + mode
 	if m.working {
 		note += " (takes effect for the next model request)"
@@ -963,7 +975,7 @@ func (m *Model) setMode(arg string) tea.Cmd {
 }
 
 func (m *Model) rebuildGate(mode string) {
-	m.opt.Orch.Gate.Decide = tools.PolicyDecide(mode, m.Prompt())
+	m.opt.Orch.Gate.SetDecide(tools.PolicyDecide(mode, m.Prompt()))
 }
 
 func (m *Model) answerTrust(trusted bool) {
@@ -1017,6 +1029,10 @@ func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 	case orchestrator.EventCompaction:
 		m.finishStream()
 		m.add(entry{kind: entryCompaction, text: ev.Text})
+
+	case orchestrator.EventCompactionFailed:
+		// The turn continues; the user is told what was skipped.
+		m.add(entry{kind: entryErr, text: "compaction skipped: " + safe.Text(ev.Err.Error())})
 
 	case orchestrator.EventTurnComplete:
 		m.finishReasoning()
@@ -1237,10 +1253,16 @@ func (m *Model) openSessionsPicker() {
 		m.add(entry{kind: entryErr, text: "session resume is not wired in this build"})
 		return
 	}
-	items, err := sessionItems(m.opt.TildeHome)
+	items, skipped, err := sessionItems(m.opt.TildeHome)
 	if err != nil {
 		m.add(entry{kind: entryErr, text: "could not read sessions: " + err.Error()})
 		return
+	}
+	// Silently missing files look like a bug ("where did my session
+	// go?"); one line says what happened (audit U9).
+	if skipped > 0 {
+		m.add(entry{kind: entryDim,
+			text: fmt.Sprintf("skipped %d unreadable session file(s) — damaged or written by a newer tilde", skipped)})
 	}
 	if len(items) == 0 {
 		m.add(entry{kind: entryDim, text: "no saved sessions in " + session.Dir(m.opt.TildeHome)})
@@ -1251,15 +1273,15 @@ func (m *Model) openSessionsPicker() {
 
 // sessionItems reads the sessions directory, newest first. A corrupt
 // file is skipped, not fatal: history browsing must not break on one
-// bad write.
-func sessionItems(homeDir string) ([]pickerItem, error) {
+// bad write — but the caller reports how many were skipped.
+func sessionItems(homeDir string) (items []pickerItem, skipped int, err error) {
 	dir := session.Dir(homeDir)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, 0, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var names []string
 	for _, e := range entries {
@@ -1268,11 +1290,12 @@ func sessionItems(homeDir string) ([]pickerItem, error) {
 		}
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(names)))
-	items := make([]pickerItem, 0, len(names))
+	items = make([]pickerItem, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		s, err := session.Load(path)
 		if err != nil {
+			skipped++
 			continue
 		}
 		detail := fmt.Sprintf("%d messages · %s", len(s.History()), s.Model)
@@ -1281,7 +1304,7 @@ func sessionItems(homeDir string) ([]pickerItem, error) {
 		}
 		items = append(items, pickerItem{Label: name, Detail: detail, Path: path})
 	}
-	return items, nil
+	return items, skipped, nil
 }
 
 func firstUserText(s *session.Session) string {

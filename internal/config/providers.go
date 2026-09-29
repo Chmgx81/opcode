@@ -1,5 +1,28 @@
 package config
 
+import (
+	"net"
+	"net/url"
+)
+
+// IsLocalBaseURL reports whether a provider's base URL points at this
+// machine (local servers need no API key). The URL's host is parsed
+// and checked, not substring-matched: "https://localhost.evil.com"
+// contains "localhost" but is not local (audit S9). An unparseable
+// URL is not local — the check fails closed.
+func IsLocalBaseURL(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // ProviderSpec is one built-in provider: its base URL, its wire API
 // ("openai" = any OpenAI-compatible chat/completions server, or
 // "anthropic" = the Messages API), and an optional explicit env var.

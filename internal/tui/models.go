@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,8 +62,7 @@ func (m *Model) allProviders() []string {
 // providerDetail is the one-line hint under a provider row: whether
 // its models can be fetched right now. Local servers need no key.
 func (m *Model) providerDetail(name string, pc config.ProviderConfig) string {
-	isLocal := pc.BaseURL == "" ||
-		strings.Contains(pc.BaseURL, "localhost") || strings.Contains(pc.BaseURL, "127.0.0.1")
+	isLocal := pc.BaseURL == "" || config.IsLocalBaseURL(pc.BaseURL)
 	if !isLocal && m.opt.KeyFor != nil {
 		if _, ok := m.opt.KeyFor(name); !ok {
 			return "no key — /login " + name
@@ -110,7 +108,16 @@ func (m *Model) fetchModelsCmd(provider string) tea.Cmd {
 	}
 	var key string
 	if m.opt.KeyFor != nil {
-		key, _ = m.opt.KeyFor(provider)
+		k, ok := m.opt.KeyFor(provider)
+		// Saying so up front beats a doomed request that comes back
+		// as a bare 401 (audit C12).
+		if !ok && !config.IsLocalBaseURL(pc.BaseURL) {
+			return func() tea.Msg {
+				return modelsFetchedMsg{provider: provider,
+					err: fmt.Errorf("no key for %s — /login %s", provider, provider)}
+			}
+		}
+		key = k
 	}
 	m.add(entry{kind: entryDim, text: "fetching models from " + provider + "…"})
 	api, base := pc.API, pc.BaseURL
