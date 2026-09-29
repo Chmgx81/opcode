@@ -26,6 +26,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/safe"
 	"github.com/Chmgx81/tilde/internal/skills"
 	"github.com/Chmgx81/tilde/internal/tools"
 )
@@ -542,9 +543,12 @@ func (m *Model) decide(tool tools.Tool, args string) bool {
 		return true
 	}
 	req := &permRequest{
-		tool:  tool.Name(),
-		tier:  tool.Tier(),
-		args:  args,
+		tool: tool.Name(),
+		tier: tool.Tier(),
+		// The dialog renders args verbatim, so it gets the sanitized
+		// display copy; grant matching and execution above and in the
+		// gate keep the raw args.
+		args:  safe.Text(args),
 		scope: alwaysScope(tool.Name(), args),
 		sel:   2, // the safest default is highlighted first
 		reply: make(chan bool, 1),
@@ -634,7 +638,8 @@ func (m *Model) grantAlways(req *permRequest) {
 func (m *Model) PlanApprove() func(plan string) (proceed, auto bool) {
 	return func(plan string) (bool, bool) {
 		req := &planRequest{
-			plan:  plan,
+			// The dialog renders the plan verbatim: sanitized copy.
+			plan:  safe.Text(plan),
 			reply: make(chan planVerdict, 1),
 		}
 		m.program.Send(planRequestMsg{req})

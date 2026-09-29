@@ -18,6 +18,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/safe"
 	"github.com/Chmgx81/tilde/internal/session"
 	"github.com/Chmgx81/tilde/internal/tools"
 )
@@ -924,6 +925,14 @@ func (m *Model) answerTrust(trusted bool) {
 // handleEvent maps orchestrator events to timeline entries. The
 // returned Cmd carries scrollback commits from turn boundaries.
 func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
+	// Everything the model or a tool produced is untrusted display text.
+	// Sanitize it once here: stream text, reasoning, tool lines, result
+	// entries, the transcript pager, and committed scrollback all read
+	// these fields. What the model sees in its context is the
+	// orchestrator's copy and stays untouched.
+	ev.Text = safe.Text(ev.Text)
+	ev.ToolResult = safe.Text(ev.ToolResult)
+	ev.ToolCall.Arguments = safe.Text(ev.ToolCall.Arguments)
 	switch ev.Kind {
 	case orchestrator.EventReasoning:
 		if m.reasoning.Len() == 0 {
@@ -973,7 +982,7 @@ func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 			}
 			m.add(entry{kind: entryErr, text: "turn interrupted"})
 		} else {
-			m.add(entry{kind: entryErr, text: "error: " + ev.Err.Error()})
+			m.add(entry{kind: entryErr, text: "error: " + safe.Text(ev.Err.Error())})
 		}
 		return m, m.turnEnded()
 	}
@@ -1027,6 +1036,9 @@ func (m *Model) turnEnded() tea.Cmd {
 
 // handleSubagent renders subagent progress as labeled timeline entries.
 func (m *Model) handleSubagent(ev subagentEvent) {
+	// Subagent output is untrusted display text like any other.
+	ev.Title = safe.Text(ev.Title)
+	ev.Text = safe.Text(ev.Text)
 	label := "[" + ev.Title + "] "
 	m.subMu.Lock()
 	if m.subStreams == nil {

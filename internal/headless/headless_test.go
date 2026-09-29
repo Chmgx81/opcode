@@ -175,3 +175,40 @@ func TestRunBoundedWriteRuns(t *testing.T) {
 		t.Errorf("bounded write was denied: %q", buf.String())
 	}
 }
+
+// TestRunTextModeSanitizesResults: text mode prints tool output to the
+// terminal, so a poisoned payload — title grab, screen clear, keyboard
+// remap — must arrive stripped. JSON mode is exempt: json.Marshal
+// escapes every control character, so downstream tools get honest bytes.
+func TestRunTextModeSanitizesResults(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "evil.txt")
+	payload := []byte("pre\x1b]0;pwned\x07post\x1b[2Jend\x1b[?1h")
+	if err := os.WriteFile(target, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := &scriptedProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c1", Name: "read_file",
+			Arguments: fmt.Sprintf(`{"path": %q}`, target)}}},
+		{{Type: llm.TextEvent, Text: "done"}},
+	}}
+	var reg tools.Registry
+	reg.Register(tools.ReadFile{})
+	orch := orchestrator.New(p, "m", "s", &reg, &tools.Gate{})
+
+	var buf bytes.Buffer
+	if err := Run(context.Background(), orch, "read it", Options{Out: &buf}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	out := buf.String()
+	if strings.ContainsAny(out, "\x1b\x07") {
+		t.Errorf("output carries control bytes:\n%q", out)
+	}
+	if strings.Contains(out, "pwned") {
+		t.Errorf("the OSC payload survived: %q", out)
+	}
+	if !strings.Contains(out, "prepostend") {
+		t.Errorf("the readable text was lost: %q", out)
+	}
+}
