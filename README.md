@@ -122,6 +122,7 @@ actually confine.
 | **Ctrl+E** | edit the composer in `$VISUAL`/`$EDITOR` |
 | **Alt+Enter** | queue a follow-up |
 | **Esc** | stop — the turn, or whatever is open |
+| **Ctrl+C / Ctrl+D** | press twice to exit — the first press interrupts a running turn |
 | **Tab** | cycle permission mode |
 | **Ctrl+R** | expand / collapse tool results & thinking |
 | **?** | everything else |
@@ -133,6 +134,10 @@ list — and switching provider + model applies without a restart.
 Typing `@` opens a live file picker (type to filter, enter to attach);
 `!` turns the composer amber — shell mode, Enter runs it directly, no
 model round trip. Big pastes collapse to a token.
+
+Exits are graceful: the first Ctrl+C interrupts and hints, the second
+quits, and tilde saves the session and says so on the way out —
+`~ tilde — session saved · resume it with /sessions`.
 
 ## Beyond the loop
 

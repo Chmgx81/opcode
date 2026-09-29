@@ -1973,3 +1973,26 @@ decision.
 Verified live in a PTY: junk lines printed first, then the log shows
 clear+home immediately followed by the banner at the top row. Full
 suite green.
+
+# Graceful exits (status: complete, live-verified)
+
+Codex's exit posture, adopted: ctrl+c (and ctrl+d, Codex parity) no
+longer kill tilde on first press. The first press arms a 4-second
+window — interrupting a running turn, with the toast saying
+"interrupted — ctrl+c again to exit" (or just "ctrl+c again to
+exit" when idle) — and only a second press inside the window exits.
+The window matches the toast's lifetime, so the on-screen promise
+never outlives the arm. /exit and /quit remain immediate; esc stays
+the plain interrupt. The help overlay and the spec/README key
+tables carry the new rows.
+
+Feedback on the way out: after the program stops, main saves the
+session and prints one line — "~ tilde — session saved · resume it
+with /sessions" — the goodbye that says what happened and the way
+back in.
+
+Verified live in a PTY: first ctrl+c shows the hint and keeps
+running, the second exits cleanly, and the farewell line appears
+after the frame. Pinned by TestCtrlCDoublePressExits,
+TestCtrlCHintWhenIdle, and TestCtrlDIsTheSameDoublePress. Full
+suite green.

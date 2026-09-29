@@ -204,7 +204,8 @@ store.
 | Ctrl+E | edit the draft in `$VISUAL`/`$EDITOR` |
 | Tab / Shift+Tab | cycle permission mode |
 | Esc | stop the turn, or close whatever is open |
-| Ctrl+C | stop and quit |
+| Ctrl+C / Ctrl+D | press twice to exit — the first press arms a short window (and interrupts a running turn); `/exit` quits immediately |
+| Exit line | on a clean exit tilde prints `~ tilde — session saved · resume it with /sessions` |
 | `?` | help overlay (empty composer) |
 | `/` | command palette |
 | `@` | file picker (live filter, `.gitignore`-aware) |

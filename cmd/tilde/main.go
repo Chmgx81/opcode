@@ -460,6 +460,12 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 
 	runErr := tui.Run(ui)
 	saveSession()
+	// The graceful exit: one line that says what happened (the
+	// session was saved) and the way back in. Codex names itself in
+	// everything it shows; so does tilde.
+	if runErr == nil {
+		fmt.Println("~ tilde — session saved · resume it with /sessions")
+	}
 	return runErr
 }
 

@@ -289,6 +289,12 @@ type Model struct {
 	// the reference apps' dynamic microcopy.
 	workingVerb string
 
+	// quitArmedAt is when the first ctrl+c (or ctrl+d) armed the
+	// exit — Codex's double-press quit: only a second press inside
+	// quitWindow (update.go) exits; the first just hints (and
+	// interrupts a running turn).
+	quitArmedAt time.Time
+
 	// Overlay picker (/model, /sessions): filter-as-you-type list.
 	picker      *picker
 	pendingPick *pickerItem // selected item awaiting its command's action
