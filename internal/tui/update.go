@@ -543,11 +543,25 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	m.composer.SetValue("")
 	defer func() { m.pastes, m.pasteAt = nil, map[string]string{} }()
 
-	// Shell escape: the user typed it, not the model.
+	// Shell escape: the user typed it, not the model. A bare "!"
+	// only paints the shell-mode chrome — it runs nothing and is
+	// not a model turn either; say what it needs.
+	if raw == "!" {
+		m.add(entry{kind: entryDim, text: "type !command to run it directly (shell mode)"})
+		return inputCommand, nil
+	}
 	if strings.HasPrefix(raw, "!") && len(raw) > 1 {
 		cmd := strings.TrimSpace(strings.TrimPrefix(raw, "!"))
 		m.add(entry{kind: entryUser, text: dimStyle.Render("! " + cmd)})
-		out, err := (tools.Bash{}).Execute(context.Background(), `{"command": `+mustJSON(cmd)+`}`)
+		// No permission prompt — the user typed it — but the escape
+		// must land in the audit log like any other command run
+		// (audit C13). Recorded before execution so a hanging or
+		// crashing command is still on record.
+		args := `{"command": ` + mustJSON(cmd) + `}`
+		if auditErr := m.opt.Orch.Gate.RecordUserAction("shell-escape", args); auditErr != nil {
+			m.add(entry{kind: entryErr, text: "audit log write failed: " + auditErr.Error()})
+		}
+		out, err := (tools.Bash{}).Execute(context.Background(), args)
 		if err != nil {
 			// Output first, cause on its own line — one glued-together
 			// line was unreadable (audit U7).
@@ -559,6 +573,16 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	}
 
 	text := m.expandPastes(raw)
+
+	// A recalled [paste N] token whose content left with its session
+	// submits literally — the model would read a dead token as
+	// prose. Say so once, visibly, instead of sending it quietly.
+	if strings.Contains(raw, "[paste ") {
+		for token := range deadPasteTokens(raw, m.pasteAt) {
+			m.add(entry{kind: entryDim, text: token + " has no content in this session (its paste left with an earlier one) — the text above is what the model sees"})
+			break
+		}
+	}
 
 	fields := strings.Fields(text)
 	cmdName, arg := "", ""
@@ -612,6 +636,18 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	case "/diff":
 		m.showDiff()
 		return inputCommand, nil
+	default:
+		// An unknown "/..." is a typo, not a prompt: sending it to
+		// the model would bill a turn for a command that does not
+		// exist. The typed text stays in recall history as-is
+		// (recall shows what was typed, including the typo); the
+		// turn never starts.
+		if msg := unknownCommandHint(cmdName); msg != "" {
+			m.add(entry{kind: entryErr, text: msg})
+		} else {
+			m.add(entry{kind: entryErr, text: "unknown command " + cmdName + " — /help lists the commands"})
+		}
+		return inputCommand, nil
 	}
 
 	if m.working {
@@ -636,6 +672,25 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	m.add(entry{kind: entryUser, text: text})
 	m.startTurn(text, m.pendingImages())
 	return inputTurnStarted, tea.Batch(commit, m.spinner.Tick, statusTick())
+}
+
+// deadPasteTokens returns the [paste N] tokens in text that have no
+// live content — recalled history from an earlier session whose paste
+// map left with the submit.
+func deadPasteTokens(text string, live map[string]string) map[string]bool {
+	dead := map[string]bool{}
+	for i := 0; i < len(text); i++ {
+		if !strings.HasPrefix(text[i:], "[paste ") {
+			continue
+		}
+		if end := strings.Index(text[i:], "]"); end > 0 {
+			token := text[i : i+end+1]
+			if _, ok := live[token]; !ok {
+				dead[token] = true
+			}
+		}
+	}
+	return dead
 }
 
 // pushHistory records a submitted prompt in the recall history and
@@ -683,7 +738,10 @@ func (m *Model) expandHistoryPastes(text string) string {
 }
 
 // saveHistory rewrites history.jsonl under TILDE_HOME (0600 —
-// prompts can hold anything). Best-effort: a recall list that can't
+// prompts can hold anything). Entries are redacted against the
+// session's secret list on the way out: a pasted key must not sit
+// in plaintext next to the credentials file. Recall shows the
+// redacted form, visibly so. Best-effort: a recall list that can't
 // be written is a nuisance, not a failure.
 func (m *Model) saveHistory() {
 	if m.opt.TildeHome == "" {
@@ -691,6 +749,9 @@ func (m *Model) saveHistory() {
 	}
 	var b strings.Builder
 	for _, h := range m.hist {
+		if m.opt.Redactor != nil {
+			h = m.opt.Redactor.Redact(h)
+		}
 		line, err := json.Marshal(h)
 		if err != nil {
 			continue
@@ -825,6 +886,68 @@ func mustJSON(s string) string {
 	return string(b)
 }
 
+// unknownCommandHint names the closest real command to a mistyped
+// "/..." (exact prefix first, then substring, then a small edit
+// distance for transpositions like /modle), or "" when nothing is
+// close. Commands are few and their names stable; a small local
+// matcher beats a dependency.
+func unknownCommandHint(cmdName string) string {
+	for _, c := range commands {
+		if strings.HasPrefix(c.Name, cmdName) {
+			return "unknown command " + cmdName + " — did you mean " + c.Name + "?"
+		}
+	}
+	bare := strings.TrimPrefix(cmdName, "/")
+	for _, c := range commands {
+		if strings.Contains(c.Name, bare) {
+			return "unknown command " + cmdName + " — did you mean " + c.Name + "?"
+		}
+	}
+	best, bestDist := "", 3
+	for _, c := range commands {
+		if d := editDistance(bare, strings.TrimPrefix(c.Name, "/")); d < bestDist {
+			best, bestDist = c.Name, d
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	return "unknown command " + cmdName + " — did you mean " + best + "?"
+}
+
+// editDistance is the Levenshtein distance between two short command
+// names — the typo tolerance behind unknownCommandHint.
+func editDistance(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	prev := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i, ra := range ar {
+		cur := make([]int, len(br)+1)
+		cur[0] = i + 1
+		for j, rb := range br {
+			cost := 0
+			if ra != rb {
+				cost = 1
+			}
+			cur[j+1] = min3(prev[j]+cost, prev[j+1]+1, cur[j]+1)
+		}
+		prev = cur
+	}
+	return prev[len(br)]
+}
+
+func min3(a, b, c int) int {
+	if a > b {
+		a = b
+	}
+	if a > c {
+		a = c
+	}
+	return a
+}
+
 func (m *Model) listSkills() {
 	if m.opt.Skills == nil {
 		m.add(entry{kind: entryDim, text: "no skills loaded"})
@@ -896,7 +1019,7 @@ func (m *Model) submitLogin() tea.Cmd {
 	m.composer.SetValue("")
 
 	if key == "" {
-		m.add(entry{kind: entryErr, text: "login cancelled: no key entered"})
+		m.add(entry{kind: entryDim, text: "no key entered — nothing stored"})
 		return nil
 	}
 	if err := config.WriteAuthKey(m.opt.TildeHome, provider, key); err != nil {
@@ -928,7 +1051,7 @@ func (m *Model) logout(provider string) {
 		return
 	}
 	if !removed {
-		m.add(entry{kind: entryOK, text: "no stored key for " + provider + " — nothing to remove"})
+		m.add(entry{kind: entryDim, text: "no stored key for " + provider + " — nothing to remove"})
 		return
 	}
 	if provider == m.opt.ProviderName {
@@ -1360,7 +1483,7 @@ func (m *Model) resumeSession(path, label string) {
 	m.stream.Reset()
 	m.queue = nil
 	m.usage = llm.Usage{}
-	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("tilde " + version)})
+	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("tilde " + m.displayVersion())})
 	m.add(entry{kind: entryDim, text: dimStyle.Render(m.opt.Model + " · " + m.opt.Mode)})
 	m.add(entry{kind: entryOK, text: fmt.Sprintf("resumed %s — %d messages in context", label, n)})
 	m.showToast("resumed " + label)

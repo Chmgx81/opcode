@@ -10,11 +10,22 @@ package skills
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
+)
+
+// Limits on what one skill may cost. SKILL.md is read whole into
+// memory and its body can be loaded into the model's context; the name
+// and description sit in the system prompt of every request.
+const (
+	maxSkillFileBytes   = 1 << 20
+	maxNameBytes        = 128
+	maxDescriptionBytes = 2048
 )
 
 // Scope of a skill's origin.
@@ -72,10 +83,17 @@ func (m *Manager) Load(sources []Source) error {
 			return fmt.Errorf("read skills dir %s: %w", src.Dir, err)
 		}
 		for _, e := range entries {
+			dir := filepath.Join(src.Dir, e.Name())
 			if !e.IsDir() {
+				// A symlinked skill folder may point anywhere, so it is
+				// not followed — but say so rather than drop it silently.
+				if e.Type()&os.ModeSymlink != 0 {
+					if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+						skipped = append(skipped, fmt.Sprintf("%s: symlinked skill directories are not followed", dir))
+					}
+				}
 				continue
 			}
-			dir := filepath.Join(src.Dir, e.Name())
 			skill, err := loadSkill(dir, src.Scope)
 			if err != nil {
 				skipped = append(skipped, fmt.Sprintf("%s: %v", dir, err))
@@ -95,12 +113,15 @@ func (m *Manager) Load(sources []Source) error {
 
 // loadSkill parses one skill folder.
 func loadSkill(dir, scope string) (*Skill, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	data, err := readSkillFile(dir)
 	if err != nil {
-		return nil, fmt.Errorf("SKILL.md: %w", err)
+		return nil, err
 	}
 	name, desc, body, err := parseFrontmatter(string(data))
 	if err != nil {
+		return nil, err
+	}
+	if err := validateMeta(name, desc); err != nil {
 		return nil, err
 	}
 
@@ -119,11 +140,80 @@ func loadSkill(dir, scope string) (*Skill, error) {
 	return s, nil
 }
 
+// readSkillFile reads dir/SKILL.md under three limits: it must resolve
+// to a regular file inside dir (a link to ~/.ssh/config or a FIFO that
+// blocks forever is refused), and it must fit maxSkillFileBytes.
+func readSkillFile(dir string) ([]byte, error) {
+	path := filepath.Join(dir, "SKILL.md")
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, fmt.Errorf("SKILL.md: %w", err)
+	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("SKILL.md: %w", err)
+	}
+	if rel, err := filepath.Rel(realDir, real); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("SKILL.md resolves outside the skill folder (%s)", real)
+	}
+	info, err := os.Stat(real)
+	if err != nil {
+		return nil, fmt.Errorf("SKILL.md: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("SKILL.md is not a regular file")
+	}
+	f, err := os.Open(real)
+	if err != nil {
+		return nil, fmt.Errorf("SKILL.md: %w", err)
+	}
+	defer f.Close()
+	// Read one byte past the cap so growth after the Stat cannot slip
+	// through.
+	data, err := io.ReadAll(io.LimitReader(f, maxSkillFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("SKILL.md: %w", err)
+	}
+	if len(data) > maxSkillFileBytes {
+		return nil, fmt.Errorf("SKILL.md too large (limit %d bytes)", maxSkillFileBytes)
+	}
+	return data, nil
+}
+
+// validateMeta rejects names and descriptions that could misroute a
+// lookup or drive the terminal when listed. Names key the skill table
+// and are shown to the model and the user, so path separators, "..",
+// and control characters (ESC, NUL, CR, ...) are refused; tab is fine
+// in prose.
+func validateMeta(name, desc string) error {
+	if len(name) > maxNameBytes {
+		return fmt.Errorf("skill name is longer than %d bytes", maxNameBytes)
+	}
+	if len(desc) > maxDescriptionBytes {
+		return fmt.Errorf("skill description is longer than %d bytes", maxDescriptionBytes)
+	}
+	if strings.ContainsAny(name, `/\`) || name == ".." || name == "." {
+		return fmt.Errorf("skill name %q must not contain path separators or be a dot path", name)
+	}
+	for _, field := range []struct{ what, val string }{{"name", name}, {"description", desc}} {
+		for _, r := range field.val {
+			if unicode.IsControl(r) && r != '\t' {
+				return fmt.Errorf("skill %s contains a control character (U+%04X)", field.what, r)
+			}
+		}
+	}
+	return nil
+}
+
 // parseFrontmatter handles flat `key: value` frontmatter delimited by
 // `---` lines, then returns the body. Frontmatter here is deliberately
 // tiny — the agentskills convention needs name and description — so a
 // hand-rolled flat parser is smaller and clearer than a YAML dependency.
 func parseFrontmatter(data string) (name, desc, body string, err error) {
+	// Windows line endings and a UTF-8 BOM are ordinary in files that
+	// travelled through Windows editors or autocrlf checkouts.
+	data = strings.TrimPrefix(data, "\ufeff")
+	data = strings.ReplaceAll(data, "\r\n", "\n")
 	lines := strings.Split(data, "\n")
 	if len(lines) == 0 || strings.TrimRight(lines[0], " \t") != "---" {
 		return "", "", "", fmt.Errorf("frontmatter must start with ---")

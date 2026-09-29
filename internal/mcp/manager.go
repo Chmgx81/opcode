@@ -128,7 +128,13 @@ func (m *Manager) Notes() []string {
 	defer m.mu.Unlock()
 	var out []string
 	for name, c := range m.clients {
-		out = append(out, fmt.Sprintf("%s · %d tools", name, len(c.Tools())))
+		note := fmt.Sprintf("%s · %d tools", name, len(c.Tools()))
+		// Dropped lines are reported, not hidden: the user should
+		// know a server is noisier than tilde is willing to buffer.
+		if n := c.DroppedLines(); n > 0 {
+			note += fmt.Sprintf(" · %d lines dropped", n)
+		}
+		out = append(out, note)
 	}
 	return out
 }

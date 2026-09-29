@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -95,7 +94,9 @@ func (Grep) Execute(ctx context.Context, args string) (string, error) {
 		if info, err := d.Info(); err == nil && info.Size() > searchMaxFile {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		// Guarded: a walk rooted above the credentials file reaches
+		// it without naming it; it is skipped like an unreadable file.
+		data, err := readFileGuarded(path)
 		if err != nil {
 			return nil
 		}

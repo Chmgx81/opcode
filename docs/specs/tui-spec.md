@@ -1,9 +1,9 @@
 # tilde TUI Spec
 
 > The one spec for everything the user sees. Replaces tui-ux-spec.md
-> and tui-design.md. What's here reflects **what is built today**
-> (Phases 0–29); the short "Not yet built" list at the end is the
-> honest remainder. Codex's approaches live in
+> and tui-design.md. What's here reflects **what is built today**;
+> the short "Not yet built" list at the end is the honest remainder.
+> Codex's approaches live in
 > [docs/reference/](../reference/codex-adoption.md), not here.
 
 **Rules of the spec:** match what is real; when code and spec
@@ -89,8 +89,8 @@ exceeds the terminal; the dialog/composer tail is never trimmed.
 ### 3.1 Greeting (once, scrolls away)
 
 ```
-   ▄▄▄▄▄▄▄      ~ tilde v0.2.1
-▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · build
+   ▄▄▄▄▄▄▄      ~ tilde v0.3.0
+ ▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · build
 ▀▀         ▀███▄  /home/you/project
                ▀█▄▄▄▄▄▄▄█▀
                  ▀▀▀▀▀▀▀
@@ -206,23 +206,26 @@ store.
 |---|---|
 | Enter | send — mid-turn: steer at the next round boundary |
 | ↑ / ↓ | recall a previous prompt (from the first/last line; inside a multiline draft the arrows move the cursor) |
-| Ctrl+J | newline |
+| Ctrl+J / Shift+Enter | newline |
 | Alt+Enter | queue a follow-up |
 | Ctrl+R | expand / collapse results & thinking (live region only — committed text is frozen) |
-| Ctrl+O | transcript pager — the whole conversation, results expanded, ↑↓/pgup/pgdn scroll |
+| Ctrl+O | transcript pager — the whole conversation, results expanded, ↑↓/pgup/pgdn scroll, ctrl+o or esc closes |
 | Ctrl+V | attach the clipboard image (png/jpeg/gif/webp, sniffed) |
 | Ctrl+E | edit the draft in `$VISUAL`/`$EDITOR` |
-| Tab / Shift+Tab | cycle permission mode |
+| Tab / Shift+Tab | cycle permission mode forward / back |
+| Alt+. / Alt+, | reasoning effort up / down (unset → low → medium → high → unset) |
 | Esc | stop the turn, or close whatever is open |
 | Ctrl+C / Ctrl+D | press twice to exit — the first press arms a short window (and interrupts a running turn); `/exit` quits immediately |
 | Exit line | on a clean exit tilde prints `~ tilde — session saved · resume it with /sessions` |
-| `?` | help overlay (empty composer) |
-| `/` | command palette |
+| `?` | help overlay (empty, idle composer) |
+| `/` | command palette (type to filter, arrows or ctrl+n/p, enter selects) |
 | `@` | file picker (live filter, `.gitignore`-aware) |
 | `!` | shell mode — Enter runs it directly, no model round trip |
 
 Slash commands: `/help /models /model /mode /skills /mcp
-/sessions /login /logout /exit` (plus anything a project defines).
+/sessions /login /logout /theme /diff /doctor /exit /quit`.
+An unknown `/command` errors in place with the closest match —
+it never becomes a model turn.
 
 ---
 
@@ -241,18 +244,23 @@ doubles, so entries can be appended freely.
   parts to OpenAI-compatible and Anthropic models.
 - **Reasoning** streams into a dim `△` tail, then collapses to
   one expandable line. Never stored in history.
-- **Type-ahead guard**: for 400 ms after a dialog opens, keystrokes
-  are swallowed — a fast typist's stray "y" must not answer an
-  approval they never read (Codex blocks input the same way).
+- **Type-ahead guard**: for 400 ms after a permission, plan, or
+  trust dialog opens, keystrokes are swallowed — a fast typist's
+  stray "y" must not answer an approval they never read (Codex
+  blocks input the same way).
 - **Plain posture** (`--plain`, `TILDE_PLAIN`, or a detected screen
-  reader): every glyph degrades to ASCII (`✓` → `[ok]`, `⎿` → `\-`,
-  modes `⏸ › ⏵⏵` → `= > >>`), animations off; no glyph
-  disappears. The window title is sanitized (control and bidi
-  characters stripped, 240-rune cap) — OSC titles are an untrusted
-  text surface.
+  reader): the glyph vocabulary degrades to ASCII (`✓` → `[ok]`,
+  `⎿` → `\-`, modes `⏸ › ⏵⏵` → `= > >>`), animations off; no glyph
+  disappears. The spinner is static under plain even with an
+  explicit `"animations": true`. Two known residuals: the `…`
+  ellipsis stays as punctuation (screen readers read it), and the
+  startup banner keeps its block-drawn logo. The window title is
+  sanitized (control and bidi characters stripped, 240-rune cap) —
+  OSC titles are an untrusted text surface.
 - **Prompt history** (↑ recall) persists to `history.jsonl` under
   tilde's home (global, 500 entries, consecutive duplicates
-  collapse, 0600). Login keys never enter it. The stored form is
+  collapse, 0600, redacted against the session's secrets).
+  Login keys never enter it. The stored form is
   what recall should put back: `[paste N]` tokens expand into
   their content (their map entry left with the submit), `@path`
   mentions stay raw and re-read fresh at submit; a paste whose
@@ -327,14 +335,23 @@ doubles, so entries can be appended freely.
   unset); Anthropic gets a `thinking` budget (low 1024, medium
   8192, high 16384). Subagents inherit the parent's live posture
   at spawn time — deliberately no independent knob.
-- **`/doctor`** (Phase 33): one transcript entry, one line per
+- **`/doctor`**: one transcript entry, one line per
   subsystem — version, model/provider, api-key presence (never the
   key), config.json and models.json loader verdicts, the live
   sandbox posture, project trust, skills and MCP counts, the audit
-  log, and the terminal's color profile. Every verdict glyph carries
+  log, the release-freshness check (cached — never a network call),
+  and the terminal's color profile. Every verdict glyph carries
   the next step when something is wrong (✓ / ⚠ / ✗ / ·); the check
   re-reads the same loaders the startup path uses and never repairs
   or writes anything.
+- **Update notice**: at startup tilde compares the running version
+  against the cached latest release (refreshed at most once a day
+  over HTTPS, silent when offline) and adds one startup note when a
+  newer release exists — `Update available: vX → vY. Run
+  \`tilde update\` to install it.` Only the latest release gets
+  security fixes, so a stale binary is a finding, not trivia. Opt
+  out with `"update_checks": false` or `TILDE_NO_UPDATE_CHECK=1`;
+  dev builds and platforms without prebuilt binaries never check.
 
 ---
 

@@ -23,7 +23,7 @@ type OpenAICompat struct {
 }
 
 func NewOpenAICompat(baseURL, apiKey string) *OpenAICompat {
-	return &OpenAICompat{BaseURL: baseURL, APIKey: apiKey, Client: &http.Client{}}
+	return &OpenAICompat{BaseURL: baseURL, APIKey: apiKey, Client: newStreamHTTPClient()}
 }
 
 // --- wire types (this file's private translation layer) ---
@@ -220,9 +220,13 @@ func (p *OpenAICompat) StreamChat(ctx context.Context, req ChatRequest) (<-chan 
 	if err != nil {
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+	// A derived context lets the idle watchdog cancel this request
+	// alone, without touching the caller's context (timeout.go).
+	streamCtx, cancel := context.WithCancel(ctx)
+	httpReq, err := http.NewRequestWithContext(streamCtx, http.MethodPost,
 		strings.TrimSuffix(p.BaseURL, "/")+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -233,18 +237,20 @@ func (p *OpenAICompat) StreamChat(ctx context.Context, req ChatRequest) (<-chan 
 
 	resp, err := p.Client.Do(httpReq)
 	if err != nil {
+		cancel()
 		// The host is enough for a human to recognize; the full URL
 		// plus a raw net error is noise (audit U4).
 		return nil, fmt.Errorf("could not reach %s: %w", httpReq.URL.Host, err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		cancel()
 		defer resp.Body.Close()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, statusError(resp, msg)
 	}
 
 	events := make(chan ChatEvent, 16)
-	go p.consume(resp.Body, events)
+	go p.consume(newIdleBody(resp.Body, cancel), events)
 	return events, nil
 }
 
@@ -304,6 +310,9 @@ func (p *OpenAICompat) consume(body io.ReadCloser, events chan<- ChatEvent) {
 		}
 		for _, frag := range choice.Delta.ToolCalls {
 			if frag.Index == nil {
+				// A server that omits the index: routable only
+				// when one call is in flight (see addUnindexed).
+				asm.addUnindexed(frag.ID, frag.Function.Name, frag.Function.Arguments)
 				continue
 			}
 			asm.add(*frag.Index, frag.ID, frag.Function.Name, frag.Function.Arguments)

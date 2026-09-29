@@ -17,7 +17,7 @@ import (
 
 // DefaultPermissionMode is used when config.json does not set one;
 // the gate enforces it on every call.
-const DefaultPermissionMode = "ask"
+const DefaultPermissionMode = "build"
 
 // Config holds the preferences from ~/.tilde/config.json.
 type Config struct {
@@ -46,6 +46,12 @@ type Config struct {
 	// empty for the provider's default. Unknown values fail loudly
 	// below, like permission_mode.
 	ReasoningEffort string `json:"reasoning_effort"`
+	// UpdateChecks controls the startup update notice: tilde compares
+	// the running version against the latest GitHub release (cached
+	// 24h, a few KB, failures silent) and says so when a newer
+	// release exists. Nil/absent means enabled; false opts out
+	// entirely. TILDE_NO_UPDATE_CHECK=1 opts out for one process.
+	UpdateChecks *bool `json:"update_checks"`
 }
 
 // UserDir returns the user-level tilde directory: $TILDE_HOME if set,
@@ -82,9 +88,10 @@ func LoadConfig(dir string) (Config, error) {
 	if cfg.ContextWindow < 0 {
 		return cfg, fmt.Errorf("config.json: context_window must be 0 or positive")
 	}
-	// Canonicalize ("ask" -> ask-every-time) and refuse names that are
-	// neither a mode nor an alias: an unrecognized mode must fail closed
-	// at load time, not silently behave like something permissive.
+	// Canonicalize legacy spellings ("ask" -> build, "read-only" ->
+	// plan) and refuse names that are neither a mode nor an alias:
+	// an unrecognized mode must fail closed at load time, not
+	// silently behave like something permissive.
 	cfg.PermissionMode = tools.NormalizeMode(cfg.PermissionMode)
 	if !tools.ValidMode(cfg.PermissionMode) {
 		return cfg, fmt.Errorf("config.json: unknown permission_mode %q (valid: plan, build, full-auto; legacy: ask, read-only, ask-every-time, auto-accept-safe-ops)",
@@ -105,7 +112,15 @@ func LoadConfig(dir string) (Config, error) {
 // created. The theme name itself is validated by the caller (the tui
 // package owns the list) — this function persists, it does not judge.
 func SaveTheme(dir, theme string) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
 	path := filepath.Join(dir, "config.json")
+	// A config.json the user made shareable (0644) stays that way; a
+	// new one starts private.
+	mode := os.FileMode(0o600)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
 	raw := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, &raw); err != nil {
@@ -119,7 +134,7 @@ func SaveTheme(dir, theme string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return WriteFileAtomic(path, append(data, '\n'), mode)
 }
 
 // ScreenReaderActive reports whether the environment indicates a

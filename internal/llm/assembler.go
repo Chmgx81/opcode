@@ -41,6 +41,20 @@ func (a *toolCallAssembler) add(index int, id, name, argsFragment string) {
 	acc.args.WriteString(argsFragment)
 }
 
+// addUnindexed merges a tool-call fragment that carries no index. Some
+// servers omit the field; when exactly one call is in flight the
+// fragment can only belong to it, so it is appended there. With zero
+// or several calls in flight there is no honest routing and the
+// fragment is dropped (false) — a turn that completes as text rather
+// than a call aimed at the wrong tool.
+func (a *toolCallAssembler) addUnindexed(id, name, argsFragment string) bool {
+	if len(a.order) != 1 {
+		return false
+	}
+	a.add(a.order[0], id, name, argsFragment)
+	return true
+}
+
 // hasContent reports whether anything was accumulated.
 func (a *toolCallAssembler) hasContent() bool {
 	return len(a.order) > 0

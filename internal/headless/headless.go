@@ -23,6 +23,12 @@ type Options struct {
 	// Out receives subagent progress (labeled lines in text mode,
 	// events in JSON mode); main wires the spawn emitter into it.
 	Out io.Writer
+	// Redact rewrites secret values before they are printed. The
+	// gate already redacts tool results at the model boundary, but
+	// prompts and call arguments cross no gate — a pasted key in
+	// the prompt or in a tool's arguments would otherwise print
+	// verbatim. Nil prints unredacted (tests).
+	Redact func(string) string
 }
 
 // Run drives one turn for prompt and writes the events.
@@ -39,9 +45,15 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 			encodeErr = enc.Encode(v)
 		}
 	}
+	redact := func(s string) string {
+		if opt.Redact != nil {
+			return opt.Redact(s)
+		}
+		return s
+	}
 
 	if opt.JSON {
-		emit(map[string]any{"kind": "start", "prompt": prompt})
+		emit(map[string]any{"kind": "start", "prompt": redact(prompt)})
 	} else {
 		fmt.Fprintf(w, "~ %s\n", prompt)
 	}
@@ -59,21 +71,21 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 		switch ev.Kind {
 		case orchestrator.EventText:
 			if opt.JSON {
-				emit(map[string]any{"kind": "text", "text": ev.Text})
+				emit(map[string]any{"kind": "text", "text": redact(ev.Text)})
 			} else {
 				fmt.Fprint(w, text)
 			}
 		case orchestrator.EventToolStart:
 			if opt.JSON {
 				emit(map[string]any{
-					"kind": "tool", "tool": ev.ToolCall.Name, "args": ev.ToolCall.Arguments})
+					"kind": "tool", "tool": ev.ToolCall.Name, "args": redact(ev.ToolCall.Arguments)})
 			} else {
 				fmt.Fprintf(w, "\n[tool] %s %s\n", ev.ToolCall.Name, args)
 			}
 		case orchestrator.EventToolResult:
 			if opt.JSON {
 				emit(map[string]any{
-					"kind": "tool_result", "tool": ev.ToolCall.Name, "result": ev.ToolResult})
+					"kind": "tool_result", "tool": ev.ToolCall.Name, "result": redact(ev.ToolResult)})
 			} else {
 				fmt.Fprintf(w, "[result] %s\n", oneLine(result))
 			}
@@ -91,14 +103,14 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 			}
 		case orchestrator.EventCompactionFailed:
 			if opt.JSON {
-				emit(map[string]any{"kind": "compaction_failed", "error": ev.Err.Error()})
+				emit(map[string]any{"kind": "compaction_failed", "error": redact(ev.Err.Error())})
 			} else {
 				fmt.Fprintf(w, "[compaction skipped] %s\n", ev.Err.Error())
 			}
 		case orchestrator.EventError:
 			err = ev.Err
 			if opt.JSON {
-				emit(map[string]any{"kind": "error", "error": ev.Err.Error()})
+				emit(map[string]any{"kind": "error", "error": redact(ev.Err.Error())})
 			} else {
 				fmt.Fprintf(w, "\nerror: %v\n", ev.Err)
 			}

@@ -28,11 +28,15 @@ func TestSurfaceListsExecutableFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Surface: %v", err)
 	}
+	// Scripts AND the instruction surface: SKILL.md bodies and their
+	// references load with no re-prompt, so they are trust-visible.
 	want := []string{
 		".tilde/config.json",
+		".tilde/skills/deploy/SKILL.md",
+		".tilde/skills/deploy/references/api.md",
 		".tilde/skills/deploy/scripts/run.sh",
 	}
-	if len(files) != 2 {
+	if len(files) != len(want) {
 		t.Fatalf("surface = %v, want %v", files, want)
 	}
 	for i, f := range want {

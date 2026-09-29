@@ -6,8 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
-	"syscall"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,7 +109,7 @@ func TestDeadServerRestart(t *testing.T) {
 	c.mu.Lock()
 	proc := c.cmd.Process
 	c.mu.Unlock()
-	if err := syscall.Kill(-proc.Pid, syscall.SIGKILL); err != nil {
+	if err := proc.Kill(); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -117,6 +120,45 @@ func TestDeadServerRestart(t *testing.T) {
 	}
 	if out != "echo: revived" {
 		t.Errorf("out = %q", out)
+	}
+}
+
+func TestChattyServerFloodSurvivesAndStillServes(t *testing.T) {
+	// C8: the fixture answers a tools/call, then floods 5000
+	// notification lines while the client is idle between requests.
+	// The reader must keep consuming (dropping with a count), or the OS
+	// pipe fills and the server wedges in write().
+	c := connectFixture(t, "chatty")
+
+	out, err := c.Call(context.Background(), "echo", json.RawMessage(`{"text": "before flood"}`))
+	if err != nil || out != "echo: before flood" {
+		t.Fatalf("first call: out=%q err=%v", out, err)
+	}
+
+	// Let the flood land: no call is waiting, so every line is counted
+	// as dropped rather than buffered.
+	time.Sleep(500 * time.Millisecond)
+	if got := c.DroppedLines(); got < 5000 {
+		t.Fatalf("dropped = %d, want >= 5000 unsolicited lines counted", got)
+	}
+
+	// The connection must still complete a request after the flood.
+	out, err = c.Call(context.Background(), "echo", json.RawMessage(`{"text": "after flood"}`))
+	if err != nil || out != "echo: after flood" {
+		t.Fatalf("call after flood: out=%q err=%v", out, err)
+	}
+
+	// Stop must not wedge either. The double Stop from Cleanup is a
+	// nil-op.
+	done := make(chan struct{})
+	go func() {
+		_ = c.Stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop wedged on a flooded server (Wait/reader race)")
 	}
 }
 
@@ -237,6 +279,249 @@ func TestManagerProjectCannotShadowUserServer(t *testing.T) {
 	c, _ := m.clients["shared"]
 	if c == nil || len(c.Tools()) != 1 {
 		t.Error("user server lost after project connect")
+	}
+}
+
+func TestNotesSurfaceDroppedLines(t *testing.T) {
+	// The drop count is user-visible (the /mcp view), so a chatty
+	// server's lost noise is reported, not silent.
+	m := NewManager()
+	t.Cleanup(m.Close)
+
+	toolList, _ := m.Connect(context.Background(), Config{MCPServers: map[string]ServerConfig{
+		"chatty": {Command: fixturePath("chatty")[0], Args: fixturePath("chatty")[1:]},
+	}})
+	if len(toolList) != 1 {
+		t.Fatalf("tools = %v", namesOf(toolList))
+	}
+	if _, err := toolList[0].Execute(context.Background(), `{"text": "hi"}`); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	joined := strings.Join(m.Notes(), "\n")
+	if !strings.Contains(joined, "lines dropped") {
+		t.Errorf("drops not surfaced in notes: %v", joined)
+	}
+}
+
+// connectFixtureArgs starts the fixture with explicit extra args and
+// extra env (mode first).
+func connectFixtureArgs(t *testing.T, env map[string]string, args ...string) *Client {
+	t.Helper()
+	python := fixturePath("echo")[0]
+	c := NewClient("fixture", ServerConfig{
+		Command: python,
+		Args:    append([]string{"testdata/fixture_server.py"}, args...),
+		Env:     env,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Stop() })
+	return c
+}
+
+func callEcho(c *Client, text string, within time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), within)
+	defer cancel()
+	args, _ := json.Marshal(map[string]string{"text": text})
+	return c.Call(ctx, "echo", args)
+}
+
+func TestReadLoopRouting(t *testing.T) {
+	notif := `{"jsonrpc":"2.0","method":"notifications/x"}`
+	tests := []struct {
+		name        string
+		input       string
+		waitFor     int
+		wantResult  string // "" = no delivery expected
+		wantDropped int64
+	}{
+		{"response behind 10000 notifications",
+			strings.Repeat(notif+"\n", 10000) + `{"jsonrpc":"2.0","id":7,"result":{"ok":1}}` + "\n",
+			7, `{"ok":1}`, 10000},
+		{"non-JSON noise and blank lines are skipped",
+			"starting up...\n\n   \n" + `{"id":1,"result":{}}` + "\n",
+			1, `{}`, 1},
+		{"server request with our id is not a response",
+			`{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n",
+			3, "", 1},
+		{"response for an id nobody waits on",
+			`{"jsonrpc":"2.0","id":99,"result":{}}` + "\n",
+			3, "", 1},
+		{"null id is not routed",
+			`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse"}}` + "\n",
+			3, "", 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cn := newConn()
+			slot, ok := cn.register(tc.waitFor)
+			if !ok {
+				t.Fatal("register failed on a fresh conn")
+			}
+			var dropped atomic.Int64
+			cn.readLoop(strings.NewReader(tc.input), &dropped) // returns at EOF
+			select {
+			case resp := <-slot:
+				if tc.wantResult == "" {
+					t.Fatalf("unexpected delivery: %s", resp.Result)
+				}
+				if string(resp.Result) != tc.wantResult {
+					t.Errorf("result = %s, want %s", resp.Result, tc.wantResult)
+				}
+			default:
+				if tc.wantResult != "" {
+					t.Fatal("response was not delivered to its waiter")
+				}
+			}
+			if got := dropped.Load(); got != tc.wantDropped {
+				t.Errorf("dropped = %d, want %d", got, tc.wantDropped)
+			}
+		})
+	}
+}
+
+func TestReadLoopOversizedLineFailsWaitersInsteadOfHanging(t *testing.T) {
+	// A line past the 8 MiB scanner limit ends the stream. Waiters must
+	// be released with the reason, and later registrations refused.
+	cn := newConn()
+	if _, ok := cn.register(1); !ok {
+		t.Fatal("register failed")
+	}
+	var dropped atomic.Int64
+	cn.readLoop(strings.NewReader(strings.Repeat("x", 9*1024*1024)+"\n"), &dropped)
+
+	select {
+	case <-cn.done:
+	default:
+		t.Fatal("done not closed after the reader exited")
+	}
+	if cn.readErr == nil {
+		t.Error("oversized line should record the scanner error")
+	}
+	if _, ok := cn.register(2); ok {
+		t.Error("register must fail once the reader has exited")
+	}
+}
+
+func TestResponseBehindNotificationBurstIsNotDropped(t *testing.T) {
+	// The fixture sends 5000 notifications BEFORE each response. A
+	// reader that drops on a full channel can drop the response itself,
+	// which surfaces as a timeout instead of the answer.
+	c := connectFixture(t, "burst")
+	for i := 0; i < 10; i++ {
+		text := "burst-" + strconv.Itoa(i)
+		out, err := callEcho(c, text, 5*time.Second)
+		if err != nil || out != "echo: "+text {
+			t.Fatalf("call %d: out=%q err=%v", i, out, err)
+		}
+	}
+}
+
+func TestConcurrentCallsEachGetTheirOwnResponse(t *testing.T) {
+	// Client is safe for concurrent Call (roundtrip releases the mutex
+	// while waiting), so every response must reach its own caller, not
+	// be consumed and discarded by a neighbour.
+	c := connectFixture(t, "echo")
+	for round := 0; round < 10; round++ {
+		const n = 8
+		var wg sync.WaitGroup
+		errs := make([]error, n)
+		outs := make([]string, n)
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				outs[i], errs[i] = callEcho(c, "c"+strconv.Itoa(i), 3*time.Second)
+			}(i)
+		}
+		wg.Wait()
+		for i := 0; i < n; i++ {
+			if want := "echo: c" + strconv.Itoa(i); errs[i] != nil || outs[i] != want {
+				t.Fatalf("round %d caller %d: out=%q err=%v, want %q", round, i, outs[i], errs[i], want)
+			}
+		}
+	}
+}
+
+func TestServerRequestReusingOurIDIsNotTakenAsResponse(t *testing.T) {
+	// JSON-RPC lets a server send its own requests (e.g. ping). One
+	// carrying the same numeric id as our pending request has a
+	// "method" and must not be mistaken for the response.
+	c := connectFixture(t, "ping-first")
+	out, err := callEcho(c, "real answer", 5*time.Second)
+	if err != nil || out != "echo: real answer" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+}
+
+func TestStopDoesNotWedgeOnDescendantHoldingStdout(t *testing.T) {
+	// A descendant that left the process group (setsid) survives the
+	// group kill and keeps the stdout pipe open, so EOF never arrives.
+	// Stop holds the client mutex; waiting for EOF there would freeze
+	// every later call and the TUI's exit.
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture relies on sleep and setsid")
+	}
+	pidfile := filepath.Join(t.TempDir(), "child.pid")
+	c := connectFixtureArgs(t, nil, "escape", pidfile)
+	// Registered after connectFixtureArgs's Stop cleanup, so it runs
+	// first: killing the sleeper also un-wedges a Stop that hangs.
+	t.Cleanup(func() {
+		if raw, err := os.ReadFile(pidfile); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(raw))); err == nil {
+				if p, err := os.FindProcess(pid); err == nil {
+					_ = p.Kill()
+				}
+			}
+		}
+	})
+	if _, err := os.Stat(pidfile); err != nil {
+		t.Fatalf("fixture never spawned its escaped child: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_ = c.Stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("Stop blocked waiting for a stdout EOF that an escaped descendant withholds")
+	}
+}
+
+func TestServerEnvIsScrubbedButKeepsPathAndHome(t *testing.T) {
+	// S7: a server needs PATH/HOME to run; it must NOT inherit the
+	// parent's credentials, but gets what mcp.json `env` grants.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OPENROUTER_API_KEY", "sk-parent-secret")
+	t.Setenv("TILDE_TEST_SECRET_TOKEN", "parent-token")
+
+	c := connectFixtureArgs(t, map[string]string{"GRANTED_BY_CONFIG": "yes"}, "env")
+
+	tests := []struct {
+		name, variable, want string
+	}{
+		{"PATH survives", "PATH", "PATH=" + os.Getenv("PATH")},
+		{"HOME survives", "HOME", "HOME=" + home},
+		{"API key not inherited", "OPENROUTER_API_KEY", "OPENROUTER_API_KEY unset"},
+		{"token not inherited", "TILDE_TEST_SECRET_TOKEN", "TILDE_TEST_SECRET_TOKEN unset"},
+		{"config env granted", "GRANTED_BY_CONFIG", "GRANTED_BY_CONFIG=yes"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := callEcho(c, tc.variable, 5*time.Second)
+			if err != nil || out != tc.want {
+				t.Errorf("out=%q err=%v, want %q", out, err, tc.want)
+			}
+		})
 	}
 }
 

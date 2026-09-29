@@ -67,13 +67,46 @@ func installSandbox(t *testing.T) {
 // TestSandboxDenialClassified: a sandboxed write outside the writable
 // roots carries the plain-language cause and the documented escape —
 // and keeps the shell's original complaint below the note.
+//
+// The out-of-scope target is a directory this test creates in the
+// user's home, not a system path: /etc may be a read-only filesystem
+// (the shell then says "Read-only file system"), or writable by the
+// user in a container. A fresh directory the user can write, but the
+// sandbox roots do not cover, makes Landlock the only possible cause
+// of the denial — the unsandboxed control below proves it.
 func TestSandboxDenialClassified(t *testing.T) {
 	installSandbox(t)
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	probeDir, err := os.MkdirTemp(home, ".tilde-test-probe-")
+	if err != nil {
+		t.Skipf("home directory %s is not writable, so there is no writable-but-outside-the-sandbox path to probe: %v", home, err)
+	}
+	t.Cleanup(func() { os.RemoveAll(probeDir) })
+	for _, root := range sandbox.WritableRoots() {
+		if withinDir(probeDir, root) {
+			t.Skipf("%s lies inside the sandbox root %s (e.g. TMPDIR or the working directory is under home), so it is not an out-of-scope path", probeDir, root)
+		}
+	}
+	target := filepath.Join(probeDir, "probe")
+
+	// Control: the same write, unsandboxed, succeeds — so the denial
+	// below cannot be an ordinary permission problem with the path.
+	if out, err := (Bash{}).Execute(context.Background(),
+		fmt.Sprintf(`{"command": "touch %s && rm %s", "sandbox": false}`, target, target)); err != nil {
+		t.Fatalf("control write failed, the probe path is not writable: %v\n%s", err, out)
+	}
+
 	out, err := (Bash{}).Execute(context.Background(),
-		`{"command": "touch /etc/tilde-denial-probe"}`)
+		fmt.Sprintf(`{"command": "touch %s"}`, target))
 	if err == nil {
 		t.Fatalf("out-of-scope write succeeded: %q", out)
+	}
+	if _, statErr := os.Stat(target); statErr == nil {
+		t.Errorf("the denied write landed anyway")
 	}
 	if !strings.Contains(out, "ran inside the sandbox") {
 		t.Errorf("denial note missing:\n%s", out)
@@ -81,7 +114,7 @@ func TestSandboxDenialClassified(t *testing.T) {
 	if !strings.Contains(out, `"sandbox": false`) {
 		t.Errorf("note does not name the escape:\n%s", out)
 	}
-	if !strings.Contains(out, "Permission denied") {
+	if !strings.Contains(out, "Permission denied") && !strings.Contains(out, "Read-only file system") {
 		t.Errorf("the original error was dropped:\n%s", out)
 	}
 }

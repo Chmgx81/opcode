@@ -12,6 +12,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/sandbox"
 	"github.com/Chmgx81/tilde/internal/trust"
+	"github.com/Chmgx81/tilde/internal/update"
 )
 
 // doctor renders a diagnostic report into the transcript: one line per
@@ -26,7 +27,7 @@ func (m *Model) doctor() {
 	fail := func(text string) { rows = append(rows, dangerStyle.Render(GlyphError)+" "+text) }
 	neutral := func(text string) { rows = append(rows, dimStyle.Render(GlyphInfo)+" "+text) }
 
-	ok("tilde " + version)
+	ok("tilde " + m.displayVersion())
 
 	if m.opt.Model != "" {
 		ok("model " + m.opt.Model + dimStyle.Render("  via "+m.opt.ProviderName+" — "+m.opt.BaseURL))
@@ -55,6 +56,7 @@ func (m *Model) doctor() {
 	m.doctorTrust(ok, warn, neutral, fail)
 	m.doctorSkillsAndMcp(ok, neutral)
 	m.doctorAudit(ok, neutral)
+	m.doctorUpdate(ok, warn, neutral)
 	m.doctorTerminal(neutral)
 
 	m.add(entry{kind: entryDim, text: strings.Join(rows, "\n")})
@@ -120,14 +122,14 @@ func (m *Model) doctorTrust(ok, warn, neutral, fail func(string)) {
 
 func (m *Model) doctorSkillsAndMcp(ok, neutral func(string)) {
 	if m.opt.Skills == nil || len(m.opt.Skills.Names()) == 0 {
-		neutral("skills: none loaded")
+		neutral("skills: none loaded — add one under ~/.tilde/skills/ (a folder with SKILL.md)")
 	} else {
 		ok(fmt.Sprintf("skills: %d loaded — /skills lists them", len(m.opt.Skills.Names())))
 	}
 	if m.opt.MCPNames == nil {
 		neutral("mcp: manager not wired")
 	} else if names := m.opt.MCPNames(); len(names) == 0 {
-		neutral("mcp: no servers connected")
+		neutral("mcp: no servers connected — add one to ~/.tilde/mcp.json and restart tilde")
 	} else {
 		ok("mcp: " + strings.Join(names, " · "))
 	}
@@ -144,6 +146,27 @@ func (m *Model) doctorAudit(ok, neutral func(string)) {
 			neutral("audit log: " + m.opt.AuditPath + " — created on the first gated action")
 		}
 	}
+}
+
+func (m *Model) doctorUpdate(ok, warn, neutral func(string)) {
+	// The release-freshness row reads the update-check cache only —
+	// /doctor never phones home itself. A stale or missing cache
+	// names the explicit check; a cached newer release names the
+	// install.
+	if m.opt.TildeHome == "" {
+		neutral("update check: tilde home not wired")
+		return
+	}
+	tag, _, cached := update.ReadCache(update.CachePath(m.opt.TildeHome))
+	if !cached {
+		neutral("update check: never run — `tilde update --check` reports the latest release")
+		return
+	}
+	if note := update.Notice(m.displayVersion(), tag); note != "" {
+		warn(note)
+		return
+	}
+	ok("tilde " + m.displayVersion() + " is the latest release tilde has seen")
 }
 
 func (m *Model) doctorTerminal(neutral func(string)) {

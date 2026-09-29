@@ -77,8 +77,10 @@ type Orchestrator struct {
 	ReasoningEffort string
 	// SkillsIndex is the metadata-only skills index (name + description
 	// per skill) appended to the system prompt — tier 1 of progressive
-	// disclosure. Updated in place when a trust decision adds project
-	// skills mid-session.
+	// disclosure. Writers must go through SetSkillsIndex: a trust
+	// grant updates it from the TUI event goroutine while a live
+	// turn reads it under cfgMu every round. systemPrompt itself
+	// must only be called with cfgMu held (the request builder does).
 	SkillsIndex string
 
 	// Compaction (Section 3.2): when the previous round's reported
@@ -97,6 +99,17 @@ type Orchestrator struct {
 	// compaction). Compaction reacts to GROWTH past the baseline,
 	// never to the baseline itself — a resumed session at 80% of
 	// the window must not compact on arrival.
+	//
+	// histMu guards history, histGen and the three token fields
+	// above. Turns are sequential in the TUI, but History (session
+	// save on exit, possibly after a WaitIdle timeout), Seed (resume)
+	// and tests reach these from other goroutines. It is never held
+	// across a provider call, a tool dispatch or an event send.
+	// histGen bumps whenever history is replaced wholesale (Seed,
+	// compaction) so a compaction that summarized a now-stale
+	// snapshot can tell and discard its result.
+	histMu           sync.Mutex
+	histGen          uint64
 	baselineTokens   int
 	baselineSet      bool
 	lastPromptTokens int
@@ -127,7 +140,7 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 		System:   system,
 		Registry: registry,
 		Gate:     gate,
-		Mode:     tools.ModeAsk,
+		Mode:     tools.ModeBuild,
 	}
 }
 
@@ -149,6 +162,15 @@ func (o *Orchestrator) SetMode(mode string) {
 	o.cfgMu.Lock()
 	defer o.cfgMu.Unlock()
 	o.Mode = tools.NormalizeMode(mode)
+}
+
+// SetSkillsIndex replaces the skills index. Like the other per-request
+// knobs it is read under cfgMu when a request is built, so the write
+// takes the same lock — a mid-turn trust grant must not race the turn.
+func (o *Orchestrator) SetSkillsIndex(index string) {
+	o.cfgMu.Lock()
+	defer o.cfgMu.Unlock()
+	o.SkillsIndex = index
 }
 
 // SetProvider swaps the LLM provider (a re-login or key change does
@@ -193,15 +215,45 @@ func (o *Orchestrator) WaitIdle(timeout time.Duration) bool {
 // History returns the conversation so far (a copy) — session storage
 // snapshots this on exit.
 func (o *Orchestrator) History() []llm.Message {
+	o.histMu.Lock()
+	defer o.histMu.Unlock()
+	return o.snapshotLocked()
+}
+
+// snapshotLocked copies the history; histMu must be held.
+func (o *Orchestrator) snapshotLocked() []llm.Message {
 	out := make([]llm.Message, len(o.history))
 	copy(out, o.history)
 	return out
 }
 
+// appendHistory adds messages to the conversation atomically.
+func (o *Orchestrator) appendHistory(msgs ...llm.Message) {
+	o.histMu.Lock()
+	defer o.histMu.Unlock()
+	o.history = append(o.history, msgs...)
+}
+
+// setPromptTokens records the provider-reported prompt size of the
+// latest request — the compaction trigger signal.
+func (o *Orchestrator) setPromptTokens(n int) {
+	o.histMu.Lock()
+	defer o.histMu.Unlock()
+	o.lastPromptTokens = n
+}
+
 // Seed replaces the conversation with a loaded session's history, so
-// a resumed session continues where it left off.
+// a resumed session continues where it left off. The compaction
+// signal resets with it: token counts measured against the previous
+// conversation say nothing about this one, and a stale baseline would
+// trigger a spurious compaction of the freshly loaded session.
 func (o *Orchestrator) Seed(history []llm.Message) {
+	o.histMu.Lock()
+	defer o.histMu.Unlock()
 	o.history = append([]llm.Message(nil), history...)
+	o.histGen++
+	o.lastPromptTokens = 0
+	o.baselineTokens, o.baselineSet = 0, false
 }
 
 // Steer queues a steering message for the in-flight turn. It is appended
@@ -238,7 +290,7 @@ func (o *Orchestrator) SendImages(ctx context.Context, userText string, images [
 	go func() {
 		defer close(events)
 		defer o.turnWg.Done()
-		o.history = append(o.history, llm.Message{Role: "user", Content: userText, Images: images})
+		o.appendHistory(llm.Message{Role: "user", Content: userText, Images: images})
 		if err := o.runTurn(ctx, events); err != nil {
 			if ctx.Err() != nil {
 				err = ErrCancelled
@@ -259,8 +311,12 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		}
 		// Steering checkpoint: between rounds is the moment the spec
 		// promises — the previous tool call has finished.
-		for _, steer := range o.drainSteer() {
-			o.history = append(o.history, llm.Message{Role: "user", Content: steer})
+		if steers := o.drainSteer(); len(steers) > 0 {
+			msgs := make([]llm.Message, len(steers))
+			for i, steer := range steers {
+				msgs[i] = llm.Message{Role: "user", Content: steer}
+			}
+			o.appendHistory(msgs...)
 		}
 		pos := InjectRecapFirst
 		if round > 0 {
@@ -272,6 +328,11 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			// Compaction failure must not kill the turn: the
 			// conversation continues uncompacted and the user sees it
 			// — as a non-terminal notice, never EventError.
+			// A cancel that landed mid-summary is the interrupt, not a
+			// compaction problem: say only that.
+			if ctx.Err() != nil {
+				return ErrCancelled
+			}
 			events <- Event{Kind: EventCompactionFailed, Err: err}
 		} else if note != "" {
 			events <- Event{Kind: EventCompaction, Text: note}
@@ -281,8 +342,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		// reach into a request that already went out. The knobs come
 		// off the same snapshot, read under cfgMu so a mid-turn mode
 		// or effort switch cannot tear the request.
-		msgs := make([]llm.Message, len(o.history))
-		copy(msgs, o.history)
+		msgs := o.History()
 		o.cfgMu.Lock()
 		provider, model, system, effort := o.Provider, o.Model, o.systemPrompt(), o.ReasoningEffort
 		o.cfgMu.Unlock()
@@ -315,14 +375,14 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			case llm.ToolCallEvent:
 				calls = append(calls, ev.Call)
 			case llm.UsageEvent:
-				o.lastPromptTokens = ev.Usage.PromptTokens
+				o.setPromptTokens(ev.Usage.PromptTokens)
 				events <- Event{Kind: EventUsage, Usage: ev.Usage}
 			case llm.ErrorEvent:
 				return ev.Err
 			}
 		}
 
-		o.history = append(o.history, llm.Message{
+		o.appendHistory(llm.Message{
 			Role:      "assistant",
 			Content:   content,
 			ToolCalls: calls,
@@ -333,11 +393,12 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			return nil
 		}
 
-		for _, call := range calls {
+		for i, call := range calls {
 			events <- Event{Kind: EventToolStart, ToolCall: call}
 			result, err := o.dispatch(ctx, call)
 			if err != nil {
 				if ctx.Err() != nil {
+					o.answerCancelledCalls(calls[i:])
 					return ErrCancelled
 				}
 				// Tool failures go back to the model as the tool
@@ -353,7 +414,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 					result += "\n" + out
 				}
 			}
-			o.history = append(o.history, llm.Message{
+			o.appendHistory(llm.Message{
 				Role:       "tool",
 				ToolCallID: call.ID,
 				Content:    truncate(result),
@@ -361,6 +422,19 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			events <- Event{Kind: EventToolResult, ToolCall: call, ToolResult: result}
 		}
 	}
+}
+
+// answerCancelledCalls gives every tool call an interrupted turn left
+// unanswered a result message. Providers reject a history where an
+// assistant message's tool calls are not each followed by their
+// result, so without this the session would fail on the very next
+// request after an interrupt (and on resume).
+func (o *Orchestrator) answerCancelledCalls(calls []llm.ToolCall) {
+	msgs := make([]llm.Message, len(calls))
+	for i, call := range calls {
+		msgs[i] = llm.Message{Role: "tool", ToolCallID: call.ID, Content: "error: interrupted by the user before this tool ran to completion"}
+	}
+	o.appendHistory(msgs...)
 }
 
 // dispatch resolves the tool and runs it through the permission gate.
@@ -429,8 +503,30 @@ const (
 // returned when compaction happened; an error means it was
 // attempted and failed (the caller continues regardless).
 func (o *Orchestrator) maybeCompact(ctx context.Context, pos InjectionPos) (string, error) {
-	if o.ContextWindow <= 0 || o.lastPromptTokens == 0 {
+	old, gen := o.compactionCandidate()
+	if old == nil {
 		return "", nil
+	}
+	// The summarizer round runs without histMu: it is a provider call.
+	summary, err := o.summarize(ctx, old)
+	if err != nil {
+		return "", err
+	}
+	recap := llm.Message{Role: "user", Content: "Context recap (earlier conversation, auto-summarized):\n" + summary}
+	if !o.applyCompaction(gen, len(old), recap, pos) {
+		return "", nil // history was replaced meanwhile; the summary is stale
+	}
+	return fmt.Sprintf("summarized %d older messages into a recap (%d kept verbatim)", len(old), keepRecent), nil
+}
+
+// compactionCandidate decides, under histMu, whether compaction is due.
+// When it is, it returns a copy of the messages to summarize and the
+// history generation they came from; otherwise a nil slice.
+func (o *Orchestrator) compactionCandidate() ([]llm.Message, uint64) {
+	o.histMu.Lock()
+	defer o.histMu.Unlock()
+	if o.ContextWindow <= 0 || o.lastPromptTokens == 0 {
+		return nil, 0
 	}
 	if !o.baselineSet {
 		// The prefill anchor: the first report of the session, or
@@ -448,31 +544,42 @@ func (o *Orchestrator) maybeCompact(ctx context.Context, pos InjectionPos) (stri
 	}
 	growth := o.lastPromptTokens - o.baselineTokens
 	if growth < int(float64(remaining)*CompactionFraction) {
-		return "", nil
+		return nil, 0
 	}
 	if len(o.history) <= keepRecent+2 {
-		return "", nil // not enough worth summarizing
+		return nil, 0 // not enough worth summarizing
 	}
-	old := o.history[:len(o.history)-keepRecent]
-	recent := o.history[len(o.history)-keepRecent:]
+	old := make([]llm.Message, len(o.history)-keepRecent)
+	copy(old, o.history)
+	return old, o.histGen
+}
 
-	summary, err := o.summarize(ctx, old)
-	if err != nil {
-		return "", err
+// applyCompaction swaps the summarized prefix (the first nOld messages)
+// for the recap. It reports false, changing nothing, when the history
+// was replaced since the snapshot (generation mismatch). Anything
+// appended after the snapshot survives in the kept tail.
+func (o *Orchestrator) applyCompaction(gen uint64, nOld int, recap llm.Message, pos InjectionPos) bool {
+	o.histMu.Lock()
+	defer o.histMu.Unlock()
+	if o.histGen != gen || len(o.history) < nOld {
+		return false
 	}
-	recap := llm.Message{Role: "user", Content: "Context recap (earlier conversation, auto-summarized):\n" + summary}
+	tail := o.history[nOld:]
+	next := make([]llm.Message, 0, len(tail)+1)
 	switch pos {
 	case InjectRecapLast:
-		o.history = append(recent, recap)
+		next = append(append(next, tail...), recap)
 	default:
-		o.history = append([]llm.Message{recap}, recent...)
+		next = append(append(next, recap), tail...)
 	}
+	o.history = next
+	o.histGen++
 	// Reset the signal AND the baseline: the compacted size is the
 	// new anchor, so the next report measures fresh growth instead
 	// of instantly re-triggering.
 	o.lastPromptTokens = 0
 	o.baselineTokens, o.baselineSet = 0, false
-	return fmt.Sprintf("summarized %d older messages into a recap (%d kept verbatim)", len(old), keepRecent), nil
+	return true
 }
 
 // summarize runs the summarizer round through the provider — the same

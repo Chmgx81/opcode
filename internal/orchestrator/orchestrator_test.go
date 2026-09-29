@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -403,18 +405,24 @@ func TestCancelledTurnReportsErrCancelled(t *testing.T) {
 // steerableProvider is a fakeProvider that can block between rounds so
 // tests can steer at a deterministic moment.
 type steerableProvider struct {
+	// mu guards rounds and gotRequests: StreamChat runs on the turn
+	// goroutine while waitForRequest polls from the test goroutine.
+	mu          sync.Mutex
 	rounds      [][]llm.ChatEvent
 	gotRequests []llm.ChatRequest
 	steered     <-chan struct{}
 }
 
 func (f *steerableProvider) StreamChat(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+	f.mu.Lock()
 	f.gotRequests = append(f.gotRequests, req)
 	if len(f.rounds) == 0 {
+		f.mu.Unlock()
 		return nil, fmt.Errorf("no scripted round left")
 	}
 	round := f.rounds[0]
 	f.rounds = f.rounds[1:]
+	f.mu.Unlock()
 	if f.steered != nil {
 		<-f.steered
 	}
@@ -431,7 +439,10 @@ func (f *steerableProvider) waitForRequest(t *testing.T) {
 	// Poll briefly: Send runs in a goroutine, so the request may not be
 	// in gotRequests the instant Send returns.
 	for i := 0; i < 100; i++ {
-		if len(f.gotRequests) > 0 {
+		f.mu.Lock()
+		n := len(f.gotRequests)
+		f.mu.Unlock()
+		if n > 0 {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -486,15 +497,15 @@ func TestOtherModesOfferAllToolsAndTheirPrompts(t *testing.T) {
 	}
 
 	// The removed auto-accept-safe-ops mode survives as a legacy alias
-	// that must present the ask posture, never anything wider.
+	// that must present the build posture, never anything wider.
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.TextEvent, Text: "hi"}},
 	}}
 	orch, _ := newTestOrchestrator(p, nil, dir)
 	orch.SetMode(tools.ModeAutoAcceptSafe)
 	drain(t, orch.Send(context.Background(), "go"))
-	if sys := p.gotRequests[0].System; !strings.Contains(sys, tools.ModeAsk) {
-		t.Errorf("legacy auto-accept-safe-ops must map to ask: %q", sys)
+	if sys := p.gotRequests[0].System; !strings.Contains(sys, tools.ModeBuild) {
+		t.Errorf("legacy auto-accept-safe-ops must map to build: %q", sys)
 	}
 }
 
@@ -504,7 +515,7 @@ func TestSkillsIndexComposedIntoSystemPrompt(t *testing.T) {
 		{{Type: llm.TextEvent, Text: "hi"}},
 	}}
 	orch, _ := newTestOrchestrator(p, nil, dir)
-	orch.SkillsIndex = "- deploy: Deploys the app"
+	orch.SetSkillsIndex("- deploy: Deploys the app")
 	drain(t, orch.Send(context.Background(), "go"))
 
 	sys := p.gotRequests[0].System
@@ -515,7 +526,7 @@ func TestSkillsIndexComposedIntoSystemPrompt(t *testing.T) {
 	}
 
 	// Updating the index mid-session reaches the next request.
-	orch.SkillsIndex = "- audit: Audits things"
+	orch.SetSkillsIndex("- audit: Audits things")
 	drain(t, orch.Send(context.Background(), "again"))
 	if !strings.Contains(p.gotRequests[1].System, "- audit: Audits things") {
 		t.Errorf("updated skills index not in second request: %q", p.gotRequests[1].System)
@@ -895,5 +906,209 @@ func TestPreTurnCompactionKeepsRecapFirst(t *testing.T) {
 	}
 	if post[len(post)-1].Content != "second" {
 		t.Errorf("the turn's user message is not last: %+v", post[len(post)-1])
+	}
+}
+
+// funcProvider adapts a function to llm.Provider for tests that need
+// per-request behavior.
+type funcProvider func(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error)
+
+func (f funcProvider) StreamChat(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+	return f(ctx, req)
+}
+
+func eventsChan(evs ...llm.ChatEvent) <-chan llm.ChatEvent {
+	ch := make(chan llm.ChatEvent, len(evs))
+	for _, ev := range evs {
+		ch <- ev
+	}
+	close(ch)
+	return ch
+}
+
+// TestConcurrentSendHistorySteerSeedIsRaceFree hammers every entry
+// point that touches conversation state at once. It asserts nothing
+// about the final history — only that the race detector stays quiet,
+// nothing deadlocks, and the turns drain. Overlapping Sends do not
+// happen in the TUI, but History (exit-path session save after a
+// WaitIdle timeout) and Seed (resume) can legitimately land mid-turn.
+func TestConcurrentSendHistorySteerSeedIsRaceFree(t *testing.T) {
+	p := funcProvider(func(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+		if strings.HasPrefix(req.System, "Summarize") {
+			return eventsChan(llm.ChatEvent{Type: llm.TextEvent, Text: "recap"}), nil
+		}
+		usage := llm.ChatEvent{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 50 * len(req.Messages)}}
+		if n := len(req.Messages); n > 0 && req.Messages[n-1].Role == "tool" {
+			return eventsChan(usage, llm.ChatEvent{Type: llm.TextEvent, Text: "ok"}), nil
+		}
+		return eventsChan(usage, llm.ChatEvent{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: "c", Name: "read_file", Arguments: `{"path": "missing-ok"}`}}), nil
+	})
+	orch, _ := newTestOrchestrator(p, nil, t.TempDir())
+	orch.ContextWindow = 1000
+	seed := []llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "q4"}, {Role: "assistant", Content: "a4"},
+	}
+	orch.Seed(seed)
+
+	stop := make(chan struct{})
+	var helpers sync.WaitGroup
+	helper := func(f func()) {
+		helpers.Add(1)
+		go func() {
+			defer helpers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					f()
+				}
+			}
+		}()
+	}
+	helper(func() { _ = orch.History() })
+	helper(func() { orch.Steer("steer"); time.Sleep(time.Millisecond) })
+	helper(func() { orch.Seed(seed); time.Sleep(time.Millisecond) })
+
+	var senders sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		senders.Add(1)
+		go func() {
+			defer senders.Done()
+			for j := 0; j < 15; j++ {
+				for range orch.Send(context.Background(), "go") {
+				}
+			}
+		}()
+	}
+	senders.Wait()
+	close(stop)
+	helpers.Wait()
+	if !orch.WaitIdle(5 * time.Second) {
+		t.Fatal("turn goroutines still running after all Sends drained")
+	}
+}
+
+// cancelingTool cancels the turn's context mid-dispatch, the way an
+// interrupt landing during a tool call does.
+type cancelingTool struct{ cancel context.CancelFunc }
+
+func (cancelingTool) Name() string        { return "cancel_now" }
+func (cancelingTool) Description() string { return "test tool" }
+func (cancelingTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+func (cancelingTool) Tier() tools.Tier { return tools.TierReadOnly }
+func (c cancelingTool) Execute(ctx context.Context, args string) (string, error) {
+	c.cancel()
+	return "", ctx.Err()
+}
+
+func TestInterruptedToolCallsStillGetResults(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c1", Name: "cancel_now", Arguments: `{}`}},
+			{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c2", Name: "read_file", Arguments: `{"path": "x"}`}}},
+	}}
+	orch, reg := newTestOrchestrator(p, nil, t.TempDir())
+	reg.Register(cancelingTool{cancel: cancel})
+
+	var got error
+	for ev := range orch.Send(ctx, "go") {
+		if ev.Kind == EventError {
+			got = ev.Err
+		}
+	}
+	if !errors.Is(got, ErrCancelled) {
+		t.Fatalf("err = %v, want ErrCancelled", got)
+	}
+	// Providers reject an assistant tool_calls message whose calls are
+	// not each followed by a tool result; the next turn would 400.
+	h := orch.History()
+	if len(h) != 4 || h[2].Role != "tool" || h[2].ToolCallID != "c1" || h[3].Role != "tool" || h[3].ToolCallID != "c2" {
+		t.Fatalf("history after interrupt = %+v, want user, assistant, tool c1, tool c2", h)
+	}
+}
+
+func TestCancelDuringSummaryIsAnInterruptNotACompactionFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var calls int
+	p := funcProvider(func(c context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+		calls++
+		switch calls {
+		case 1:
+			return eventsChan(
+				llm.ChatEvent{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c1", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+				llm.ChatEvent{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 300}}), nil
+		case 2:
+			return eventsChan(
+				llm.ChatEvent{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}},
+				llm.ChatEvent{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 900}}), nil
+		default:
+			cancel() // the interrupt lands while the summarizer runs
+			return nil, c.Err()
+		}
+	})
+	orch, _ := newTestOrchestrator(p, nil, t.TempDir())
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+	})
+
+	var got error
+	for ev := range orch.Send(ctx, "go") {
+		if ev.Kind == EventCompactionFailed {
+			t.Errorf("interrupt reported as a compaction failure: %v", ev.Err)
+		}
+		if ev.Kind == EventError {
+			got = ev.Err
+		}
+	}
+	if !errors.Is(got, ErrCancelled) {
+		t.Errorf("err = %v, want ErrCancelled", got)
+	}
+}
+
+func TestSeedResetsCompactionSignal(t *testing.T) {
+	orch, _ := newTestOrchestrator(&fakeProvider{}, nil, t.TempDir())
+	orch.ContextWindow = 1000
+	orch.lastPromptTokens, orch.baselineTokens, orch.baselineSet = 900, 300, true
+	orch.Seed([]llm.Message{{Role: "user", Content: "fresh"}})
+	if orch.lastPromptTokens != 0 || orch.baselineTokens != 0 || orch.baselineSet {
+		t.Errorf("stale token signal survived Seed: last=%d baseline=%d set=%v",
+			orch.lastPromptTokens, orch.baselineTokens, orch.baselineSet)
+	}
+}
+
+func TestStaleCompactionIsDiscardedAfterSeed(t *testing.T) {
+	orch, _ := newTestOrchestrator(&fakeProvider{}, nil, t.TempDir())
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "q4"},
+	})
+	orch.setPromptTokens(300)
+	orch.compactionCandidate() // anchors the baseline
+	orch.setPromptTokens(900)
+	old, gen := orch.compactionCandidate()
+	if old == nil {
+		t.Fatal("expected compaction to be due")
+	}
+
+	// A resume lands while the summarizer round is in flight.
+	orch.Seed([]llm.Message{{Role: "user", Content: "resumed"}})
+	if orch.applyCompaction(gen, len(old), llm.Message{Role: "user", Content: "recap"}, InjectRecapFirst) {
+		t.Fatal("stale compaction was applied over the resumed history")
+	}
+	if h := orch.History(); len(h) != 1 || h[0].Content != "resumed" {
+		t.Errorf("history = %+v, want the resumed one untouched", h)
 	}
 }

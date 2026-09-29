@@ -1,7 +1,9 @@
 // Package sandbox confines subprocess writes with Linux Landlock:
 // read and execute everywhere, writes only beneath the working
 // directory, the temp dir, and known dev caches. The ruleset mirrors
-// Codex's landlock.rs (Phase 21 spec).
+// Codex's landlock.rs (Phase 21 spec). Where the seccomp step in
+// Apply applies (x86_64), network sockets are also denied —
+// Landlock alone cannot stop exfiltration.
 //
 // Landlock applies to the calling thread, and Go's runtime has
 // several threads before main — so commands run through a self
@@ -17,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -106,9 +109,13 @@ func (r *Runner) Status() string {
 		return "sandbox: unavailable — shell commands run unsandboxed"
 	default:
 		abi, _ := ProbeABI()
-		return fmt.Sprintf(
+		s := fmt.Sprintf(
 			"sandbox: landlock v%d — reads anywhere, writes confined to this directory, %s, and dev caches",
 			abi, os.TempDir())
+		if confinedNetwork() {
+			s += ", network sockets blocked"
+		}
+		return s
 	}
 }
 
@@ -202,6 +209,12 @@ func Child(args []string) error {
 		return errors.New("__sandbox: usage: tilde __sandbox <writable-dir>… -- <command> [args…]")
 	}
 	writable, argv := args[:sep], args[sep+1:]
+	// Landlock and seccomp attach to the calling thread only, and the
+	// Go runtime is free to move a goroutine between threads. Pin this
+	// one so the thread that is confined is the thread that execs;
+	// otherwise a reschedule between Apply and Exec would run the
+	// command on an unconfined thread.
+	runtime.LockOSThread()
 	if err := Apply(writable); err != nil {
 		return fmt.Errorf("__sandbox: %w", err)
 	}

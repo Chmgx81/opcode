@@ -5,10 +5,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -25,6 +29,7 @@ import (
 	"github.com/Chmgx81/tilde/internal/tools"
 	"github.com/Chmgx81/tilde/internal/trust"
 	"github.com/Chmgx81/tilde/internal/tui"
+	"github.com/Chmgx81/tilde/internal/update"
 )
 
 func main() {
@@ -37,6 +42,15 @@ func main() {
 			os.Exit(1)
 		}
 		return // Child replaced the process on success
+	}
+	// `tilde update` is an explicit user action and needs none of the
+	// config/model/TUI setup below, so it is dispatched first.
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		if err := runUpdate(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "tilde: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tilde: %v\n", err)
@@ -61,6 +75,7 @@ func run() error {
 Usage:
   tilde [flags]              start the interactive TUI in this directory
   tilde -p "prompt"          run one headless turn and exit
+  tilde update [--check]     update to the latest release (checksum-verified)
 
 Flags:
   -p <prompt>    headless: run one turn with this prompt
@@ -159,6 +174,18 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		startupNotes = append(startupNotes, fmt.Sprintf(
 			"no API key for provider %q — set %s, use /login %s, or add it to %s",
 			providerName, providerCfg.APIKeyEnv, providerName, filepath.Join(userDir, "auth.json")))
+	}
+
+	// Update notice: one cached, throttled, silent-on-failure check
+	// per day, so a stale binary says so instead of staying stale
+	// quietly (a stale binary gets no security fixes). Opt out with
+	// config.json "update_checks": false or TILDE_NO_UPDATE_CHECK=1.
+	// Dev builds and platforms without prebuilt releases never
+	// check — "newer" has no meaning when nothing could install.
+	if update.ChecksEnabled(cfg.UpdateChecks) && update.SupportedPlatform(runtime.GOOS, runtime.GOARCH) {
+		if note := update.LatestKnown(context.Background(), buildVersion(), userDir, update.DefaultAPIURL, time.Now()); note != "" {
+			startupNotes = append(startupNotes, note)
+		}
 	}
 
 	auditPath := filepath.Join(userDir, "audit.jsonl")
@@ -283,10 +310,11 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	orch = orchestrator.New(provider, cfg.Model, systemPrompt(userDir, cwd), &registry, gate)
 	orch.ReasoningEffort = cfg.ReasoningEffort
 	// One version everywhere: the banner, --version, and the fetch
-	// UA agree (audit X22).
+	// UA agree — the TUI renders the injected buildVersion, not its
+	// own const.
 	tools.WebFetchUA = "tilde/" + strings.TrimPrefix(buildVersion(), "tilde ") + " (+https://github.com/Chmgx81/tilde)"
 	orch.SetMode(cfg.PermissionMode)
-	orch.SkillsIndex = skillManager.Index()
+	orch.SetSkillsIndex(skillManager.Index())
 	orch.ContextWindow = cfg.ContextWindow
 	orch.CompactionModel = cfg.CompactionModel
 
@@ -366,6 +394,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		pending = &tui.TrustDecision{
 			ProjectDir: cwd,
 			Approved:   approved,
+			OpenedAt:   time.Now(),
 			OnAnswer: func(trusted bool) {
 				if !trusted {
 					return
@@ -376,7 +405,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 				if err := skillManager.Load(skillSources(true)); err != nil {
 					return
 				}
-				orch.SkillsIndex = skillManager.Index()
+				orch.SetSkillsIndex(skillManager.Index())
 				connectProjectMcp()
 			},
 		}
@@ -459,8 +488,9 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			}
 		})
 		err := headless.Run(context.Background(), orch, *prompt, headless.Options{
-			JSON: *jsonOut,
-			Out:  os.Stdout,
+			JSON:   *jsonOut,
+			Out:    os.Stdout,
+			Redact: redactor.Redact,
 		})
 		// Same discipline as the TUI exit: one turn, but the
 		// session save must not race it.
@@ -478,6 +508,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		Redactor:     redactor,
 		Model:        cfg.Model,
 		Mode:         cfg.PermissionMode,
+		Version:      buildVersion(),
 		Cwd:          cwd,
 		TildeHome:    userDir,
 		ProviderName: providerName,
@@ -539,6 +570,50 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		fmt.Println("~ tilde — session saved · resume it with /sessions")
 	}
 	return runErr
+}
+
+// runUpdate is the `tilde update` subcommand: check GitHub for a newer
+// release and, unless --check, replace this binary with it. It makes
+// network calls only because the user typed it.
+func runUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	// The FlagSet's own output is silenced: main prints the returned
+	// error once, and Usage below is written explicitly.
+	fs.SetOutput(io.Discard)
+	check := fs.Bool("check", false, "report whether a newer release exists; install nothing")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: tilde update [--check]
+
+Downloads the latest release from GitHub, verifies its sha256 against
+the release's checksums.txt, and replaces this binary.
+
+  --check   only report whether a newer release exists
+`)
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("update takes no arguments (got %q)", fs.Arg(0))
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	// The explicit check refreshes the startup notice's cache for
+	// the next launch (best-effort: an unwritable home must not
+	// fail the update itself).
+	var cacheHome string
+	if dir, err := config.UserDir(); err == nil {
+		cacheHome = dir
+	}
+	return update.Run(ctx, update.Options{
+		Current:   buildVersion(),
+		CheckOnly: *check,
+		Out:       os.Stdout,
+		CacheHome: cacheHome,
+	})
 }
 
 // version is overridable at link time by the release pipeline

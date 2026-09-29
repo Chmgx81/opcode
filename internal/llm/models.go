@@ -86,8 +86,12 @@ func fetchAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]ModelI
 
 // getJSON performs the request and decodes the response, turning
 // non-2xx bodies into readable errors (the same shape the chat
-// clients use).
+// clients use). Unlike the chat clients it carries a total timeout:
+// listing models is one bounded request, never a stream.
 func getJSON(ctx context.Context, req *http.Request, into any) error {
+	ctx, cancel := context.WithTimeout(ctx, modelsTimeout)
+	defer cancel()
+	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not reach %s: %w", req.URL.Host, err)

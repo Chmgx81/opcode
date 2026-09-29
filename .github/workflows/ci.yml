@@ -5,17 +5,102 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a PR supersedes the run in flight; main always finishes
+# so every merged commit has a complete result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: -mod=readonly
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy && git diff --exit-code go.mod go.sum
       - run: go vet ./...
-      - run: go test -count=1 ./...
+      # -race needs cgo, which the ubuntu runner has. Landlock/seccomp
+      # tests skip themselves when the runner's kernel lacks support.
+      - run: go test -race -count=1 ./...
       - run: go build ./cmd/tilde
       # TUI/UX spec 1.3: the headless path never imports the TUI stack.
       - name: headless must not import the TUI stack
         run: if go list -deps ./internal/headless | grep -qE 'internal/tui|bubbletea|lipgloss'; then echo "headless imports the TUI stack" && exit 1; fi
+
+  # Every release target must compile, with the same settings the release
+  # uses (static, no cgo). Build only: these binaries are not run.
+  cross-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build ${{ matrix.target }}
+        env:
+          CGO_ENABLED: "0"
+          TARGET: ${{ matrix.target }}
+        run: |
+          GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}" go build ./...
+
+  # darwin is a release target and the sandbox is Linux-only, so this
+  # runs the tests where those paths take their non-Linux branches, and
+  # the installer against macOS's BSD userland (tar, awk, shasum).
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 ./...
+      - name: installer against a fake release
+        run: bash scripts/test-install.sh
+
+  installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.sh against a fake release
+        run: bash scripts/test-install.sh
+
+  vulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Pinned: v1.1.4 builds with Go 1.24 (newer releases require a newer
+      # toolchain). The vulnerability database itself is fetched live.
+      - name: install govulncheck
+        env:
+          GOFLAGS: "" # -mod=readonly is for this module, not for the tool's own build
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: govulncheck
+        run: |
+          "$(go env GOPATH)/bin/govulncheck" ./...

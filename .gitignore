@@ -1,6 +1,11 @@
 # built binary
 /tilde
 
+# release artifacts (built by the release workflow, never committed)
+/dist/
+*.tar.gz
+*.zip
+
 # editor/os noise
 .DS_Store
 

@@ -106,6 +106,12 @@ func ModeInstruction(mode string) string {
 // PolicyDecide returns a Gate.Decide function implementing the
 // Phase 30 decision matrix:
 //
+//   - The credentials file is denied in every mode, before the
+//     matrix, for every tool that names it in a path argument (read,
+//     write, edit, patch, grep, glob, list): no posture — not even
+//     full-auto — hands the user's keys to the model's context or
+//     lets the model rewrite them. A user who wants to see them can
+//     run "!cat ~/.tilde/auth.json" themselves.
 //   - Read-Only and Draft-Only tools are always allowed — running
 //     them cannot change state.
 //   - Action-Allowed tools in full-auto are always allowed.
@@ -118,6 +124,9 @@ func ModeInstruction(mode string) string {
 //     behave as build — a config typo must not widen permissions.
 func PolicyDecide(mode string, prompt func(tool Tool, args string) bool) func(Tool, string) bool {
 	return func(tool Tool, args string) bool {
+		if touchesCredentials(tool, args) {
+			return false
+		}
 		switch tool.Tier() {
 		case TierReadOnly, TierDraftOnly:
 			return true

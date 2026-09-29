@@ -68,20 +68,20 @@ manager at first use), then the environment — the provider's
 `<PROVIDER>_API_KEY`. Credentials never load from a project-level
 `.tilde/`.
 
-## The four modes
+## The three modes
 
 | Mode | What the model gets |
 |---|---|
-| `read-only` | read tools run free (read_file, list_dir, grep, glob, current_time); every write or command it proposes asks you first |
-| `plan` | reads free, `present_plan` free; writes and commands ask. It researches, presents a plan, you approve |
-| `ask` | the sandbox is the safety: sandboxed commands and in-tree writes run without prompting; sandbox escapes and out-of-tree writes ask — the default |
+| `plan` | reads free (read_file, list_dir, grep, glob, current_time), `present_plan` free; every write, command, or fetch it proposes asks you first. It researches, presents a plan, you approve |
+| `build` | the sandbox is the safety: sandboxed commands and in-tree writes run without prompting; sandbox escapes and out-of-tree writes ask — the default |
 | `full-auto` | runs without prompting, still logged |
 
-Cycle with **Tab**. Approving a plan (`y` implement, `a` implement with
+Cycle with **Tab** (Shift+Tab goes back). Approving a plan (`y` implement, `a` implement with
 auto-accept) switches the session into a working mode mid-turn — the
 next request carries the action tools, no restart. `n` keeps planning.
-Old configs with `ask-every-time` (or the Phase 1 `ask` spelling) keep
-working — the mode was renamed because it no longer asks every time.
+Old configs naming `read-only`, `ask`, `ask-every-time`, or
+`auto-accept-safe-ops` keep working — they normalize to the
+restrictive side (`read-only` → `plan`, the rest → `build`).
 
 Action-Allowed tools ask through a numbered dialog — the literal
 command, then `1. Yes`, `2. Yes, and don't ask again for: <command
@@ -100,15 +100,15 @@ directory, `/tmp`, and dev caches** (`~/.cache`, `~/go/pkg/mod`,
 the kernel, not by tilde. On by default where the kernel supports
 it. A model can pass `{"sandbox": false}` when confinement breaks
 a command — that escape always goes through the approval dialog in
-ask mode. PATH bin dirs (`~/go/bin`,
+plan and build modes. PATH bin dirs (`~/go/bin`,
 `~/.local/bin`) stay read-only, so a command can't drop an
 executable where your shell will find it.
 
 In-process file writes (`write_file`, `edit_file`) can't be
 Landlocked, so the gate bounds them by path instead: writes inside
-the same roots run without prompting in `ask` mode (symlinks are
+the same roots run without prompting in `build` mode (symlinks are
 resolved first, so an in-tree path pointing outside still asks);
-anything else asks. Where Landlock is unavailable, ask mode
+anything else asks. Where Landlock is unavailable, build mode
 prompts for every action — it never auto-runs a command it cannot
 actually confine.
 
@@ -124,7 +124,7 @@ actually confine.
 | **Alt+Enter** | queue a follow-up |
 | **Esc** | stop — the turn, or whatever is open |
 | **Ctrl+C / Ctrl+D** | press twice to exit — the first press interrupts a running turn |
-| **Tab** | cycle permission mode |
+| **Tab / Shift+Tab** | cycle permission mode forward / back |
 | **Ctrl+R** | expand / collapse tool results & thinking |
 | **Ctrl+O** | transcript — scroll the whole conversation, results expanded |
 | **Alt+. / Alt+,** | reasoning effort — low / medium / high, or the provider default |
@@ -136,9 +136,10 @@ list — and switching provider + model applies without a restart.
 `/sessions` resumes one. `/theme` picks the palette — dark, light,
 or the original green — with a live preview; esc restores. `/diff`
 shows the working tree's git changes, colored, untracked files
-included. `/doctor` diagnoses the whole setup — config, key, sandbox,
-trust, MCP, terminal — one line per subsystem with the next step
-when something is wrong.
+included. `/doctor` diagnoses the whole setup — version, config, key, sandbox,
+trust, MCP, update check, terminal — one line per subsystem with the next step
+when something is wrong. Unknown `/commands` error in place with a
+suggestion instead of billing a model turn.
 Typing `@` opens a live file picker (type to filter, enter to attach);
 `!` turns the composer amber — shell mode, Enter runs it directly, no
 model round trip. Big pastes collapse to a token. LaTeX math in
@@ -149,14 +150,14 @@ Exits are graceful: the first Ctrl+C interrupts and hints, the second
 quits, and tilde saves the session and says so on the way out —
 `~ tilde — session saved · resume it with /sessions`.
 
-The model's built-in tools: read_file, list_dir, grep (content search), glob (pattern find), current_time, apply_patch
-(V4A multi-file patches — the format Codex uses), write_file,
+The model's built-in tools: read_file, list_dir, grep (content search), glob (pattern find), current_time, web_fetch,
+apply_patch (V4A multi-file patches — the format Codex uses), write_file,
 edit_file, bash, plus skills, MCP tools, subagents, todo
 tracking, and present_plan. Read-tier tools are free in every mode;
-apply_patch runs without prompting in ask mode while every file it
+apply_patch runs without prompting in build mode while every file it
 touches stays inside the sandbox's writable roots.
 
-Accessibility: for 400 ms after any dialog opens, keystrokes are
+Accessibility: for 400 ms after a permission, plan, or trust dialog opens, keystrokes are
 swallowed (a fast typist cannot accidentally approve), and
 `tilde --plain` — or a detected screen reader — swaps every glyph for
 its ASCII form (`✓` → `[ok]`) with animation off. The window title is
@@ -186,7 +187,24 @@ tilde -p "run the tests"        # one turn, plain text or --json
 ```sh
 go install github.com/Chmgx81/tilde/cmd/tilde@latest   # via Go
 tilde --help · tilde --version · tilde --continue     # resume latest
+tilde update [--check]    # update to the latest release (checksum-verified)
 ```
+
+tilde checks for updates once a day at startup (cached, silent when
+offline) and tells you when a newer release exists — `/doctor` shows
+the same check. Opt out with `"update_checks": false` in config.json
+or `TILDE_NO_UPDATE_CHECK=1`. Only the latest release gets security
+fixes.
+
+| Env | What it does |
+|---|---|
+| `TILDE_HOME` | tilde home dir (default `~/.tilde`) |
+| `TILDE_THEME=light\|dark` | force the palette posture |
+| `TILDE_PLAIN=1` | ASCII glyphs, no animation |
+| `TILDE_TRUST=1` | pre-approve the project's executable surface |
+| `TILDE_NO_UPDATE_CHECK=1` | skip the startup update check |
+| `TILDE_ALLOW_LOCAL_FETCH=1` | let web_fetch reach loopback/private addresses |
+| `TILDE_INSTALL_DIR` / `TILDE_VERSION` | install.sh destination / pinned version |
 
 Reduced motion: `{"animations": false}` in config.json — the spinner
 and toast animations become static glyphs, the information stays.

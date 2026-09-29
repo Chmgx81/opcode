@@ -60,8 +60,10 @@ const rightReadOnly = unix.LANDLOCK_ACCESS_FS_EXECUTE |
 
 // Apply installs the Landlock ruleset on this thread: read+execute
 // beneath "/" (everything), full access beneath each writable root
-// and /dev/null, then no_new_privs and restrict_self. It must run in
-// a process that has not yet spawned threads — the __sandbox child.
+// and /dev/null, then no_new_privs and restrict_self — and finally
+// the seccomp network denial, which Landlock cannot express. It must
+// run in a process that has not yet spawned threads — the __sandbox
+// child.
 func Apply(writable []string) error {
 	abi, err := ProbeABI()
 	if err != nil {
@@ -119,7 +121,12 @@ func Apply(writable []string) error {
 	if _, _, errno := syscall.Syscall(unix.SYS_LANDLOCK_RESTRICT_SELF, fd, 0, 0); errno != 0 {
 		return fmt.Errorf("landlock_restrict_self: %v", errno)
 	}
-	return nil
+	// Landlock confines files, not sockets: without this step a
+	// sandboxed command could still read the project and exfiltrate
+	// it over the network (audit S2). A failure here is fatal —
+	// running with writes confined but the network open would be a
+	// quieter hole than not running at all.
+	return denyNetwork()
 }
 
 // Exec replaces this process with argv — the last thing __sandbox

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -54,6 +55,18 @@ func (ApplyPatch) Execute(ctx context.Context, args string) (string, error) {
 		if act.path == "" {
 			return "", fmt.Errorf("apply_patch: a section is missing its file path")
 		}
+		// The gate's bound check is skipped in full-auto by design,
+		// so the tool itself refuses the spellings that escape the
+		// project (parent traversal, absolute paths outside the
+		// writable roots). And the credentials file is denied here
+		// too, not just at the gate (same backstop as
+		// write_file/edit_file).
+		if !safePatchPath(act.path) {
+			return "", fmt.Errorf("apply_patch: refusing path outside the project: %s", act.path)
+		}
+		if isCredentialsFile(act.path, credentialsPath()) {
+			return "", fmt.Errorf("apply_patch: %w", errCredentialsFile)
+		}
 		switch act.kind {
 		case "add":
 			if _, err := os.Stat(act.path); err == nil {
@@ -71,7 +84,7 @@ func (ApplyPatch) Execute(ctx context.Context, args string) (string, error) {
 			results = append(results, "deleted "+act.path)
 			applied++
 		case "update":
-			data, err := os.ReadFile(act.path)
+			data, err := readFileGuarded(act.path)
 			if err != nil {
 				return "", fmt.Errorf("apply_patch: %w", err)
 			}
@@ -91,4 +104,25 @@ func (ApplyPatch) Execute(ctx context.Context, args string) (string, error) {
 		}
 	}
 	return strings.Join(results, "\n"), nil
+}
+
+// safePatchPath is the floor full-auto stands on. The gate's
+// writable-roots bound still governs prompting; this refuses only
+// what no mode should do: parent traversal (which escapes the
+// project however it is spelled) and absolute paths outside the
+// writable roots. Relative in-tree paths and absolute in-roots
+// paths both pass — the model emits either.
+func safePatchPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, part := range strings.Split(filepath.Clean(path), string(filepath.Separator)) {
+		if part == ".." {
+			return false
+		}
+	}
+	if filepath.IsAbs(path) {
+		return pathInWritableRoots(path)
+	}
+	return true
 }

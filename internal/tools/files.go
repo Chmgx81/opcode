@@ -41,7 +41,7 @@ func (ReadFile) Execute(ctx context.Context, args string) (string, error) {
 	if a.Path == "" {
 		return "", fmt.Errorf("read_file: path is required")
 	}
-	data, err := os.ReadFile(a.Path)
+	data, err := readFileGuarded(a.Path)
 	if err != nil {
 		return "", fmt.Errorf("read_file: %w", err)
 	}
@@ -142,6 +142,12 @@ func (WriteFile) Execute(ctx context.Context, args string) (string, error) {
 	if a.Path == "" {
 		return "", fmt.Errorf("write_file: path is required")
 	}
+	// Defense in depth: the gate denies the credentials file in every
+	// mode, but a direct Execute with a nil Decide (tests, headless
+	// wiring mistakes) must not be the way around it.
+	if isCredentialsFile(a.Path, credentialsPath()) {
+		return "", fmt.Errorf("write_file: %w", errCredentialsFile)
+	}
 	if err := os.MkdirAll(parentDir(a.Path), 0o755); err != nil {
 		return "", fmt.Errorf("write_file: %w", err)
 	}
@@ -193,7 +199,12 @@ func (EditFile) Execute(ctx context.Context, args string) (string, error) {
 	if a.Path == "" || a.Old == "" {
 		return "", fmt.Errorf("edit_file: path and old are required")
 	}
-	data, err := os.ReadFile(a.Path)
+	// Same defense-in-depth deny as write_file: the gate is the
+	// posture, this is the backstop for direct Execute callers.
+	if isCredentialsFile(a.Path, credentialsPath()) {
+		return "", fmt.Errorf("edit_file: %w", errCredentialsFile)
+	}
+	data, err := readFileGuarded(a.Path)
 	if err != nil {
 		return "", fmt.Errorf("edit_file: %w", err)
 	}

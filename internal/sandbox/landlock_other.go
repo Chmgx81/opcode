@@ -37,6 +37,10 @@ func Exec(argv []string) error {
 // type exists everywhere, so keep the same shape.
 func deathAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{} }
 
+// confinedNetwork is false here: no seccomp step runs off Linux, so
+// Status() must not claim the network half.
+func confinedNetwork() bool { return false }
+
 // KillGroup is a no-op off Linux: without Setpgid there is no group
 // to kill, and the direct child was already killed by the context.
 func KillGroup(int) error { return nil }
