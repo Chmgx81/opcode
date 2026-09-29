@@ -76,6 +76,11 @@ type Options struct {
 	// runner, audit redactor); the TUI stays free of wiring.
 	Models      config.ModelsConfig
 	SwitchModel func(provider, model string) error
+	// Theme names the startup palette (config.json "theme"); empty
+	// means the background probe picks dark or light. SetTheme
+	// persists a /theme switch; nil makes the switch session-only.
+	Theme    string
+	SetTheme func(name string) error
 	// KeyFor resolves a provider's API key through the credential
 	// chain (auth.json, explicit env, derived env) — the /models
 	// picker needs it to fetch live model lists. Missing is fine:
@@ -285,6 +290,12 @@ type Model struct {
 	// Command palette: open when the composer starts with "/".
 	paletteIdx int
 
+	// The active theme and the backup the /theme picker restores on
+	// cancel. curTheme is what the session shows; themeBackup is set
+	// while the picker is open.
+	curTheme    string
+	themeBackup string
+
 	// The @-mention file picker: live-filtered from the composer's
 	// trailing "@query", navigable, insertable. atFiles is the cached
 	// project file list; atDismissAt holds the byte position of the "@"
@@ -373,6 +384,7 @@ var commands = []command{
 	{"/exit", "quit tilde"},
 	{"/help", "show keys and commands"},
 	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
+	{"/theme", "pick the palette — live preview, esc restores"},
 	{"/help", "show keys and commands"},
 	{"/mode", "show or switch permission mode"},
 	{"/model", "pick or switch the model"},
@@ -490,27 +502,47 @@ func Run(m *Model) error {
 			lipgloss.SetColorProfile(termenv.ANSI)
 		}
 	}
-	// Theme: the dark palette is the default posture. A real terminal
-	// is asked for its background (the same OSC exchange as the
-	// profile probe); a light background re-skins the tokens for
-	// legibility — light text on a white terminal is invisible.
-	// TILDE_THEME=light|dark overrides the probe; NO_COLOR keeps Ascii
-	// and the dark tokens' uncolored forms.
-	dark := true
-	switch strings.ToLower(os.Getenv("TILDE_THEME")) {
-	case "light":
-		dark = false
-	case "dark":
-	default:
-		if lipgloss.ColorProfile() != termenv.Ascii && os.Getenv("NO_COLOR") == "" {
-			dark = termenv.HasDarkBackground()
+	// Theme: an explicit config theme wins outright; otherwise the
+	// dark palette is the default posture and a real terminal is
+	// asked for its background (the same OSC exchange as the
+	// profile probe) — a light background re-skins the tokens for
+	// legibility, because light text on a white terminal is
+	// invisible. TILDE_THEME=light|dark forces the probe posture;
+	// NO_COLOR keeps Ascii and the tokens' uncolored forms.
+	if m.opt.Theme == "" || !applyThemeName(m.opt.Theme) {
+		dark := true
+		switch strings.ToLower(os.Getenv("TILDE_THEME")) {
+		case "light":
+			dark = false
+		case "dark":
+		default:
+			if lipgloss.ColorProfile() != termenv.Ascii && os.Getenv("NO_COLOR") == "" {
+				dark = termenv.HasDarkBackground()
+			}
 		}
+		adaptTheme(dark)
 	}
-	adaptTheme(dark)
+	m.curTheme = m.opt.Theme
+	if m.curTheme == "" {
+		// Auto posture: name the palette the probe actually installed
+		// so the picker can mark the truth.
+		m.curTheme = curPalette
+	}
 	adaptGlyphs(m.opt.Plain)
 	// The textarea read the glyph at construction, before the plain
 	// vocabulary was installed — re-read it now that it is final.
+	// The styles are re-copied for the same reason: the theme applied
+	// above postdates the composer's construction-time copies.
 	m.composer.Prompt = GlyphPrompt + " "
+	m.composer.FocusedStyle.Prompt = accentStyle
+	m.composer.BlurredStyle.Prompt = accentStyle
+	m.composer.FocusedStyle.Placeholder = subtleStyle
+	m.composer.BlurredStyle.Placeholder = subtleStyle
+	// Re-seat the textarea's internal style pointer (see
+	// syncComposerPrompt): the composer was copied out of New by
+	// value, and without this the prompt renders in the palette that
+	// was live at construction, not the one applied above.
+	m.composer.Focus()
 
 	// Move to top: clear the visible screen and home the cursor
 	// before the program takes over, so the frame always starts at

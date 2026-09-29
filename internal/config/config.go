@@ -38,6 +38,11 @@ type Config struct {
 	// supports it; false opts out. Unavailable kernels degrade to
 	// unsandboxed and say so in the startup notes.
 	Sandbox *bool `json:"sandbox"`
+	// Theme names the TUI palette (the tui package owns the valid
+	// names; cmd/tilde validates at startup). Empty means auto: the
+	// terminal's background is probed and the dark or light posture
+	// follows it.
+	Theme string `json:"theme"`
 }
 
 // UserDir returns the user-level tilde directory: $TILDE_HOME if set,
@@ -83,6 +88,29 @@ func LoadConfig(dir string) (Config, error) {
 			cfg.PermissionMode)
 	}
 	return cfg, nil
+}
+
+// SaveTheme writes the "theme" key into dir/config.json. The file is
+// edited as a raw JSON object, not rewritten from the Config struct,
+// so keys tilde does not know about survive; a missing file is
+// created. The theme name itself is validated by the caller (the tui
+// package owns the list) — this function persists, it does not judge.
+func SaveTheme(dir, theme string) error {
+	path := filepath.Join(dir, "config.json")
+	raw := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("parse config.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read config.json: %w", err)
+	}
+	raw["theme"] = theme
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o600)
 }
 
 // ScreenReaderActive reports whether the environment indicates a

@@ -16,6 +16,7 @@ type pickerItem struct {
 	Provider string // /model: provider name
 	Model    string // /model: model name; empty keeps the current model
 	Path     string // /sessions: session file path
+	Theme    string // /theme: theme name
 	Action   string // "" select; "fetch" browse a provider's models; "login" store its key
 }
 
@@ -26,6 +27,7 @@ const (
 	pickerSessions
 	pickerProviders // /models step 1 and /login: choose a provider
 	pickerCatalog   // /models step 2: one provider's live model list
+	pickerThemes    // /theme: choose the palette
 )
 
 type picker struct {

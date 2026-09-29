@@ -162,4 +162,13 @@ func (m *Model) syncComposerPrompt() {
 		m.composer.FocusedStyle.Prompt = accentStyle
 		m.composer.BlurredStyle.Prompt = accentStyle
 	}
+	// bubbles' textarea holds its active style as a pointer into the
+	// struct it was focused on; New returns the model by value, so the
+	// copy's pointer still aims at the original. Re-seat it or these
+	// style writes render in whatever color was live at construction.
+	if m.composer.Focused() {
+		m.composer.Focus()
+	} else {
+		m.composer.Blur()
+	}
 }

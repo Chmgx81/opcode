@@ -95,6 +95,13 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	if err != nil {
 		return err
 	}
+	// The tui package owns the palette list; an unknown name fails
+	// loudly here rather than silently probing (an explicit choice
+	// that renders wrong is a bug report in the making).
+	if cfg.Theme != "" && !tui.ValidTheme(cfg.Theme) {
+		return fmt.Errorf("config.json: unknown theme %q (valid: %s)",
+			cfg.Theme, strings.Join(tui.ThemeNames(), ", "))
+	}
 	models, err := config.LoadModels(userDir)
 	if err != nil {
 		return err
@@ -444,6 +451,10 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		},
 		Models:      models,
 		SwitchModel: switchModel,
+		Theme:       cfg.Theme,
+		SetTheme: func(name string) error {
+			return config.SaveTheme(userDir, name)
+		},
 		KeyFor: func(provider string) (string, bool) {
 			pc := models.Providers[provider]
 			if pc.BaseURL == "" {
