@@ -439,13 +439,13 @@ func (f *steerableProvider) waitForRequest(t *testing.T) {
 	t.Fatal("provider never received a request")
 }
 
-func TestReadOnlyModeOffersAllTools(t *testing.T) {
+func TestPlanModeOffersAllTools(t *testing.T) {
 	dir := t.TempDir()
 	p := &fakeProvider{rounds: [][]llm.ChatEvent{
 		{{Type: llm.TextEvent, Text: "hi"}},
 	}}
 	orch, _ := newTestOrchestrator(p, nil, dir)
-	orch.SetMode(tools.ModeReadOnly)
+	orch.SetMode(tools.ModePlan)
 	drain(t, orch.Send(context.Background(), "go"))
 
 	req := p.gotRequests[0]
@@ -458,11 +458,11 @@ func TestReadOnlyModeOffersAllTools(t *testing.T) {
 	}
 	for _, want := range []string{"read_file", "write_file", "edit_file", "run_shell", "present_plan"} {
 		if !names[want] {
-			t.Errorf("read-only mode must still offer %s, got %v", want, names)
+			t.Errorf("plan mode must still offer %s, got %v", want, names)
 		}
 	}
 	// The system prompt carries the mode instruction.
-	if !strings.Contains(req.System, "mode is read-only") {
+	if !strings.Contains(req.System, "mode is plan") {
 		t.Errorf("mode instruction missing from system prompt: %q", req.System)
 	}
 }
@@ -508,7 +508,7 @@ func TestSkillsIndexComposedIntoSystemPrompt(t *testing.T) {
 	drain(t, orch.Send(context.Background(), "go"))
 
 	sys := p.gotRequests[0].System
-	for _, want := range []string{"test system prompt", "- deploy: Deploys the app", "mode is ask"} {
+	for _, want := range []string{"test system prompt", "- deploy: Deploys the app", "mode is build"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("system prompt missing %q: %q", want, sys)
 		}

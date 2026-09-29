@@ -132,8 +132,8 @@ func TestAdaptGlyphs(t *testing.T) {
 			}
 		}
 	}
-	if GlyphOK != "[ok]" || GlyphModeAsk != ">" {
-		t.Errorf("plain glyphs = %q / %q, want [ok] / >", GlyphOK, GlyphModeAsk)
+	if GlyphOK != "[ok]" || GlyphModeBuild != ">" {
+		t.Errorf("plain glyphs = %q / %q, want [ok] / >", GlyphOK, GlyphModeBuild)
 	}
 }
 

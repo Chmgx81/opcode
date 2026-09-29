@@ -59,7 +59,7 @@ func TestFullSessionOverTeaProgram(t *testing.T) {
 	m := New(Options{
 		Orch:         orch,
 		Model:        "m",
-		Mode:         tools.ModeAsk,
+		Mode:         tools.ModeBuild,
 		Cwd:          dir,
 		TildeHome:    dir,
 		ProviderName: "openrouter",

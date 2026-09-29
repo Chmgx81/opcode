@@ -2087,3 +2087,35 @@ the way Codex's own shell tool is "shell" and Claude Code's is
 "Bash" rather than run_shell_command. No compat shim needed: tool
 names are not persisted in sessions, and no external user ever saw
 the old names.
+
+# Three modes: plan / build / full-auto + web_fetch (status: complete, live-verified)
+
+The user's instinct matched both references: Codex ships three
+presets (Read Only / Default / Full Access), Claude Code's working
+triad is plan/default/bypass. tilde's four collapsed into three —
+and the collapse was nearly free, because read-only and plan were
+already the same posture in the gate (every action prompts); only
+the instruction differed. read-only folded into plan; ask became
+build. NormalizeMode maps every legacy spelling (read-only ->
+plan; ask, ask-every-time, auto-accept-safe-ops -> build), so no
+config breaks. Tab cycles three; plan approval graduates into
+build; the mode glyph set is now ⏸ › ⏵⏵ (read-only's ○ is retired
+with the mode).
+
+web_fetch: the WebFetch shape — fetch a URL, strip HTML to
+readable text (script/style dropped, entities decoded, case
+preserved; the naive version lowercased the whole document and a
+block-tag loop never advanced past the tag it just found — both
+caught by the tests), 5-redirect cap, 256 KiB cap, non-text types
+report instead of dumping. Action-Allowed tier: network egress is a
+trust boundary the sandbox does not cover (Codex's sandbox denies
+network by default), so it asks in plan and build and runs free
+only in full-auto. Deliberately not built: web_search (needs a
+provider key and its own policy talk) and browser automation (MCP
+territory — point tilde's MCP config at a Playwright server).
+
+Verified live: a PTY session cycled build -> full-auto -> plan and
+back, all three glyphs on the mode line. Full suite green across
+all 12 packages; mode tests rewritten for the triad (the
+decision-matrix rows, the legacy-alias expectations, the tab-cycle
+sequence, the footer degradation).

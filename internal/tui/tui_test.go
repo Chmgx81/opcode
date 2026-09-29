@@ -63,11 +63,11 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 	reg.Register(tools.WriteFile{})
 	reg.Register(tools.RunShell{})
 	orch := orchestrator.New(fp, "test-model", "sys", &reg, &tools.Gate{})
-	orch.SetMode(tools.ModeAsk)
+	orch.SetMode(tools.ModeBuild)
 	m := New(Options{
 		Orch:         orch,
 		Model:        "test-model",
-		Mode:         tools.ModeAsk,
+		Mode:         tools.ModeBuild,
 		Cwd:          dir,
 		TildeHome:    dir,
 		ProviderName: "openrouter",
@@ -455,39 +455,31 @@ func TestTabCyclesModes(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 
-	// Four modes, forward: ask -> full-auto -> read-only -> plan.
+	// Three modes, forward: build -> full-auto -> plan.
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.opt.Mode != tools.ModeFullAuto {
 		t.Errorf("first tab = %q, want full-auto", m.opt.Mode)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if m.opt.Mode != tools.ModeReadOnly {
-		t.Errorf("second tab = %q, want read-only", m.opt.Mode)
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if m.opt.Mode != tools.ModePlan {
-		t.Errorf("third tab = %q, want plan", m.opt.Mode)
+		t.Errorf("second tab = %q, want plan", m.opt.Mode)
 	}
 	if m.toast == "" {
 		t.Error("mode toast not set")
 	}
-	// The gate follows: read-only denies an action-tier call without
-	// consulting anyone.
+	// The gate follows: plan prompts for an action-tier call —
+	// the prompt is a TUI callback, so cycling left it armed.
 	if decide := m.opt.Orch.Gate.Decide; decide == nil || decide(tools.WriteFile{}, `{}`) {
-		t.Error("read-only gate must deny after cycling into it")
+		t.Error("plan gate must prompt after cycling into it")
 	}
-	// Backward: plan -> read-only -> full-auto -> ask.
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if m.opt.Mode != tools.ModeReadOnly {
-		t.Errorf("shift+tab = %q, want read-only", m.opt.Mode)
-	}
+	// Backward: plan -> full-auto -> build.
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if m.opt.Mode != tools.ModeFullAuto {
-		t.Errorf("second shift+tab = %q, want full-auto", m.opt.Mode)
+		t.Errorf("shift+tab = %q, want full-auto", m.opt.Mode)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if m.opt.Mode != tools.ModeAsk {
-		t.Errorf("second shift+tab = %q, want ask", m.opt.Mode)
+	if m.opt.Mode != tools.ModeBuild {
+		t.Errorf("second shift+tab = %q, want build", m.opt.Mode)
 	}
 	// Mode changes announce via the transient toast only — a line per
 	// keypress buried the conversation (user-reported).
@@ -1182,14 +1174,14 @@ func TestPlanApprovalLifecycle(t *testing.T) {
 		t.Errorf("approval prompt missing from the view")
 	}
 
-	// y: proceed — plan graduates to ask.
+	// y: proceed — plan graduates to build.
 	m.Update(keyMsg("y"))
 	v := <-reply
 	if !v.proceed || v.auto {
 		t.Errorf("y verdict = %+v, want proceed without auto", v)
 	}
-	if m.opt.Mode != tools.ModeAsk {
-		t.Errorf("y must switch plan -> ask, got %q", m.opt.Mode)
+	if m.opt.Mode != tools.ModeBuild {
+		t.Errorf("y must switch plan -> build, got %q", m.opt.Mode)
 	}
 	if tr := m.transcript(); !strings.Contains(tr, "plan approved") {
 		t.Errorf("approval note missing:\n%s", tr)
@@ -1377,7 +1369,7 @@ func TestFooterFitsNarrowTerminals(t *testing.T) {
 	if w := len([]rune(footer)); w > 24 {
 		t.Errorf("footer is %d cols on a 24-col terminal: %q", w, footer)
 	}
-	if !strings.Contains(footer, "ask") {
+	if !strings.Contains(footer, "build") {
 		t.Errorf("the mode must survive degradation: %q", footer)
 	}
 }

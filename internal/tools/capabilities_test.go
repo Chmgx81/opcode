@@ -3,6 +3,8 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,5 +231,81 @@ func TestGlobFiles(t *testing.T) {
 	}
 	if _, err = run(t, Glob{}, `{}`); err == nil {
 		t.Error("missing pattern must error")
+	}
+}
+
+func TestWebFetch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/page":
+			fmt.Fprint(w, "<html><head><style>body{color:red}</style><title>T</title>"+
+				"</head><body><h1>Hello docs</h1><p>Use the <b>API</b> &amp; enjoy.</p>"+
+				"<script>alert('x')</script></body></html>")
+		case "/redirect":
+			http.Redirect(w, r, "/page", http.StatusFound)
+		case "/loop":
+			http.Redirect(w, r, "/loop", http.StatusFound)
+		case "/binary":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write([]byte{0x00, 0x01})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	out, err := run(t, WebFetch{}, `{"url": "`+srv.URL+`/page"}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// Readable text survives; script and style do not.
+	for _, want := range []string{"Hello docs", "Use the API & enjoy."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "alert") || strings.Contains(out, "color:red") {
+		t.Errorf("script or style leaked:\n%s", out)
+	}
+
+	// Redirects are followed; redirect loops fail loudly.
+	if out, err = run(t, WebFetch{}, `{"url": "`+srv.URL+`/redirect"}`); err != nil || !strings.Contains(out, "Hello docs") {
+		t.Errorf("redirect case = (%q, %v)", out, err)
+	}
+	if _, err = run(t, WebFetch{}, `{"url": "`+srv.URL+`/loop"}`); err == nil {
+		t.Error("redirect loop must fail")
+	}
+
+	// Non-text reports instead of dumping bytes; non-http schemes
+	// and 404s say so.
+	if out, err = run(t, WebFetch{}, `{"url": "`+srv.URL+`/binary"}`); err != nil || !strings.Contains(out, "not fetched as text") {
+		t.Errorf("binary case = (%q, %v)", out, err)
+	}
+	if _, err = run(t, WebFetch{}, `{"url": "ftp://example.test"}`); err == nil {
+		t.Error("non-http scheme must fail")
+	}
+	if out, err = run(t, WebFetch{}, `{"url": "`+srv.URL+`/404"}`); err != nil || !strings.Contains(out, "404") {
+		t.Errorf("404 case = (%q, %v)", out, err)
+	}
+}
+
+// TestWebFetchPromptsInBuild: network egress is not bounded — it
+// asks in build mode and runs only in full-auto.
+func TestWebFetchPromptsInBuild(t *testing.T) {
+	promptCalled := false
+	prompt := func(Tool, string) bool { promptCalled = true; return true }
+	decide := PolicyDecide(ModeBuild, prompt)
+	if !decide(WebFetch{}, `{"url": "https://example.test"}`) || !promptCalled {
+		t.Error("web_fetch must prompt in build mode")
+	}
+	promptCalled = false
+	full := PolicyDecide(ModeFullAuto, prompt)
+	if !full(WebFetch{}, `{"url": "https://example.test"}`) || promptCalled {
+		t.Error("web_fetch must run without prompting in full-auto")
+	}
+	plan := PolicyDecide(ModePlan, prompt)
+	promptCalled = false
+	if !plan(WebFetch{}, `{"url": "https://example.test"}`) || !promptCalled {
+		t.Error("web_fetch must prompt in plan mode")
 	}
 }
