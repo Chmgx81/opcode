@@ -60,7 +60,7 @@ func NormalizeMode(mode string) string {
 	return mode
 }
 
-// ValidMode reports whether mode is one of the four real modes.
+// ValidMode reports whether mode is one of the three real modes.
 // It checks the raw name: legacy spellings are not real modes —
 // callers normalize first (config loading does).
 func ValidMode(mode string) bool {

@@ -183,19 +183,6 @@ func TestShellEscaped(t *testing.T) {
 	}
 }
 
-func TestModeAllowsTool(t *testing.T) {
-	// Phase 30: offering is not permission. Every mode offers every
-	// tier; the gate is the single enforcement point.
-	tools := []Tool{ReadFile{}, ListDir{}, WriteFile{}, EditFile{}, Bash{}}
-	for _, mode := range append(append([]string{}, Modes...), "unknown") {
-		for _, tool := range tools {
-			if !ModeAllowsTool(mode, tool) {
-				t.Errorf("mode %s must offer %s — the gate, not the tool list, is the posture", mode, tool.Name())
-			}
-		}
-	}
-}
-
 func TestModeInstructionAndNormalization(t *testing.T) {
 	if NormalizeMode("build") != ModeBuild {
 		t.Error(`"build" is the canonical spelling`)

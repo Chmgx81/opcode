@@ -18,10 +18,9 @@ type Tier string
 const (
 	// TierReadOnly can't change anything: always allowed, no prompt.
 	TierReadOnly Tier = "read-only"
-	// TierDraftOnly produces a proposal without applying it (a diff, a
-	// plan). Running it is always allowed; applying or committing the
-	// result is a separate gated action. No built-in tool is Draft-Only
-	// yet — skills (Phase 3) will be.
+	// TierDraftOnly produces a proposal without applying it (a plan,
+	// a todo list). Running it is always allowed; applying or
+	// committing the result is a separate gated action.
 	TierDraftOnly Tier = "draft-only"
 	// TierActionAllowed mutates state (writes files, runs commands):
 	// gated by mode — prompted by default, only skippable in full-auto.

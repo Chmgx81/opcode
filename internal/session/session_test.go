@@ -86,8 +86,21 @@ func TestBranching(t *testing.T) {
 	s.Active = fork.ID
 
 	// Both branches still exist, and History walks the new branch.
-	if len(s.BranchIDs()) != 2 {
-		t.Errorf("leaves = %v, want both branches", s.BranchIDs())
+	leaves := 0
+	for _, n := range s.Nodes {
+		hasChild := false
+		for _, m := range s.Nodes {
+			if m.Parent == n.ID {
+				hasChild = true
+				break
+			}
+		}
+		if !hasChild {
+			leaves++
+		}
+	}
+	if leaves != 2 {
+		t.Errorf("leaves = %d, want both branches", leaves)
 	}
 	h := s.History()
 	if len(h) != 2 || h[0].Content != "first question" || h[1].Content != "different question entirely" {

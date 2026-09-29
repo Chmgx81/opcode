@@ -60,9 +60,9 @@ type Orchestrator struct {
 	System   string
 	Registry *tools.Registry
 	Gate     *tools.Gate
-	// Mode is the active permission mode. It shapes which tools are
-	// offered to the model (read-only mode hides action-tier tools) and
-	// is composed into the system prompt via ModeInstruction.
+	// Mode is the active permission mode. It shapes the system prompt
+	// (ModeInstruction) and the gate's posture; every mode still
+	// offers every tool — the gate decides, not the offer.
 	Mode string
 	// ReasoningEffort is the thinking knob: low, medium, high, or
 	// empty for the provider's default. Per-request like Mode;
@@ -123,6 +123,9 @@ func (o *Orchestrator) SetEffort(effort string) {
 	o.ReasoningEffort = effort
 }
 
+// SetMode switches the permission mode. The next model request picks
+// up the new mode instruction; the gate's Decide callback is the
+// caller's to rebuild.
 func (o *Orchestrator) SetMode(mode string) {
 	o.Mode = tools.NormalizeMode(mode)
 }
@@ -317,16 +320,12 @@ func (o *Orchestrator) dispatch(ctx context.Context, call llm.ToolCall) (string,
 	return o.Gate.Execute(ctx, tool, call.Arguments)
 }
 
-// toolDefs builds the tool list the model sees, filtered by the active
-// mode: read-only mode never offers state-changing tools.
+// toolDefs builds the tool list the model sees. Every mode offers
+// every tier (Phase 30: hiding tools taught the model nothing and
+// broke planning) — the posture bites at the gate, not the offer.
 func (o *Orchestrator) toolDefs() []llm.Tool {
 	var out []llm.Tool
 	for _, d := range o.Registry.Defs() {
-		// The policy owns which tiers each mode offers (plan mode also
-		// offers drafts — present_plan — which is how planning ends).
-		if !tools.ModeAllowsTier(o.Mode, d.Tier) {
-			continue
-		}
 		out = append(out, llm.Tool{
 			Name:        d.Name,
 			Description: d.Description,

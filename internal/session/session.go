@@ -129,25 +129,6 @@ func (s *Session) History() []llm.Message {
 	return out
 }
 
-// BranchIDs lists every leaf node — the points a rewind could fork
-// from. The /tree view is future work; the storage supports it now.
-func (s *Session) BranchIDs() []string {
-	children := map[string]int{}
-	for _, n := range s.Nodes {
-		if n.Parent != "" {
-			children[n.Parent]++
-		}
-	}
-	var leaves []string
-	for id := range s.Nodes {
-		if children[id] == 0 {
-			leaves = append(leaves, id)
-		}
-	}
-	sort.Strings(leaves)
-	return leaves
-}
-
 // Save writes the session to path with credential values redacted
 // (Section 3.10: sessions get exported and shared).
 func (s *Session) Save(path string, secrets []string) error {

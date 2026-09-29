@@ -334,8 +334,7 @@ type Model struct {
 	quitArmedAt time.Time
 
 	// Overlay picker (/model, /sessions): filter-as-you-type list.
-	picker      *picker
-	pendingPick *pickerItem // selected item awaiting its command's action
+	picker *picker
 
 	// help overlay ("?").
 	helpOpen bool
@@ -391,11 +390,11 @@ type command struct {
 
 var commands = []command{
 	{"/exit", "quit tilde"},
+	{"/quit", "quit tilde"},
 	{"/help", "show keys and commands"},
 	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
 	{"/theme", "pick the palette — live preview, esc restores"},
 	{"/diff", "show the working tree's git changes, colored"},
-	{"/help", "show keys and commands"},
 	{"/mode", "show or switch permission mode"},
 	{"/model", "pick or switch the model"},
 	{"/sessions", "browse and resume a saved session"},
