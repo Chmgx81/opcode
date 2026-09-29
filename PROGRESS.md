@@ -2671,3 +2671,42 @@ draft assumed otherwise and failed honestly.
   final report crossing the line) keeps the recap FIRST and the
   new user message last; the configured-model, disabled, and
   failure paths are unchanged.
+
+# Phase 42 — the input decision as one typed place (status: complete, verified)
+
+Spec: [docs/specs/phase42-typed-input.md](docs/specs/phase42-typed-input.md)
+(The adoption doc's #2, adopted now — the input model just grew
+the effort knob and the queue, and the paths were spread across
+submitInput and turnEnded.)
+
+## Built
+
+- `inputDecision` (internal/tui/input.go): six typed outcomes —
+  inputIgnored (empty draft), inputShell (the user's "!cmd"
+  escape), inputCommand (handled by the command system),
+  inputQueued (held for turn end, Alt+Enter), inputSteered (a
+  turn is running; folds in at the next round boundary), and
+  inputTurnStarted (idle; a new turn runs).
+- `decideInput` is the one router: today's submitInput body,
+  branch by branch, each returning its outcome. `submitInput`
+  became a thin wrapper, so no call site changed and the
+  existing steer/queue/start tests pass untouched — the
+  refactor's own acceptance criterion.
+- The steer branch now carries the explicit contract as a
+  comment: a steered draft cannot alter the active round (its
+  request is on the wire); it applies at the orchestrator's
+  round checkpoint. Deliberately NOT adopted: Codex's
+  `expected_previous_turn_id` concurrency token — tilde's
+  orchestrator has a single event loop with no concurrent turn
+  writers to race.
+- Documented in the spec: an unknown "/xyz" falls through to the
+  model as ordinary text — existing behavior, preserved as-is.
+
+## Verified for real
+
+- `go test -count=1 ./...` — all 13 packages. The new test drives
+  all six outcomes through decideInput (empty, !, /help,
+  idle+text, working+plain, working+alt) asserting the typed
+  value AND the observable effect; the full pre-existing TUI
+  suite (steer, queue, start, palette, shell escape) passed
+  unchanged through the wrapper on the first run.
