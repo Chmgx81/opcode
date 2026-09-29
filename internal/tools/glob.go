@@ -11,19 +11,19 @@ import (
 	"strings"
 )
 
-// GlobFiles finds files by pattern — the Read/Grep/Glob trio's
+// Glob finds files by pattern — the Read/Grep/Glob trio's
 // third leg. Read-Only tier: discovery changes nothing, and
 // read-only and plan modes can answer "where are the config files"
 // without listing directories one by one.
-type GlobFiles struct{}
+type Glob struct{}
 
-func (GlobFiles) Name() string { return "glob_files" }
+func (Glob) Name() string { return "glob" }
 
-func (GlobFiles) Description() string {
+func (Glob) Description() string {
 	return "Find files whose paths match a glob pattern (e.g. \"**/*.go\", \"internal/*/test.go\") and return them sorted, one per line. Patterns match paths relative to the search root (default: the working directory); ** crosses directory separators."
 }
 
-func (GlobFiles) Parameters() json.RawMessage {
+func (Glob) Parameters() json.RawMessage {
 	return json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -34,11 +34,11 @@ func (GlobFiles) Parameters() json.RawMessage {
 	}`)
 }
 
-func (GlobFiles) Tier() Tier { return TierReadOnly }
+func (Glob) Tier() Tier { return TierReadOnly }
 
 const globMaxResults = 200
 
-func (GlobFiles) Execute(ctx context.Context, args string) (string, error) {
+func (Glob) Execute(ctx context.Context, args string) (string, error) {
 	var a struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -47,7 +47,7 @@ func (GlobFiles) Execute(ctx context.Context, args string) (string, error) {
 		return "", err
 	}
 	if strings.TrimSpace(a.Pattern) == "" {
-		return "", fmt.Errorf("glob_files: pattern is required")
+		return "", fmt.Errorf("glob: pattern is required")
 	}
 	root := a.Path
 	if root == "" {
@@ -55,7 +55,7 @@ func (GlobFiles) Execute(ctx context.Context, args string) (string, error) {
 	}
 	re, err := compileGlob(a.Pattern)
 	if err != nil {
-		return "", fmt.Errorf("glob_files: %v", err)
+		return "", fmt.Errorf("glob: %v", err)
 	}
 
 	var out []string
@@ -79,7 +79,7 @@ func (GlobFiles) Execute(ctx context.Context, args string) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("glob_files: %w", err)
+		return "", fmt.Errorf("glob: %w", err)
 	}
 	if len(out) == 0 {
 		return "no matches", nil

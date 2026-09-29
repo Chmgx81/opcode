@@ -11,20 +11,20 @@ import (
 	"strings"
 )
 
-// SearchFiles greps file contents for a pattern — the read-tier way
+// Grep greps file contents for a pattern — the read-tier way
 // to find things. Without it the model must read files one by one
 // and guess; with it, read-only and plan modes can navigate a
 // codebase the way Codex's shell+rg flow does, without running
 // anything.
-type SearchFiles struct{}
+type Grep struct{}
 
-func (SearchFiles) Name() string { return "search_files" }
+func (Grep) Name() string { return "grep" }
 
-func (SearchFiles) Description() string {
+func (Grep) Description() string {
 	return "Search file contents with a regular expression and return matching lines as path:line: text. Searches the working directory by default; binary files, .git, and vendor caches are skipped. Use this to find where something lives before reading files."
 }
 
-func (SearchFiles) Parameters() json.RawMessage {
+func (Grep) Parameters() json.RawMessage {
 	return json.RawMessage(`{
 		"type": "object",
 		"properties": {
@@ -36,7 +36,7 @@ func (SearchFiles) Parameters() json.RawMessage {
 	}`)
 }
 
-func (SearchFiles) Tier() Tier { return TierReadOnly }
+func (Grep) Tier() Tier { return TierReadOnly }
 
 // Search bounds: a huge tree must not dump its whole hit list into
 // the context.
@@ -45,7 +45,7 @@ const (
 	searchMaxFile    = 1 << 20 // skip files larger than 1 MiB
 )
 
-func (SearchFiles) Execute(ctx context.Context, args string) (string, error) {
+func (Grep) Execute(ctx context.Context, args string) (string, error) {
 	var a struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path"`
@@ -55,11 +55,11 @@ func (SearchFiles) Execute(ctx context.Context, args string) (string, error) {
 		return "", err
 	}
 	if strings.TrimSpace(a.Pattern) == "" {
-		return "", fmt.Errorf("search_files: pattern is required")
+		return "", fmt.Errorf("grep: pattern is required")
 	}
 	re, err := regexp.Compile(a.Pattern)
 	if err != nil {
-		return "", fmt.Errorf("search_files: bad pattern: %v", err)
+		return "", fmt.Errorf("grep: bad pattern: %v", err)
 	}
 	root := a.Path
 	if root == "" {
@@ -72,7 +72,7 @@ func (SearchFiles) Execute(ctx context.Context, args string) (string, error) {
 		// cannot express.
 		glob, err = regexp.Compile(globToPattern(a.Glob))
 		if err != nil {
-			return "", fmt.Errorf("search_files: bad glob: %v", err)
+			return "", fmt.Errorf("grep: bad glob: %v", err)
 		}
 	}
 
@@ -121,7 +121,7 @@ func (SearchFiles) Execute(ctx context.Context, args string) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("search_files: %w", err)
+		return "", fmt.Errorf("grep: %w", err)
 	}
 	if matches == 0 {
 		return "no matches", nil
