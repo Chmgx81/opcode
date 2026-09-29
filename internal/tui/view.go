@@ -510,7 +510,10 @@ func (m *Model) composerView() []string {
 			verb = "Thinking…"
 		}
 		sp := m.spinner.View()
-		if !m.opt.Animations {
+		// Reduced motion — and the plain posture, which implies it:
+		// an explicit "animations": true under --plain still gets
+		// the static glyph, because braille spinners are not ASCII.
+		if !m.opt.Animations || m.opt.Plain {
 			sp = GlyphBullet
 		}
 		// Codex's status shape: verb, then one parenthesized segment
@@ -657,7 +660,7 @@ func (m *Model) pickerView(w int) string {
 		}
 		line := marker + style.Render(truncate(it.Label, maxInt(w-16, 12)))
 		if it.Detail != "" {
-			line += dimStyle.Render("  " + truncate(it.Detail, 56))
+			line += dimStyle.Render("  " + truncate(it.Detail, maxInt(w-len(it.Label)-20, 12)))
 		}
 		rows = append(rows, line)
 	}
@@ -690,7 +693,7 @@ func (m *Model) atMenuView(w int) string {
 func (m *Model) helpView(w int) string {
 	rows := []string{
 		accentStyle.Render("keys"),
-		dimStyle.Render("  enter        send · ctrl+j  newline"),
+		dimStyle.Render("  enter        send · ctrl+j / shift+enter  newline"),
 		dimStyle.Render("  ↑/↓          recall a previous prompt"),
 		dimStyle.Render("  ctrl+v       attach the clipboard image ([Image #N] rides along)"),
 		dimStyle.Render("  alt+enter    queue a follow-up while working"),
@@ -701,16 +704,21 @@ func (m *Model) helpView(w int) string {
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
 		dimStyle.Render("  alt+. / alt+, cycle reasoning effort (up / down)"),
 		dimStyle.Render("  ctrl+r       expand / collapse results & thinking"),
-		dimStyle.Render("  ctrl+o       transcript — scroll the whole conversation"),
+		dimStyle.Render("  ctrl+o       transcript — scroll with ↑↓/pgup/pgdn, esc closes"),
 		dimStyle.Render("  ! command    run a shell command directly"),
 		dimStyle.Render("  @path        attach a file's contents"),
 		dimStyle.Render("  /            command palette"),
+		dimStyle.Render("  ?            this overlay (empty, idle composer)"),
 		dimStyle.Render("  while working: type and press enter to steer the turn;"),
 		dimStyle.Render("  alt+enter queues a follow-up for when it finishes"),
 		accentStyle.Render("commands"),
 	}
 	for _, c := range commands {
-		rows = append(rows, dimStyle.Render("  "+c.Name+strings.Repeat(" ", 12-len(c.Name))+c.Desc))
+		pad := 12 - len(c.Name)
+		if pad < 1 {
+			pad = 1
+		}
+		rows = append(rows, dimStyle.Render("  "+c.Name+strings.Repeat(" ", pad)+c.Desc))
 	}
 	rows = append(rows, dimStyle.Render("press any key to close"))
 	return helpStyle.Width(w - 4).Render(strings.Join(rows, "\n"))

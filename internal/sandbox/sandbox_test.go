@@ -3,11 +3,14 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -30,6 +33,45 @@ func TestMain(m *testing.M) {
 		}
 		os.Stdout.WriteString("WROTE")
 		os.Exit(0)
+	}
+	// Network child: after the full confinement, an AF_INET socket
+	// must be denied and an AF_UNIX one must not.
+	if os.Getenv("TILDE_SANDBOX_NET") == "1" {
+		writable := os.Getenv("TILDE_SANDBOX_WRITABLE")
+		if err := Apply([]string{writable}); err != nil {
+			os.Stdout.WriteString("APPLY-ERR:" + err.Error())
+			os.Exit(2)
+		}
+		if _, err := net.Dial("tcp", "127.0.0.1:1"); err == nil {
+			os.Stdout.WriteString("OPEN-INET")
+			os.Exit(4)
+		} else if !errors.Is(err, syscall.EAFNOSUPPORT) {
+			os.Stdout.WriteString("UNEXPECTED:" + err.Error())
+			os.Exit(5)
+		}
+		// A dial to a socket path that cannot exist must fail with
+		// ENOENT, never the filter's EAFNOSUPPORT — proving the
+		// AF_UNIX socket itself was created.
+		if _, err := net.Dial("unix", filepath.Join(writable, "absent.sock")); err == nil ||
+			errors.Is(err, syscall.EAFNOSUPPORT) {
+			os.Stdout.WriteString("UNIX-BLOCKED")
+			os.Exit(6)
+		}
+		os.Stdout.WriteString("DENIED-INET")
+		os.Exit(0)
+	}
+	// Exec child: the full confinement, then a real command — the
+	// filter must not break plain commands.
+	if os.Getenv("TILDE_SANDBOX_EXEC") == "1" {
+		writable := os.Getenv("TILDE_SANDBOX_WRITABLE")
+		if err := Apply([]string{writable}); err != nil {
+			os.Stdout.WriteString("APPLY-ERR:" + err.Error())
+			os.Exit(2)
+		}
+		if err := Exec([]string{"sh", "-c", "echo sandbox-ok"}); err != nil {
+			os.Stdout.WriteString("EXEC-ERR:" + err.Error())
+			os.Exit(7)
+		}
 	}
 	os.Exit(m.Run())
 }
@@ -69,6 +111,51 @@ func TestApplyConfinesWrites(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outside, "no.txt")); err == nil {
 		t.Error("the denied file exists — the sandbox did not confine")
+	}
+}
+
+// childRun runs a re-exec child mode (the env var named by mode, e.g.
+// "NET", selects the behavior in TestMain) and returns its combined
+// output and exit error.
+func childRun(t *testing.T, mode, writable string) (string, error) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run", "TestMain")
+	cmd.Env = append(os.Environ(),
+		"TILDE_SANDBOX_"+mode+"=1",
+		"TILDE_SANDBOX_WRITABLE="+writable)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return strings.TrimSpace(out.String()), err
+}
+
+// TestSeccompBlocksNetwork proves the network half of the sandbox
+// through the same re-exec child as the write test: a confined
+// process cannot create an AF_INET socket — failing with the
+// filter's own EAFNOSUPPORT, not some unrelated error — an AF_UNIX
+// socket still can, and a plain command still runs.
+func TestSeccompBlocksNetwork(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("landlock is linux-only")
+	}
+	if !Supported() {
+		t.Skip("kernel without landlock")
+	}
+	if runtime.GOARCH != "amd64" {
+		t.Skip("seccomp filter is x86_64-only")
+	}
+	dir := t.TempDir()
+
+	if got, err := childRun(t, "NET", dir); got != "DENIED-INET" {
+		t.Errorf("network probe: got %q (err %v), want DENIED-INET", got, err)
+	}
+	got, err := childRun(t, "EXEC", dir)
+	if err != nil {
+		t.Errorf("sandboxed command failed: %v (output %q)", err, got)
+	}
+	if got != "sandbox-ok" {
+		t.Errorf("sandboxed command output: got %q, want sandbox-ok", got)
 	}
 }
 
@@ -159,6 +246,27 @@ func TestStatusNeverOverclaims(t *testing.T) {
 		}
 	} else if s := on.Status(); !strings.Contains(s, "unavailable") {
 		t.Errorf("unsupported status should say unavailable: %s", s)
+	}
+}
+
+// The network claim in Status() must track what Apply enforces on
+// this platform — said exactly when the seccomp step exists, so an
+// arm64 or non-Linux build never announces a block it does not have.
+func TestStatusNetworkClaimMatchesEnforcement(t *testing.T) {
+	on, err := New(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !on.Enabled() {
+		t.Skip("sandbox unsupported here; status makes no enforcement claim")
+	}
+	claims := strings.Contains(on.Status(), "network sockets blocked")
+	if claims != confinedNetwork() {
+		t.Errorf("status claims network block = %v, but confinedNetwork() = %v: %s",
+			claims, confinedNetwork(), on.Status())
+	}
+	if want := runtime.GOOS == "linux" && runtime.GOARCH == "amd64"; confinedNetwork() != want {
+		t.Errorf("confinedNetwork() = %v on %s/%s, want %v", confinedNetwork(), runtime.GOOS, runtime.GOARCH, want)
 	}
 }
 

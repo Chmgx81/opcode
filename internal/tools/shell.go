@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,15 +13,15 @@ import (
 	"github.com/Chmgx81/tilde/internal/sandbox"
 )
 
-// Bash executes a command with bash and returns the and returns the
-// combined output. Action-Allowed tier: it can mutate anything the user
-// account can reach, so it is the highest-stakes built-in.
+// Bash executes a command with bash and returns the combined output.
+// Action-Allowed tier: it can mutate anything the user account can
+// reach, so it is the highest-stakes built-in.
 type Bash struct{}
 
 func (Bash) Name() string { return "bash" }
 
 func (Bash) Description() string {
-	return "Run a command in bash (bash -c) in the current working directory and return its combined stdout and stderr. Sandboxed by default: writes are kernel-confined to the working directory, /tmp, and dev caches. Pass {\"sandbox\": false} only when confinement breaks the command — that escape asks the user for approval."
+	return "Run a command in bash (bash -c) in the current working directory and return its combined stdout and stderr. Sandboxed by default: writes are kernel-confined to the working directory, /tmp, and dev caches, and network sockets are blocked. Pass {\"sandbox\": false} only when confinement breaks the command — that escape asks the user for approval."
 }
 
 func (Bash) Parameters() json.RawMessage {
@@ -28,7 +29,7 @@ func (Bash) Parameters() json.RawMessage {
 		"type": "object",
 		"properties": {
 			"command": {"type": "string", "description": "The bash command to run"},
-			"sandbox": {"type": "boolean", "description": "Keep the kernel write-confinement (default true). false runs unsandboxed and requires approval in ask mode."}
+			"sandbox": {"type": "boolean", "description": "Keep the kernel confinement — writes and network (default true). false runs unsandboxed and requires approval in ask mode."}
 		},
 		"required": ["command"]
 	}`)
@@ -51,10 +52,15 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	if strings.TrimSpace(a.Command) == "" {
 		return "", fmt.Errorf("bash: command is required")
 	}
+	// ownDeadline tracks whether the bound below is ours: a deadline
+	// inherited from a parent context must not be reported as our
+	// 5-minute timeout.
+	ownDeadline := false
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, bashTimeout)
 		defer cancel()
+		ownDeadline = true
 	}
 	var cmd *exec.Cmd
 	// sandboxed tracks which branch built the command, so a denial
@@ -66,28 +72,22 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	} else {
 		cmd = sandbox.Command(ctx, "bash", "-c", a.Command)
 	}
-	// C7: a timeout or interrupt must kill the whole process group,
-	// not just the direct bash child — a command that backgrounded
-	// work would otherwise outlive the turn. CombinedOutput cannot
-	// even return while a grandchild holds the pipe open, so the kill
-	// cannot wait for it: a watchdog fires the group kill the moment
-	// the context does (WaitDelay bounds the wait regardless).
-	watchDone := make(chan struct{})
-	defer close(watchDone)
-	go func() {
-		select {
-		case <-ctx.Done():
-			if cmd.Process != nil {
-				_ = sandbox.KillGroup(cmd.Process.Pid)
-			}
-		case <-watchDone:
-		}
-	}()
-	out, err := cmd.CombinedOutput()
+	// One buffer behind both streams, as CombinedOutput does: with
+	// the same writer on Stdout and Stderr, exec copies them through a
+	// single goroutine, so interleaving is preserved and the buffer
+	// needs no lock.
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := runKillingGroup(ctx, cmd)
+	out := buf.Bytes()
 	if ctx.Err() == context.DeadlineExceeded {
-		return string(out), fmt.Errorf("bash: timed out after %s", bashTimeout)
+		if ownDeadline {
+			return string(out), fmt.Errorf("bash: timed out after %s", bashTimeout)
+		}
+		return string(out), fmt.Errorf("bash: context deadline exceeded")
 	}
-	// A sandboxed write denial gets the plain-language cause and the
+	// A sandboxed denial gets the plain-language cause and the
 	// documented escape, on both the exit-error and swallowed-error
 	// paths ("|| true" can hide a denial behind exit 0).
 	if sandboxed && sandbox.Active() && looksLikeSandboxDenial(string(out)) {
@@ -107,18 +107,60 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	return string(out), nil
 }
 
-// sandboxDenialNote classifies a sandboxed EACCES/EROFS for the model
-// in plain language. "Probably" is honest: the signature usually
-// means the write boundary, but a genuine permission error inside
-// the writable roots looks identical — the original error always
-// stays visible below the note.
-const sandboxDenialNote = `note: this ran inside the sandbox, where writes are confined to the working directory, /tmp, and dev caches — the failure below is probably that boundary. If this write is legitimate, retry with {"sandbox": false} and the user will be asked to approve the unsandboxed run.
+// runKillingGroup starts cmd and waits for it, killing its whole
+// process group the moment ctx ends (audit C7): a timeout or interrupt
+// must not leave backgrounded work running, and exec's own context
+// kill reaches only the direct child. Wait cannot return while a
+// grandchild holds the output pipe (WaitDelay bounds that), so the
+// group kill cannot wait for Wait — a watchdog fires it as soon as the
+// context does.
+//
+// The watchdog starts only after Start succeeds: cmd.Process is
+// written by Start, so reading it from another goroutine any earlier
+// is a data race, and a failed Start has no process to kill. The pid
+// is captured once so the watchdog never touches cmd. The watchdog is
+// always joined before return — no goroutine outlives the call.
+func runKillingGroup(ctx context.Context, cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	pid := cmd.Process.Pid
+	waited := make(chan struct{})
+	watchdogDone := make(chan struct{})
+	go func() {
+		defer close(watchdogDone)
+		select {
+		case <-ctx.Done():
+			// Wait may have reaped the child in the same instant;
+			// the pid is not ours to signal once it has.
+			select {
+			case <-waited:
+			default:
+				_ = sandbox.KillGroup(pid)
+			}
+		case <-waited:
+		}
+	}()
+	err := cmd.Wait()
+	close(waited)
+	<-watchdogDone
+	return err
+}
+
+// sandboxDenialNote classifies a sandboxed EACCES/EROFS/EPERM or a
+// seccomp EAFNOSUPPORT for the model in plain language. "Probably"
+// is honest: the signature usually means a sandbox boundary, but a
+// genuine permission error inside the writable roots looks
+// identical — the original error always stays visible below the note.
+const sandboxDenialNote = `note: this ran inside the sandbox, where writes are confined to the working directory, /tmp, and dev caches, and network sockets are blocked — the failure below is probably one of those boundaries. If this is legitimate, retry with {"sandbox": false} and the user will be asked to approve the unsandboxed run.
 
 `
 
-// looksLikeSandboxDenial matches the shell's EACCES/EROFS phrases.
+// looksLikeSandboxDenial matches the shell's EACCES/EROFS phrases and
+// the seccomp filter's EAFNOSUPPORT wording.
 func looksLikeSandboxDenial(out string) bool {
 	return strings.Contains(out, "Permission denied") ||
 		strings.Contains(out, "Read-only file system") ||
-		strings.Contains(out, "Operation not permitted")
+		strings.Contains(out, "Operation not permitted") ||
+		strings.Contains(out, "Address family not supported")
 }

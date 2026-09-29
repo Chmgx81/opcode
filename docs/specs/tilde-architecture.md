@@ -15,7 +15,7 @@
   - MCP → out-of-process (this is inherent to the protocol, not a choice)
   - Modes → in-process config/system-prompt switches, no extension mechanism needed
 
-  Two unrelated things both get called "modes" below — kept distinct on purpose: **Permission Mode** (read-only / ask-every-time / auto-accept-safe-ops / full-auto, Section 7) governs what the agent's allowed to *do*; **Invocation Mode** (interactive / headless, Section 3.9) governs *how tilde itself is launched and driven*.
+  Two unrelated things both get called "modes" below — kept distinct on purpose: **Permission Mode** (plan / build / full-auto, Section 7) governs what the agent's allowed to *do*; **Invocation Mode** (interactive / headless, Section 3.9) governs *how tilde itself is launched and driven*.
 
 ---
 
@@ -116,7 +116,7 @@ Two scopes, one rule: **user-level is trusted, project-level is not until the us
 
 | User-level (`~/.tilde/`, relocatable with `TILDE_HOME`) | Project-level (`./.tilde/`) |
 |---|---|
-| `config.json` — preferences (model, default permission mode, skill paths) | `config.json` — a small allow-listed subset (see below) |
+| `config.json` — preferences (model, default permission mode, skill paths) | *(never loaded — fingerprinted for trust so adding one later re-asks)* |
 | `models.json` — providers, endpoints, model lists | *(not allowed)* |
 | `auth.json` — credentials (3.10) | *(never)* |
 | `mcp.json` — MCP servers | `mcp.json` — only after project trust |
@@ -164,9 +164,9 @@ Distinct from Permission Mode (Section 7) — this is about how tilde itself is 
 
 ```
 tilde/
-  cmd/tilde/main.go
+  cmd/tilde/main.go           # wiring only (+ `tilde update`)
   internal/
-    tui/            # Bubble Tea models and views
+    tui/            # Bubble Tea front end (model, views, dialogs, pickers)
     orchestrator/   # agent loop, mode logic
     subagent/       # subagent manager
     skills/         # skill discovery + subprocess runner
@@ -177,7 +177,9 @@ tilde/
     config/         # config, models, provider catalog, auth, AGENTS.md context
     session/        # tree-structured session persistence
     trust/          # project trust fingerprints (skills/MCP gate)
-    sandbox/        # Landlock confinement for shell commands
+    sandbox/        # Landlock confinement + seccomp network block for shell commands
+    safe/           # terminal-escape sanitizer for untrusted display text
+    update/         # `tilde update` + the cached startup update notice
     headless/       # -p one-turn mode, no TUI imports
   docs/specs/       # architecture doc, TUI/UX spec, per-phase specs (this file lives here)
   AGENTS.md
@@ -188,7 +190,7 @@ tilde/
 ## 5. Startup Sequence
 
 1. Resolve the user directory (`~/.tilde/`, or `TILDE_HOME`) and load user-level `config.json`, `models.json`, and credentials (3.10).
-2. **Check project trust** for the working directory (Section 7). Interactive: prompt if it's new or its fingerprint changed. Headless: untrusted unless explicitly opted in (`--trust` or an env var), because there's no one to ask. If trusted, load the project's allow-listed `config.json` keys; if not, carry on in restricted mode.
+2. **Check project trust** for the working directory (Section 7). Interactive: prompt if it's new or its fingerprint changed. Headless: untrusted unless explicitly opted in (`--trust` or an env var), because there's no one to ask. The project's `.tilde/config.json` is fingerprinted for trust but never loaded — there is no project-level config; user-level is the only config.
 3. Load context files hierarchically — user-level (`~/.tilde/AGENTS.md`) → each parent directory → working directory. Per directory, `AGENTS.override.md` (a personal, gitignore-able replacement for that directory only) beats `AGENTS.md`, which beats `CLAUDE.md` as a fallback so repos already set up for other agents work unchanged. Most-specific wins on conflict. This step doesn't need trust: it's inert text (Section 7).
 4. Discover skills (user-level always; project-level only if trusted), build the name+description index.
 5. Connect MCP servers in parallel, with a timeout — a slow or dead server must never block startup (user-level always; project-level only if trusted).
@@ -219,12 +221,18 @@ tilde/
   | Draft-Only | Produces a proposal but doesn't apply it (a diff, a plan, a generated file in a scratch area) | Allowed to run; applying/committing the result still requires approval |
   | Action-Allowed | Actually mutates state (write file, run shell, git push, call a paid API) | Gated by mode — prompted by default, only skippable in full-auto, and even then logged |
 
-  Mode (read-only / ask-every-time / auto-accept-safe-ops / full-auto) sets the *default* posture across tiers, but the tier is what the gate actually checks per action — this is what lets you honestly tell a security-conscious user "read-only mode can't touch your filesystem" instead of just "trust the prompt."
+   Mode (plan / build / full-auto) sets the *default* posture across tiers, but the tier is what the gate actually checks per action — this is what lets you honestly tell a security-conscious user "plan mode asks before touching your filesystem" instead of just "trust the prompt."
 - MCP server output is untrusted input, same as any external content — never let a tool result silently expand its own permissions or trigger an unreviewed action.
 - Audit log of every executed tool call (what, when, which layer it came from, its tier, whether it was approved) — this is a genuine differentiator for your security-architect users, and cheap to add if it's built into the gate from day one rather than bolted on later.
 - **Project Trust — a separate, earlier gate.** The per-action permission tier above governs what happens once tilde is already running; this one governs whether tilde should run anything from a project at all. Connecting to a *project-declared* MCP server means spawning a process, and that happens before any tool-call ever occurs — so a project's `.tilde/mcp.json` can't be allowed to execute on first `cd` into an unfamiliar repo. Before connecting a project-level MCP server or running a project-level skill's script for the first time, prompt to trust the project; persist the decision in a user-level file (`~/.tilde/trusted-projects.json`) so it's asked once, not every run. AGENTS.md text is the one exception — it loads regardless of trust because it's inert instructions, not executable code, and it's treated with the same caution as any other external content (advisory, not a command tilde blindly follows). Anything under your own `~/.tilde/` is implicitly trusted — you put it there yourself; this gate is only for what a project brings with it.
-  - **Trust is tied to what was actually approved, not just the folder.** Record a fingerprint of the project's executable surface (`mcp.json`, `config.json`, and the skill scripts) next to the path, the same way direnv's allow-list works. If a `git pull` changes any of it, ask again. Otherwise trust granted to a harmless repo silently carries over to a later malicious commit. The prompt should show exactly what will run (the literal MCP server command lines, the skill scripts), not just "trust this folder?".
-  - **A trusted project still can't loosen the rules.** Its `config.json` may only set an allow-listed set of preferences. It can never define providers, endpoints, or credentials, and it can never set a more permissive permission mode than the user's own default (3.7). A project can tighten the posture, never relax it.
+     - **Trust is tied to what was actually approved, not just the folder.** Record a fingerprint of the project's executable surface (`mcp.json`, `config.json`, skill scripts, `SKILL.md` bodies and their bundled references/assets) next to the path, the same way direnv's allow-list works. If a `git pull` changes any of it, ask again. Otherwise trust granted to a harmless repo silently carries over to a later malicious commit. The prompt should show exactly what will run (the literal MCP server command lines, the skill scripts), not just "trust this folder?".
+   - **A trusted project still can't loosen the rules.** There is no
+     project-level config to load: providers, endpoints, credentials,
+     and the permission mode are user-level only, by construction.
+     A cloned repo cannot point tilde's API traffic at a server it
+     controls or ship a permissive default mode — the loader never
+     reads project config at all (the file is fingerprinted for trust
+     so adding one later is trust-visible).
   - **Headless has no one to ask,** so it defaults to untrusted and needs an explicit opt-in (`--trust` or an env var) — the safe default for CI running against a freshly checked-out, possibly external, branch.
 
 ---

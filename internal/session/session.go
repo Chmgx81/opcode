@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
 	"github.com/Chmgx81/tilde/internal/tools"
 )
@@ -100,12 +101,16 @@ func (s *Session) History() []llm.Message {
 		return nil
 	}
 	// Walk up from Active to Root, then reverse.
+	// A parent cycle in a hand-edited or damaged file would otherwise
+	// loop forever; a node is only ever visited once.
 	var chain []string
+	seen := make(map[string]bool, len(s.Nodes))
 	for id := s.Active; id != ""; {
 		node, ok := s.Nodes[id]
-		if !ok {
+		if !ok || seen[id] {
 			break
 		}
+		seen[id] = true
 		chain = append(chain, id)
 		if id == s.Root {
 			break
@@ -147,7 +152,9 @@ func (s *Session) Save(path string, secrets []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	// Atomic: the autosave rewrites this file every turn, and a crash
+	// mid-write must leave the previous complete session in place.
+	return config.WriteFileAtomic(path, data, 0o600)
 }
 
 // Load reads a session file.

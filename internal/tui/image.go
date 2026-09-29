@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/Chmgx81/tilde/internal/llm"
@@ -38,6 +39,36 @@ var clipboardSources = []clipboardSource{
 	{"pngpaste", []string{"-"}}, // macOS: PNG always
 }
 
+// systemBinDirs are the only places a clipboard tool may live. The
+// lookup below refuses anything else: a PATH containing the project
+// directory would let a committed fake `xclip` run and steal the
+// clipboard (audit S11).
+var systemBinDirs = []string{
+	"/usr/bin", "/bin", "/usr/local/bin",
+	"/opt/homebrew/bin", // macOS Apple Silicon
+}
+
+// resolveClipboardTool maps a tool name to its absolute path, and
+// only when that path is a system binary directory. Empty means the
+// source is skipped — same as the tool not existing.
+func resolveClipboardTool(name string) string {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(abs)
+	for _, d := range systemBinDirs {
+		if dir == d {
+			return abs
+		}
+	}
+	return ""
+}
+
 // readClipboardImage returns the clipboard image bytes, or ErrNoImage
 // when every source is unavailable or empty. A source that errors is
 // skipped, not fatal — the next one may work.
@@ -45,7 +76,11 @@ func readClipboardImage() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	for _, src := range clipboardSources {
-		cmd := exec.CommandContext(ctx, src.name, src.args...)
+		tool := resolveClipboardTool(src.name)
+		if tool == "" {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, tool, src.args...)
 		out, err := cmd.Output()
 		if err != nil || len(out) == 0 {
 			continue

@@ -50,10 +50,17 @@ const (
 var WebFetchUA = "tilde/0.3 (+https://github.com/Chmgx81/tilde)"
 
 // blockedFetchHosts are the hostnames and address blocks the model
-// may not fetch: the loopback (tilde itself or local services), and
-// the cloud metadata endpoints every provider warns about. The
-// model's input is untrusted; the machine's own interfaces are not
-// its reading material.
+// may not fetch: the loopback (tilde itself or local services), the
+// private LAN ranges (a model probing the user's network is the same
+// exfiltration class), link-local (including the cloud metadata
+// endpoints every provider warns about), and the unspecified address.
+// The model's input is untrusted; the machine's own interfaces and
+// its neighbors are not its reading material.
+//
+// Name resolution is the caller's, not ours: a hostname that resolves
+// to a blocked range still passes this check (DNS-rebinding TOCTOU),
+// so this is a backstop for literal addresses, not a substitute for
+// the approval gate — fetches still ask in plan and build mode.
 func checkFetchTarget(rawURL string) error {
 	// The user's explicit opt-in (a developer pointing the model at
 	// a local dev server); the default is the safe refusal.
@@ -67,12 +74,12 @@ func checkFetchTarget(rawURL string) error {
 	host := u.Hostname()
 	blocked := host == "localhost"
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 			blocked = true
 		}
 	}
 	if blocked {
-		return fmt.Errorf("web_fetch: refusing to fetch %s — loopback and local addresses are off-limits", host)
+		return fmt.Errorf("web_fetch: refusing to fetch %s — loopback, private, and link-local addresses are off-limits (set TILDE_ALLOW_LOCAL_FETCH=1 to allow local fetches)", host)
 	}
 	return nil
 }

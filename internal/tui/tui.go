@@ -31,7 +31,10 @@ import (
 	"github.com/Chmgx81/tilde/internal/tools"
 )
 
-// version tracks the architecture doc revision.
+// version is the fallback shown when Options.Version is empty (tests
+// and builds without version wiring). Production passes the real
+// build version in — one version everywhere: the banner, --version,
+// and the fetch UA agree.
 const version = "v0.3.0"
 
 // The tilde logo, shown at the top of a fresh session; it scrolls away
@@ -48,6 +51,11 @@ type Options struct {
 	Mode      string
 	Cwd       string
 	TildeHome string
+	// Version is the running binary's version (cmd/tilde's
+	// buildVersion: ldflags tag, module version, or (devel)). It
+	// renders in the greeting, /doctor, and the resume banner.
+	// Empty falls back to the version const above.
+	Version string
 	// ProviderName + BaseURL + API let /login rebuild the LLM client with the
 	// new key instead of needing a restart.
 	ProviderName string
@@ -412,6 +420,15 @@ var commands = []command{
 	{"/logout", "remove the stored key (/logout <provider>)"},
 }
 
+// displayVersion reports the running binary's version: the injected
+// Options.Version, or the fallback const when unwired (tests).
+func (m *Model) displayVersion() string {
+	if m.opt.Version != "" {
+		return m.opt.Version
+	}
+	return version
+}
+
 func New(opt Options) *Model {
 	ta := textarea.New()
 	ta.Placeholder = "ask tilde anything…"
@@ -463,7 +480,7 @@ func New(opt Options) *Model {
 	for _, line := range strings.Split(strings.TrimRight(banner, "\n"), "\n") {
 		logo = append(logo, accentStyle.Render(line))
 	}
-	info := []string{boldStyle.Render(GlyphBrand + " tilde " + version)}
+	info := []string{boldStyle.Render(GlyphBrand + " tilde " + m.displayVersion())}
 	info = append(info, dimStyle.Render(opt.Model+" · "+opt.Mode))
 	if opt.Cwd != "" {
 		info = append(info, dimStyle.Render(opt.Cwd))

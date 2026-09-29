@@ -2817,3 +2817,100 @@ was unreachable code if it waited for the return.
   forever; now it passes in 0.4s.
 
 Full suite, vet, and gofmt green.
+
+# Phase 44 shipped + full production review (2026-09-29)
+
+Phase 44 (release hardening: races, CI/CD, updates) is committed in
+full: the uncommitted work — `tilde update` with checksum
+verification, the installer hardening, LLM timeouts, the MCP wedge
+fix, seccomp network block, credential-file deny, `!` audit entries,
+atomic config/session/trust writes, and the C7 process-group kill —
+is in, with SECURITY.md, docs/releasing.md, dependabot, and the
+installer test script.
+
+On top of it, five parallel audit passes (UI/UX, logic, architecture,
+security, docs/convenience) swept the whole tree; every finding got a
+disposition — fixed below, or named as deferred. No silent drops.
+
+## Fixed in this pass
+
+- **Update availability (the known gap).** A stale binary had no
+  in-product way to learn a release exists. Now: at most one cached,
+  throttled (24h), silent-on-failure HTTPS check per day at startup;
+  one startup note when a newer release is out (`Update available:
+  vX → vY. Run `tilde update` to install it.`); the same cached
+  check as a `/doctor` row; `tilde update [--check]` refreshes the
+  cache; opt out with `"update_checks": false` or
+  `TILDE_NO_UPDATE_CHECK=1`; dev builds and platforms without
+  prebuilt binaries never check. Tests: cache roundtrip/stale/
+  silent-failure/dev-skip, doctor rows.
+- **Trust-prompt type-ahead guard was dead** (OpenedAt never set):
+  set at construction.
+- **Two version truths**: the TUI rendered its own const while
+  --version/update used buildVersion. Options.Version injects the
+  real one; the const is the tests-only fallback.
+- **SkillsIndex data race** (trust grant vs live turn): SetSkillsIndex
+  under cfgMu; systemPrompt documented as call-under-lock.
+- **Unknown /commands billed a model turn**: in-place error with
+  prefix/substring/edit-distance suggestion, turn never starts.
+- **Headless --json leaked secrets** (no redaction): Redact wired
+  from the session redactor. **history.jsonl unredacted**: redacted
+  on save.
+- **Write/edit/apply_patch reached the credentials file with a nil
+  Decide**: Execute-level deny + guarded reads; apply_patch also
+  refuses traversal and absolute-outside-roots paths (absolute
+  in-roots paths still work — the end-to-end test proves it).
+- **web_fetch SSRF**: private LAN ranges blocked; DNS-TOCTOU stated
+  as the approval gate's job; TILDE_ALLOW_LOCAL_FETCH documented in
+  SECURITY.md.
+- **Trust fingerprint missed the instruction surface**: SKILL.md,
+  references/, assets/ are trust-visible now (test updated).
+- **LLM edges**: index-less tool fragments join a solo call;
+  Anthropic tolerates `data:` without space and flushes open
+  tool_use at EOF (tests for all three).
+- **Bash timeout misattribution**: parent-context deadlines no
+  longer report as the 5-minute timeout.
+- **install.sh**: --help/no-args guard; plaintext bases refused
+  except loopback (test mirror keeps working); success screen names
+  `tilde update`.
+- **UX copy**: /doctor skills+MCP rows name the next step; empty
+  login/logout are dim notes, not errors/successes; bare `!`
+  explains itself; dead paste tokens warn visibly; help overlay
+  covers shift+enter/pager keys/`?` precondition; picker details
+  fit narrow terminals; plain posture forces the static spinner.
+- **Docs**: README modes table is plan/build/full-auto with legacy
+  mapping, tool list gains web_fetch, Also block gains
+  `tilde update` + env table; architecture §4 lists safe/update,
+  modes fixed, project-config promise corrected (fingerprinted,
+  never loaded); tui-spec keys/slashes/behavior current, v0.3.0
+  figure; releasing.md documents the notice; .gitignore covers
+  dist/archives; release.yml comment honest about CI vs gate;
+  DefaultPermissionMode is canonically "build"; stale test comment
+  fixed.
+
+## Deferred (named, not hidden)
+
+- S1/S2 full designs (path allowlist; seccomp/netns beyond
+  x86_64): blunted by credential deny + redaction + approval gate.
+- config→tools import (mode constants): one-directional today, no
+  cycle; a leaf package is the fix when tools next needs config.
+- tools/ + tui/ package splits (perm leaf; prompt/picker files):
+  correct direction, next-touch refactor, not this pass.
+- run() helper extraction (triplicated key resolution): works,
+  tested; refactor with a compiler present, not blind.
+- MCP chatty-server wedge buffer, LLM hard total-timeout, `!`
+  non-shell forms: unchanged from the phase-43 dispositions.
+- PROGRESS Phase 24 entry still links the merged tui-ux-spec.md
+  filename: history, left as the consolidation section documents
+  the rename.
+
+## Not verified in this environment
+
+No Go toolchain is installed in this sandbox (`go`, `gofmt`
+absent; none on the host portal either), so `go build/vet/test`
+could not run here. Every change was reviewed diff-by-diff for
+compile safety (imports, signatures, test helpers), and every
+behavioral fix carries a test — but CI (`go vet`, `gofmt`,
+`go test -race -count=1 ./...`, cross-builds, installer tests,
+govulncheck) is the honest gate before tagging. Do not cut a
+release on red CI.

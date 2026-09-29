@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Chmgx81/tilde/internal/config"
 )
 
 // Status of a project directory.
@@ -53,11 +55,10 @@ var surfaceFiles = []string{
 	".tilde/config.json",
 	".tilde/mcp.json",
 }
-
 // Surface lists a project's executable surface: the config/mcp files and
-// every script under .tilde/skills/*/scripts/, relative to the project
-// root, sorted. mcp.json and skills/config files that don't exist are
-// simply absent from the list.
+// every skill script, SKILL.md body, and bundled reference/asset under
+// .tilde/skills/, relative to the project root, sorted. mcp.json and
+// skills/config files that don't exist are simply absent from the list.
 func Surface(projectDir string) ([]string, error) {
 	var files []string
 	for _, rel := range surfaceFiles {
@@ -65,31 +66,81 @@ func Surface(projectDir string) ([]string, error) {
 			files = append(files, rel)
 		}
 	}
-	skillsDir := filepath.Join(projectDir, ".tilde", "skills")
-	err := filepath.Walk(skillsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		rel, relErr := filepath.Rel(projectDir, path)
-		if relErr != nil {
-			return relErr
-		}
-		if strings.Contains(rel, string(filepath.Separator)+"scripts"+string(filepath.Separator)) {
-			files = append(files, rel)
-		}
-		return nil
-	})
-	if err != nil {
+	w := &surfaceWalk{projectDir: projectDir, ancestors: map[string]bool{}}
+	if err := w.walk(filepath.Join(projectDir, ".tilde", "skills")); err != nil {
 		return nil, err
 	}
+	files = append(files, w.files...)
 	sort.Strings(files)
 	return files, nil
+}
+
+// maxSurfaceEntries bounds the skills-tree walk so a hostile tree of
+// mutually linking directories cannot make it run away. Exceeding it
+// is an error, which every caller treats as "cannot verify".
+const maxSurfaceEntries = 20000
+
+// surfaceWalk collects the script files under .tilde/skills, following
+// directory symlinks. The skill loader lists and runs whatever a
+// symlinked scripts/ directory points at, so a walker that stops at
+// the link would hide those scripts from both the approval prompt and
+// the fingerprint. Paths are recorded as they appear inside the
+// project (the link's path, not its target's).
+type surfaceWalk struct {
+	projectDir string
+	ancestors  map[string]bool // real paths of the directories being walked
+	entries    int
+	files      []string
+}
+
+func (w *surfaceWalk) walk(dir string) error {
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if w.ancestors[real] {
+		return nil // a link back up the tree: already being walked
+	}
+	w.ancestors[real] = true
+	defer delete(w.ancestors, real)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if w.entries++; w.entries > maxSurfaceEntries {
+			return fmt.Errorf("skills tree has more than %d entries; refusing to fingerprint it", maxSurfaceEntries)
+		}
+		path := filepath.Join(dir, e.Name())
+		// Stat follows links. A dangling link cannot be classified, so
+		// it is treated as a file: if it sits under scripts/ it is
+		// listed and Fingerprint then fails to read it (fail closed).
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			if err := w.walk(path); err != nil {
+				return err
+			}
+			continue
+		}
+		rel, err := filepath.Rel(w.projectDir, path)
+		if err != nil {
+			return err
+		}
+		// The executable surface is scripts/ AND the instruction
+		// surface: load_skill reads SKILL.md bodies (and their
+		// references/assets) with no re-prompt, so a post-trust
+		// edit to any of them must re-ask, not slide in silently.
+		if strings.Contains(rel, string(filepath.Separator)+"scripts"+string(filepath.Separator)) ||
+			strings.HasSuffix(rel, "SKILL.md") ||
+			strings.Contains(rel, string(filepath.Separator)+"references"+string(filepath.Separator)) ||
+			strings.Contains(rel, string(filepath.Separator)+"assets"+string(filepath.Separator)) {
+			w.files = append(w.files, rel)
+		}
+	}
+	return nil
 }
 
 // Fingerprint hashes a project's executable surface: each file's relative
@@ -195,7 +246,7 @@ func (s *Store) Trust(projectDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o600)
+	return config.WriteFileAtomic(s.path, data, 0o600)
 }
 
 // Untrust removes a project's stored approval. The TUI can expose this
@@ -215,5 +266,5 @@ func (s *Store) Untrust(projectDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o600)
+	return config.WriteFileAtomic(s.path, data, 0o600)
 }

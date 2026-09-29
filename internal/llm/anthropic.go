@@ -35,7 +35,7 @@ type Anthropic struct {
 // (e.g. https://api.anthropic.com) — /v1/messages is appended.
 func NewAnthropic(baseURL, apiKey string) *Anthropic {
 	return &Anthropic{baseURL: strings.TrimSuffix(baseURL, "/"), apiKey: apiKey,
-		client: &http.Client{}}
+		client: newStreamHTTPClient()}
 }
 
 // New selects a provider implementation by wire API: "anthropic"
@@ -226,9 +226,13 @@ func (a *Anthropic) StreamChat(ctx context.Context, req ChatRequest) (<-chan Cha
 	if err != nil {
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+	// A derived context lets the idle watchdog cancel this request
+	// alone, without touching the caller's context (timeout.go).
+	streamCtx, cancel := context.WithCancel(ctx)
+	httpReq, err := http.NewRequestWithContext(streamCtx, http.MethodPost,
 		a.baseURL+"/v1/messages", strings.NewReader(string(body)))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -238,11 +242,13 @@ func (a *Anthropic) StreamChat(ctx context.Context, req ChatRequest) (<-chan Cha
 
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
+		cancel()
 		// Host only, and in plain words — the full URL plus a raw
 		// net error is noise (audit U4).
 		return nil, fmt.Errorf("could not reach %s: %w", httpReq.URL.Host, err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		cancel()
 		defer resp.Body.Close()
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, statusError(resp, msg)
@@ -253,7 +259,8 @@ func (a *Anthropic) StreamChat(ctx context.Context, req ChatRequest) (<-chan Cha
 	// on every path, and Close follows in its defer. Without this,
 	// every Anthropic turn leaked the response body and its TCP
 	// connection (audit C1) — a long session would exhaust fds.
-	go a.consume(&closingReader{r: resp.Body, closer: resp.Body}, events)
+	stream := newIdleBody(resp.Body, cancel)
+	go a.consume(&closingReader{r: stream, closer: stream}, events)
 	return events, nil
 }
 
@@ -343,14 +350,27 @@ func (a *Anthropic) consume(r *closingReader, events chan<- ChatEvent) {
 	}
 	if err := scanner.Err(); err != nil {
 		events <- ChatEvent{Type: ErrorEvent, Err: fmt.Errorf("read stream: %w", err)}
+		return
+	}
+	// A clean EOF without content_block_stop: the OpenAI client
+	// flushes buffered calls at stream end, and so does this one —
+	// a tool_use block open at EOF is emitted, not dropped.
+	for _, b := range blocks {
+		if b != nil && b.kind == "tool_use" && (b.id != "" || b.name != "" || b.json.Len() > 0) {
+			events <- ChatEvent{Type: ToolCallEvent, Call: ToolCall{
+				ID: b.id, Name: b.name, Arguments: b.json.String(),
+			}}
+		}
 	}
 }
 
-// sseData strips the "data: " prefix from one SSE line.
+// sseData strips the "data:" prefix from one SSE line, with or without
+// the conventional trailing space — one server formatting choice must
+// not drop events.
 func sseData(line []byte) ([]byte, bool) {
 	s := string(line)
-	if strings.HasPrefix(s, "data: ") {
-		return []byte(strings.TrimPrefix(s, "data: ")), true
+	if strings.HasPrefix(s, "data:") {
+		return []byte(strings.TrimPrefix(s, "data:")), true
 	}
 	return nil, false
 }

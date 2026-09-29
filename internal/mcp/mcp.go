@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -87,9 +88,13 @@ type notification struct {
 	Method  string `json:"method"`
 }
 
+// response is any server line. Method is set for server-initiated
+// requests and notifications, which are never responses even when they
+// carry an id.
 type response struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      *int            `json:"id"`
+	Method  string          `json:"method"`
 	Result  json.RawMessage `json:"result"`
 	Error   *rpcError       `json:"error"`
 }
@@ -142,16 +147,83 @@ type ToolDef struct {
 	InputSchema json.RawMessage
 }
 
-// lineOrErr is one line from the server, or the reader's terminal error.
-type lineOrErr struct {
-	line string
-	err  error
+// conn is one server process's response router. A background reader
+// owns the process's stdout and hands each response to the roundtrip
+// waiting on its id; everything else is dropped and counted. A dead
+// process closes done instead of leaving a waiter hanging.
+//
+// Routing by id (rather than one shared line channel) means a response
+// can never be dropped behind a burst of notifications, and concurrent
+// callers can never consume each other's responses.
+type conn struct {
+	mu      sync.Mutex
+	pending map[int]chan response
+	closed  bool
+	readErr error
+	done    chan struct{} // closed when the reader exits
+}
+
+func newConn() *conn {
+	return &conn{pending: map[int]chan response{}, done: make(chan struct{})}
+}
+
+// register reserves a slot for id's response. It fails once the reader
+// has exited: nothing could ever fill the slot.
+func (cn *conn) register(id int) (chan response, bool) {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+	if cn.closed {
+		return nil, false
+	}
+	ch := make(chan response, 1)
+	cn.pending[id] = ch
+	return ch, true
+}
+
+func (cn *conn) unregister(id int) {
+	cn.mu.Lock()
+	delete(cn.pending, id)
+	cn.mu.Unlock()
+}
+
+// readLoop runs until r is exhausted. Delivery never blocks (each slot
+// is buffered for its single response), so a chatty server cannot wedge
+// the reader, the OS pipe, or the server itself.
+func (cn *conn) readLoop(r io.Reader, dropped *atomic.Int64) {
+	defer close(cn.done)
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) == "" {
+			continue
+		}
+		var resp response
+		if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil || resp.ID == nil || resp.Method != "" {
+			// Non-JSON stdout noise, a notification, or a
+			// server-initiated request: none answers a caller.
+			dropped.Add(1)
+			continue
+		}
+		cn.mu.Lock()
+		ch, ok := cn.pending[*resp.ID]
+		delete(cn.pending, *resp.ID)
+		cn.mu.Unlock()
+		if !ok {
+			dropped.Add(1) // late answer to a call that already timed out
+			continue
+		}
+		ch <- resp
+	}
+	cn.mu.Lock()
+	cn.closed = true
+	cn.readErr = scanner.Err()
+	cn.mu.Unlock()
 }
 
 // Client owns one stdio MCP server connection. All roundtrips go
-// through a background reader goroutine so notifications interleaving
-// with responses are simply skipped, and a dead process becomes a
-// closed channel instead of a hang.
+// through the current conn's reader goroutine, so notifications
+// interleaving with responses are skipped and a dead process fails its
+// waiters instead of hanging them.
 type Client struct {
 	name string
 	cfg  ServerConfig
@@ -160,10 +232,15 @@ type Client struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	nextID int
-	lines  chan lineOrErr
+	conn   *conn
 
 	toolsMu sync.Mutex
 	tools   []ToolDef
+
+	// dropped counts server lines that answered no caller (unsolicited
+	// notifications, stdout noise, late responses). Cumulative for the
+	// client's lifetime.
+	dropped atomic.Int64
 }
 
 // NewClient prepares a client for one configured server. Nothing spawns
@@ -253,25 +330,12 @@ func (c *Client) start(ctx context.Context) error {
 	c.cmd = cmd
 	c.stdin = stdin
 	c.nextID = 1
-	lines := make(chan lineOrErr, 64)
-	c.lines = lines
+	cn := newConn()
+	c.conn = cn
 
 	// The reader goroutine owns stdout from here on (StdoutPipe must
 	// have exactly one long-lived reader; MCP is one stream).
-	go func() {
-		defer close(lines)
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-		for scanner.Scan() {
-			if strings.TrimSpace(scanner.Text()) == "" {
-				continue
-			}
-			lines <- lineOrErr{line: scanner.Text()}
-		}
-		if err := scanner.Err(); err != nil {
-			lines <- lineOrErr{err: err}
-		}
-	}()
+	go cn.readLoop(stdout, &c.dropped)
 
 	// The handshake runs after start() releases the mutex: roundtrip
 	// locks it itself, and the mutex is not reentrant.
@@ -327,6 +391,14 @@ func (c *Client) Tools() []ToolDef {
 	return append([]ToolDef(nil), c.tools...)
 }
 
+// DroppedLines reports how many server lines answered no caller
+// (notifications, stdout noise, late responses). The count is
+// cumulative for the client's lifetime and surfaces in the manager's
+// notes, so a chatty server's noise is lost loudly, not silently.
+func (c *Client) DroppedLines() int64 {
+	return c.dropped.Load()
+}
+
 // roundtrip sends one request and waits for the matching response,
 // skipping any notifications the server emits meanwhile.
 func (c *Client) roundtrip(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -346,39 +418,48 @@ func (c *Client) roundtrip(ctx context.Context, method string, params json.RawMe
 		c.mu.Unlock()
 		return nil, err
 	}
-	if _, err := c.stdin.Write(append(data, '\n')); err != nil {
+	cn := c.conn
+	slot, ok := cn.register(id)
+	if !ok {
 		c.mu.Unlock()
 		return nil, fmt.Errorf("%s: %w", method, errDead)
 	}
-	lines := c.lines
+	if _, err := c.stdin.Write(append(data, '\n')); err != nil {
+		c.mu.Unlock()
+		cn.unregister(id)
+		return nil, fmt.Errorf("%s: %w", method, errDead)
+	}
 	c.mu.Unlock()
 
-	for {
+	select {
+	case <-ctx.Done():
+		cn.unregister(id)
+		return nil, fmt.Errorf("%s: timed out", method)
+	case resp := <-slot:
+		return finish(method, resp)
+	case <-cn.done:
+		// The reader delivers before it exits, so a response that
+		// raced the exit is already in the slot.
 		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("%s: timed out", method)
-		case le, ok := <-lines:
-			if !ok {
-				return nil, fmt.Errorf("%s: %w", method, errDead)
-			}
-			if le.err != nil {
-				return nil, fmt.Errorf("%s: %w", method, le.err)
-			}
-			var resp response
-			if err := json.Unmarshal([]byte(le.line), &resp); err != nil {
-				// Not JSON: a chatty server's stdout noise is skipped,
-				// not fatal — other lines may still answer.
-				continue
-			}
-			if resp.ID == nil || *resp.ID != id {
-				continue // notification or someone else's response
-			}
-			if resp.Error != nil {
-				return nil, fmt.Errorf("%s: server error %d: %s", method, resp.Error.Code, resp.Error.Message)
-			}
-			return resp.Result, nil
+		case resp := <-slot:
+			return finish(method, resp)
+		default:
 		}
+		cn.mu.Lock()
+		readErr := cn.readErr
+		cn.mu.Unlock()
+		if readErr != nil {
+			return nil, fmt.Errorf("%s: %w", method, readErr)
+		}
+		return nil, fmt.Errorf("%s: %w", method, errDead)
 	}
+}
+
+func finish(method string, resp response) (json.RawMessage, error) {
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s: server error %d: %s", method, resp.Error.Code, resp.Error.Message)
+	}
+	return resp.Result, nil
 }
 
 // Call runs one tool. A dead process gets a single restart (with a full
@@ -439,11 +520,25 @@ func (c *Client) stopLocked() error {
 		_ = c.stdin.Close()
 	}
 	// Kill the whole process group (Setpgid put the server in its own
-	// group; a no-op on Windows).
+	// group; a no-op on Windows), then the process itself so Windows
+	// and any server that left its group are covered too.
 	if c.cmd.Process != nil {
 		killProcGroup(c.cmd.Process.Pid)
+		_ = c.cmd.Process.Kill()
 	}
+	// Wait closes our end of stdout, which unblocks the reader even if
+	// a descendant that escaped the group still holds the write end
+	// open. Waiting for EOF instead would wedge here, under c.mu, for
+	// as long as that descendant lives. The reader never blocks on
+	// delivery, so joining it afterwards is prompt; the bound is a
+	// backstop, not a normal path.
 	err := c.cmd.Wait()
+	if c.conn != nil {
+		select {
+		case <-c.conn.done:
+		case <-time.After(2 * time.Second):
+		}
+	}
 	c.cmd = nil
 	c.stdin = nil
 	return err

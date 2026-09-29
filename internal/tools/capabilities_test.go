@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -192,6 +193,39 @@ func TestApplyPatchBounded(t *testing.T) {
 	}
 }
 
+// TestSafePatchPath: the tool-level floor — traversal never passes,
+// relative in-tree paths always do, and absolute paths pass only
+// inside the writable roots.
+func TestSafePatchPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix path assumptions")
+	}
+	dir := t.TempDir()
+	for _, p := range []string{
+		"", "../x", "sub/../../x", "/../x",
+		filepath.Join(string(filepath.Separator), "definitely-not-a-writable-root-xyz", "f.txt"),
+	} {
+		if safePatchPath(p) {
+			t.Errorf("safePatchPath(%q) = true, want false", p)
+		}
+	}
+	for _, p := range []string{
+		"local.go", "sub/dir/f.go", "sub/../f.go",
+		filepath.Join(dir, "in-temp.txt"),
+	} {
+		if !safePatchPath(p) {
+			t.Errorf("safePatchPath(%q) = false, want true", p)
+		}
+	}
+	// End to end: a traversal patch fails loudly at Execute, even
+	// with no gate in front of it.
+	patch := "*** Begin Patch\n*** Add File: ../escape.txt\n+x\n*** End Patch"
+	args, _ := json.Marshal(map[string]string{"patch": patch})
+	if _, err := run(t, ApplyPatch{}, string(args)); err == nil {
+		t.Error("traversal patch must fail at Execute")
+	}
+}
+
 func TestGlobFiles(t *testing.T) {
 	dir := t.TempDir()
 	write := func(rel string) {
@@ -324,6 +358,9 @@ func TestWebFetchRefusesLocalTargets(t *testing.T) {
 		`{"url": "http://localhost/status"}`,
 		`{"url": "http://[::1]/metrics"}`,
 		`{"url": "http://169.254.169.254/latest/meta-data/"}`,
+		`{"url": "http://192.168.1.1/admin"}`,
+		`{"url": "http://10.0.0.5/"}`,
+		`{"url": "http://172.16.9.9/"}`,
 	} {
 		if _, err := run(t, WebFetch{}, raw); err == nil {
 			t.Errorf("%s: the local target was fetched", raw)

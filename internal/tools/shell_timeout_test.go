@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -49,10 +48,54 @@ func TestBashTimeoutKillsGrandchildren(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Errorf("grandchild %d survived the bash timeout", pid)
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			if p, err := os.FindProcess(pid); err == nil {
+				_ = p.Kill()
+			}
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// A command that cannot start (no bash on PATH) must come back as an
+// ordinary tool error: there is no process to watch or kill, and the
+// message keeps the "bash: " prefix the model and the TUI expect. A
+// watchdog that dereferenced cmd.Process unconditionally would panic
+// here.
+func TestBashStartFailureIsAnError(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out, err := (Bash{}).Execute(context.Background(), `{"command": "echo hi"}`)
+	if err == nil {
+		t.Fatalf("expected a start error, got output %q", out)
+	}
+	if !strings.HasPrefix(err.Error(), "bash: ") {
+		t.Errorf("error = %q, want the bash: prefix", err)
+	}
+	if out != "" {
+		t.Errorf("output = %q, want empty", out)
+	}
+}
+
+// Execute must not leave the watchdog behind, whether the command
+// finishes normally, fails, or is killed by its deadline.
+func TestBashLeavesNoGoroutines(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process groups are only wired up on Linux (see deathAttr)")
+	}
+	before := runtime.NumGoroutine()
+	for i := 0; i < 10; i++ {
+		_, _ = (Bash{}).Execute(context.Background(), `{"command": "echo ok"}`)
+		_, _ = (Bash{}).Execute(context.Background(), `{"command": "exit 3"}`)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		_, _ = (Bash{}).Execute(ctx, `{"command": "sleep 30"}`)
+		cancel()
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for runtime.NumGoroutine() > before {
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines grew from %d to %d after 30 Executes", before, runtime.NumGoroutine())
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

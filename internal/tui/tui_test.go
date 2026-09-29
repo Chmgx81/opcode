@@ -545,6 +545,12 @@ func TestEditFileResultRendersDiff(t *testing.T) {
 func TestShellEscape(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
+	// The escape must land in the audit log like any model-initiated
+	// bash call (audit C13) — the harness gate ships without an audit
+	// log, so give it one before typing.
+	auditPath := filepath.Join(dir, "audit.jsonl")
+	m.opt.Orch.Gate.Audit = tools.NewAuditLog(auditPath,
+		tools.NewRedactor("tui-shell-secret"))
 
 	typeAndEnter(m, "! echo shell-escape-works")
 	tr := m.transcript()
@@ -552,6 +558,15 @@ func TestShellEscape(t *testing.T) {
 		t.Errorf("shell escape output missing: %s", tr)
 	}
 	// No model request: the user ran it, not the model.
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("audit log: %v", err)
+	}
+	if !strings.Contains(string(data), `"tool":"shell-escape"`) ||
+		!strings.Contains(string(data), `"allowed":true`) ||
+		!strings.Contains(string(data), "shell-escape-works") {
+		t.Errorf("shell escape not recorded in audit log: %s", string(data))
+	}
 }
 
 func TestAtMentionAttachesFile(t *testing.T) {

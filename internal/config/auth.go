@@ -176,6 +176,8 @@ func runKeyCommand(command string) (string, error) {
 // providers' entries are preserved. /login in the TUI writes through
 // here so a user never has to hand-edit JSON.
 func WriteAuthKey(dir, provider, key string) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
 	auth, _, err := LoadAuth(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -194,7 +196,7 @@ func WriteAuthKey(dir, provider, key string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "auth.json"), data, authFileMode)
+	return WriteFileAtomic(filepath.Join(dir, "auth.json"), data, authFileMode)
 }
 
 // RemoveAuthKey deletes one provider's stored credential. It reports
@@ -202,6 +204,8 @@ func WriteAuthKey(dir, provider, key string) error {
 // instead of pretending. This only touches what tilde stored: it does
 // not unset environment variables or revoke anything at the provider.
 func RemoveAuthKey(dir, provider string) (bool, error) {
+	writeMu.Lock()
+	defer writeMu.Unlock()
 	auth, _, err := LoadAuth(dir)
 	if err != nil {
 		return false, err
@@ -217,5 +221,5 @@ func RemoveAuthKey(dir, provider string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(filepath.Join(dir, "auth.json"), data, authFileMode)
+	return true, WriteFileAtomic(filepath.Join(dir, "auth.json"), data, authFileMode)
 }
