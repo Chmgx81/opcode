@@ -66,6 +66,23 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	} else {
 		cmd = sandbox.Command(ctx, "bash", "-c", a.Command)
 	}
+	// C7: a timeout or interrupt must kill the whole process group,
+	// not just the direct bash child — a command that backgrounded
+	// work would otherwise outlive the turn. CombinedOutput cannot
+	// even return while a grandchild holds the pipe open, so the kill
+	// cannot wait for it: a watchdog fires the group kill the moment
+	// the context does (WaitDelay bounds the wait regardless).
+	watchDone := make(chan struct{})
+	defer close(watchDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			if cmd.Process != nil {
+				_ = sandbox.KillGroup(cmd.Process.Pid)
+			}
+		case <-watchDone:
+		}
+	}()
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return string(out), fmt.Errorf("bash: timed out after %s", bashTimeout)

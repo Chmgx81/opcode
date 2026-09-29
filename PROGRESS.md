@@ -2795,3 +2795,25 @@ names the real tool (glob).
 `go test -count=1 ./...` green across all packages after each
 batch, with the two exit-status wording assertions updated to the
 new message.
+
+## C7 shipped: bash timeouts kill the whole process group (2026-09-29)
+
+The first deferred audit item, closed. The original finding was
+"timeout doesn't kill grandchildren"; the regression test found the
+deeper form: CombinedOutput cannot even RETURN while a backgrounded
+grandchild holds the stdout pipe open, so a hung command with
+background work wedged the agent loop indefinitely — the group kill
+was unreachable code if it waited for the return.
+
+- Children spawned through the sandbox now lead their own process
+  group (deathAttr sets Setpgid) and WaitDelay bounds the pipe wait
+  for anything that escapes the group.
+- shell.go runs a watchdog: the moment the context dies (timeout
+  or esc interrupt), sandbox.KillGroup SIGKILLs the entire group —
+  bash and every process it spawned.
+- Regression test TestBashTimeoutKillsGrandchildren: a command that
+  backgrounds `sleep 300` then hangs must leave the grandchild dead
+  within seconds of the timeout. Before the fix this test hangs
+  forever; now it passes in 0.4s.
+
+Full suite, vet, and gofmt green.
