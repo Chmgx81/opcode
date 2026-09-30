@@ -24,6 +24,73 @@ func TestAddUnindexedSoloCall(t *testing.T) {
 	}
 }
 
+// TestAnthropicToolCallEmittedExactlyOnce: a stream test must assert
+// on the sequence, not the last value. Keeping only the final
+// ToolCallEvent structurally cannot see a duplicate, which is how
+// every tool call ran twice per round for a release.
+func TestAnthropicToolCallEmittedExactlyOnce(t *testing.T) {
+	srv := anthropicServer(t, []string{
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"write_file"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"a\"}"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_stop"}`,
+	}, nil, 0)
+	defer srv.Close()
+
+	p := NewAnthropic(srv.URL, "k")
+	events, err := p.StreamChat(context.Background(), ChatRequest{Model: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []ToolCall
+	for ev := range events {
+		if ev.Type == ErrorEvent {
+			t.Fatalf("error event: %v", ev.Err)
+		}
+		if ev.Type == ToolCallEvent {
+			calls = append(calls, ev.Call)
+		}
+	}
+	if len(calls) != 1 {
+		t.Fatalf("emitted %d tool call events for one tool_use block, want 1: %+v", len(calls), calls)
+	}
+	if calls[0].ID != "tu_1" || calls[0].Name != "write_file" {
+		t.Errorf("call = %+v", calls[0])
+	}
+}
+
+// TestAnthropicParallelToolCallsKeepOrder: the EOF flush walks the
+// block map in index order, not Go's randomized map order, so two
+// parallel calls cannot swap places between runs.
+func TestAnthropicParallelToolCallsKeepOrder(t *testing.T) {
+	for run := 0; run < 20; run++ {
+		srv := anthropicServer(t, []string{
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"a","name":"read_file"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`,
+			`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"b","name":"bash"}}`,
+			`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{}"}}`,
+			`{"type":"message_stop"}`,
+		}, nil, 0)
+
+		p := NewAnthropic(srv.URL, "k")
+		events, err := p.StreamChat(context.Background(), ChatRequest{Model: "claude"})
+		if err != nil {
+			srv.Close()
+			t.Fatal(err)
+		}
+		var names []string
+		for ev := range events {
+			if ev.Type == ToolCallEvent {
+				names = append(names, ev.Call.Name)
+			}
+		}
+		srv.Close()
+		if len(names) != 2 || names[0] != "read_file" || names[1] != "bash" {
+			t.Fatalf("run %d: order = %v, want [read_file bash]", run, names)
+		}
+	}
+}
+
 func TestAddUnindexedAmbiguous(t *testing.T) {
 	var asm toolCallAssembler
 	// Zero calls: nothing to join, dropped.

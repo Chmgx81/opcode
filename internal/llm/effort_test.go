@@ -66,3 +66,26 @@ func TestAnthropicThinkingWire(t *testing.T) {
 		t.Error("the wire carries a thinking key for an unset effort")
 	}
 }
+
+// TestAnthropicThinkingFitsUnderMaxTokens: Anthropic rejects a
+// request whose budget_tokens is not strictly less than max_tokens.
+// The medium and high budgets used to exceed the default max_tokens,
+// so alt+. turned every Claude request into a 400.
+func TestAnthropicThinkingFitsUnderMaxTokens(t *testing.T) {
+	for _, eff := range []string{"low", "medium", "high"} {
+		for _, max := range []int{0, 1024, 4096, anthropicDefaultMaxTokens} {
+			ar := toAnthropic(ChatRequest{Model: "claude", ReasoningEffort: eff, MaxTokens: max})
+			if ar.Thinking == nil {
+				continue
+			}
+			if ar.Thinking.BudgetTokens < 1024 {
+				t.Errorf("effort %q max_tokens %d: budget %d is below the 1024 minimum",
+					eff, max, ar.Thinking.BudgetTokens)
+			}
+			if ar.Thinking.BudgetTokens >= ar.MaxTokens {
+				t.Errorf("effort %q max_tokens %d: budget %d must be < max_tokens or the API 400s",
+					eff, max, ar.Thinking.BudgetTokens)
+			}
+		}
+	}
+}

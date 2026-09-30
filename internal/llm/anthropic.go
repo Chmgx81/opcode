@@ -21,8 +21,12 @@ import (
 const anthropicVersion = "2023-06-01"
 
 // anthropicDefaultMaxTokens: Anthropic requires max_tokens; 0 on the
-// request means this cap.
-const anthropicDefaultMaxTokens = 8192
+// request means this cap. It is well above the old 8192 because that
+// number was too small twice over — it truncated long code edits, and
+// it left no room under the cap for the thinking budget, so the
+// medium and high effort postures asked for more thinking tokens than
+// the response was allowed to contain and every request 400'd.
+const anthropicDefaultMaxTokens = 32000
 
 // Anthropic is an llm.Provider against the Messages API.
 type Anthropic struct {
@@ -87,6 +91,27 @@ func effortBudget(effort string) int {
 	return 0
 }
 
+// thinkingBudget returns the budget_tokens to ask for, or 0 to leave
+// extended thinking off. Anthropic requires budget_tokens to be at
+// least 1024 AND strictly less than max_tokens — the default 8192
+// max_tokens is smaller than the medium and high budgets, so asking
+// for them verbatim is a hard 400 on every request. Headroom is
+// reserved so the model still has room to answer.
+func thinkingBudget(effort string, maxTokens int) int {
+	n := effortBudget(effort)
+	if n < 1024 {
+		return 0
+	}
+	room := maxTokens - 1024
+	if room < 1024 {
+		return 0
+	}
+	if n > room {
+		return room
+	}
+	return n
+}
+
 // anthropicMsg is one message: role plus content, which is either a
 // plain string or an array of typed blocks.
 type anthropicMsg struct {
@@ -121,7 +146,7 @@ func toAnthropic(req ChatRequest) anthropicRequest {
 	if ar.MaxTokens <= 0 {
 		ar.MaxTokens = anthropicDefaultMaxTokens
 	}
-	if n := effortBudget(req.ReasoningEffort); n > 0 {
+	if n := thinkingBudget(req.ReasoningEffort, ar.MaxTokens); n > 0 {
 		ar.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: n}
 	}
 	for _, m := range req.Messages {
@@ -276,6 +301,16 @@ func (c *closingReader) Read(p []byte) (int, error) { return c.r.Read(p) }
 
 func (c *closingReader) Close() { c.once.Do(func() { _ = c.closer.Close() }) }
 
+// anthropicBlock is one content block the model opened. Anthropic
+// interleaves text, thinking and tool_use blocks by index, streaming
+// each one's deltas before stopping it.
+type anthropicBlock struct {
+	kind string // "text" | "thinking" | "tool_use"
+	id   string
+	name string
+	json strings.Builder
+}
+
 // consume parses the SSE stream into ChatEvents. Tool calls arrive
 // as input_json_delta fragments and are emitted complete at
 // content_block_stop — the same policy as the OpenAI client.
@@ -283,13 +318,7 @@ func (a *Anthropic) consume(r *closingReader, events chan<- ChatEvent) {
 	defer close(events)
 	defer r.Close()
 
-	type block struct {
-		kind string // "text" | "thinking" | "tool_use"
-		id   string
-		name string
-		json strings.Builder
-	}
-	blocks := map[int]*block{}
+	blocks := map[int]*anthropicBlock{}
 	inputTokens := 0
 
 	scanner := bufio.NewScanner(r)
@@ -311,7 +340,7 @@ func (a *Anthropic) consume(r *closingReader, events chan<- ChatEvent) {
 		case "message_start":
 			inputTokens = ev.Message.Usage.InputTokens
 		case "content_block_start":
-			blocks[ev.Index] = &block{kind: ev.ContentBlock.Type,
+			blocks[ev.Index] = &anthropicBlock{kind: ev.ContentBlock.Type,
 				id: ev.ContentBlock.ID, name: ev.ContentBlock.Name}
 		case "content_block_delta":
 			b := blocks[ev.Index]
@@ -331,6 +360,11 @@ func (a *Anthropic) consume(r *closingReader, events chan<- ChatEvent) {
 				events <- ChatEvent{Type: ToolCallEvent, Call: ToolCall{
 					ID: b.id, Name: b.name, Arguments: b.json.String(),
 				}}
+				// Drop the block once it has been emitted. Leaving it
+				// here re-emitted it in the EOF flush below, so every
+				// tool call ran twice per round — a write applied twice,
+				// a command executed twice, and a loop of it.
+				delete(blocks, ev.Index)
 			}
 		case "message_delta":
 			if ev.Usage.OutputTokens > 0 || inputTokens > 0 {
@@ -354,14 +388,31 @@ func (a *Anthropic) consume(r *closingReader, events chan<- ChatEvent) {
 	}
 	// A clean EOF without content_block_stop: the OpenAI client
 	// flushes buffered calls at stream end, and so does this one —
-	// a tool_use block open at EOF is emitted, not dropped.
-	for _, b := range blocks {
+	// a tool_use block open at EOF is emitted, not dropped. Blocks
+	// that already emitted at content_block_stop are deleted from the
+	// map, so this only ever reclaims what never stopped.
+	for i := 0; i <= maxBlockIndex(blocks); i++ {
+		b := blocks[i]
 		if b != nil && b.kind == "tool_use" && (b.id != "" || b.name != "" || b.json.Len() > 0) {
 			events <- ChatEvent{Type: ToolCallEvent, Call: ToolCall{
 				ID: b.id, Name: b.name, Arguments: b.json.String(),
 			}}
 		}
 	}
+}
+
+// maxBlockIndex is the highest content-block index seen. Anthropic
+// numbers blocks from zero, so flushing in index order (rather than
+// map order) emits the calls the way the model wrote them — two
+// parallel calls must not swap places between runs.
+func maxBlockIndex(blocks map[int]*anthropicBlock) int {
+	max := -1
+	for i := range blocks {
+		if i > max {
+			max = i
+		}
+	}
+	return max
 }
 
 // sseData strips the "data:" prefix from one SSE line, with or without
