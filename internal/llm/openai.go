@@ -201,12 +201,8 @@ func toWire(req ChatRequest) wireRequest {
 		ReasoningEffort: req.ReasoningEffort}
 	for _, t := range req.Tools {
 		wr.Tools = append(wr.Tools, wireTool{
-			Type: "function",
-			Function: wireToolFunc{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  t.Parameters,
-			},
+			Type:     "function",
+			Function: wireToolFunc(t),
 		})
 	}
 	return wr

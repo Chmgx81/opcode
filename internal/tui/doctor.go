@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
 	"github.com/Chmgx81/tilde/internal/config"
+	"github.com/Chmgx81/tilde/internal/safe"
 	"github.com/Chmgx81/tilde/internal/sandbox"
 	"github.com/Chmgx81/tilde/internal/trust"
 	"github.com/Chmgx81/tilde/internal/update"
@@ -148,25 +150,109 @@ func (m *Model) doctorAudit(ok, neutral func(string)) {
 	}
 }
 
+// updateState is what the update row has to report. The decision is
+// kept apart from the copy so the whole matrix is table-testable
+// without a TUI, and every state has exactly one honest row.
+type updateState int
+
+const (
+	updateUnwired     updateState = iota // no tilde home: nothing to read
+	updateDisabled                       // the user opted out
+	updateUnsupported                    // no prebuilt release for this platform
+	updateDevBuild                       // a build with no release version
+	updateNeverRun                       // no check has ever been recorded
+	updateCheckFailed                    // the last check failed
+	updatePending                        // a strictly newer release is known
+	updateUpToDate                       // the last check found this version
+)
+
+// updateStateOf reads the cache and the two opt-out flags — /doctor
+// never phones home, so "the check failed" here means the recorded
+// last attempt, not a new one. Order matters: the reasons the check
+// does not run (disabled, unsupported, not a release) come first,
+// because a cached tag cannot make any of them untrue.
+func updateStateOf(current string, have bool, c update.Cache, enabled, supported bool) updateState {
+	switch {
+	case !enabled:
+		return updateDisabled
+	case !supported:
+		return updateUnsupported
+	case !update.IsRelease(current):
+		return updateDevBuild
+	case !have:
+		return updateNeverRun
+	case c.Err != "":
+		return updateCheckFailed
+	case update.Pending(current, c.Tag) != "":
+		return updatePending
+	default:
+		return updateUpToDate
+	}
+}
+
+// updateRowText is the update row's copy, one line per state. Split
+// from the decision so every row is table-testable, and from the
+// glyph so a fact and a verdict can move independently.
+func updateRowText(state updateState, current string, c update.Cache) string {
+	switch state {
+	case updateUnwired:
+		return "update check: tilde home not wired"
+	case updateDisabled:
+		return `update check: off — set "update_checks": true, or unset TILDE_NO_UPDATE_CHECK`
+	case updateUnsupported:
+		return "update check: no prebuilt tilde for " + runtime.GOOS + "/" + runtime.GOARCH +
+			" — `tilde update` says how to install one"
+	case updateDevBuild:
+		return "update check: " + current + " is a development build — update checks need a tagged release"
+	case updateNeverRun:
+		return "update check: never run — `tilde update --check` reports the latest release"
+	case updateCheckFailed:
+		// The text came out of a network library, so it is sanitized
+		// like any other untrusted display string. A failed refresh
+		// does not un-publish the release tilde last saw, so that tag
+		// still rides along — the note, the badge, and this row would
+		// otherwise contradict each other.
+		row := fmt.Sprintf("update check failed %s: %s — `tilde update --check` retries now",
+			c.CheckedAt.Local().Format("2006-01-02 15:04"), safe.Text(c.Err))
+		if tag := update.Pending(current, c.Tag); tag != "" {
+			row += fmt.Sprintf("; %s is still the newest release tilde has seen", tag)
+		}
+		return row
+	case updatePending:
+		return update.Notice(current, c.Tag)
+	default: // updateUpToDate
+		return "tilde " + current + " is the latest release tilde has seen"
+	}
+}
+
+// doctorUpdate reports the running version against the latest release
+// tilde has seen. It reads the update-check cache only — the cache is
+// the whole point of the check, and a diagnostic must not turn into a
+// phone-home.
 func (m *Model) doctorUpdate(ok, warn, neutral func(string)) {
-	// The release-freshness row reads the update-check cache only —
-	// /doctor never phones home itself. A stale or missing cache
-	// names the explicit check; a cached newer release names the
-	// install.
 	if m.opt.TildeHome == "" {
-		neutral("update check: tilde home not wired")
+		neutral(updateRowText(updateUnwired, m.displayVersion(), update.Cache{}))
 		return
 	}
-	tag, _, cached := update.ReadCache(update.CachePath(m.opt.TildeHome))
-	if !cached {
-		neutral("update check: never run — `tilde update --check` reports the latest release")
-		return
+	current := m.displayVersion()
+	c, have := update.ReadCache(update.CachePath(m.opt.TildeHome))
+	// The config's own opt-out, not just the environment's: a user
+	// who set "update_checks": false must not be nagged by a
+	// diagnostic. A malformed config.json is reported by its own row
+	// above, so here it falls back to the default.
+	cfg, _ := config.LoadConfig(m.opt.TildeHome)
+	state := updateStateOf(current, have, c,
+		update.ChecksEnabled(cfg.UpdateChecks), update.SupportedPlatform(runtime.GOOS, runtime.GOARCH))
+
+	text := updateRowText(state, current, c)
+	switch state {
+	case updateCheckFailed, updatePending:
+		warn(text)
+	case updateUpToDate:
+		ok(text)
+	default:
+		neutral(text)
 	}
-	if note := update.Notice(m.displayVersion(), tag); note != "" {
-		warn(note)
-		return
-	}
-	ok("tilde " + m.displayVersion() + " is the latest release tilde has seen")
 }
 
 func (m *Model) doctorTerminal(neutral func(string)) {

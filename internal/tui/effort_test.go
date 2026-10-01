@@ -19,8 +19,8 @@ func TestCycleEffort(t *testing.T) {
 		t.Fatalf("initial effort = %q, want unset", m.effort)
 	}
 	m.cycleEffort(1)
-	if m.effort != "low" || m.opt.Orch.ReasoningEffort != "low" {
-		t.Errorf("after one up: effort=%q orch=%q, want low/low", m.effort, m.opt.Orch.ReasoningEffort)
+	if m.effort != "low" || m.opt.Orch.Effort() != "low" {
+		t.Errorf("after one up: effort=%q orch=%q, want low/low", m.effort, m.opt.Orch.Effort())
 	}
 	m.cycleEffort(1)
 	m.cycleEffort(1)

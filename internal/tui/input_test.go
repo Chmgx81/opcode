@@ -20,15 +20,27 @@ func TestDecideInputOutcomes(t *testing.T) {
 		t.Errorf("empty draft = %v, want inputIgnored", d)
 	}
 
-	// Shell escape: user-run, no model round trip.
+	// Shell escape: user-run, no model round trip. It runs as a Cmd, so
+	// the output lands when the message comes back — the shape that
+	// keeps the render loop free while a command runs.
 	m.composer.SetValue("!echo shell-ok")
-	d, _ := m.decideInput(false)
+	d, cmd := m.decideInput(false)
 	if d != inputShell {
 		t.Errorf("shell escape = %v, want inputShell", d)
 	}
+	if cmd == nil {
+		t.Fatal("shell escape returned no command")
+	}
+	if m.shell == nil {
+		t.Error("no in-flight shell run while the command is out")
+	}
+	m.Update(cmd())
 	if last := m.entries[len(m.entries)-1]; last.kind != entryDim ||
 		!strings.Contains(last.text, "shell-ok") {
 		t.Errorf("shell escape output missing: %+v", last)
+	}
+	if m.shell != nil {
+		t.Error("the shell run outlived its reply")
 	}
 
 	// Slash command: handled by the command system, no turn.

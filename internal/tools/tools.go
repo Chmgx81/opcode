@@ -7,6 +7,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"sync"
 )
 
 // Tier is a tool's permission tier (Section 7). The gate checks the tier
@@ -40,20 +41,32 @@ type Tool interface {
 }
 
 // Registry holds the tools available to the model, in registration order.
+//
+// mu is not defensive: a mid-turn trust grant calls Register from the
+// tea goroutine while the turn goroutine is inside Defs or Get building
+// the next request. That is a real concurrent write to a real slice,
+// and append's reallocation can hand the reader a torn header.
 type Registry struct {
+	mu    sync.RWMutex
 	tools []Tool
 }
 
 func (r *Registry) Register(t Tool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.tools = append(r.tools, t)
 }
 
 // All returns every registered tool in registration order.
 func (r *Registry) All() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return append([]Tool(nil), r.tools...)
 }
 
 func (r *Registry) Get(name string) (Tool, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	for _, t := range r.tools {
 		if t.Name() == name {
 			return t, true
@@ -72,6 +85,8 @@ type Def struct {
 }
 
 func (r *Registry) Defs() []Def {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]Def, 0, len(r.tools))
 	for _, t := range r.tools {
 		out = append(out, Def{

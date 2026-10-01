@@ -97,10 +97,28 @@ func TestModelsFetchArrivalAndSelect(t *testing.T) {
 func TestModelsFetchErrorAndStaleArrival(t *testing.T) {
 	m, _ := modelPickerTestModel(t)
 
-	// A failed fetch surfaces the error with the provider named.
-	m.handleModelsFetched(modelsFetchedMsg{provider: "groq", err: errors.New("no key")})
-	if !strings.Contains(m.transcript(), "groq") {
-		t.Errorf("error entry missing provider name: %s", m.transcript())
+	// The pre-flight no-key case: the copy names the provider and the
+	// next step, and is NOT the model advice. A bare "no key" routed
+	// through the generic mapper used to answer "the provider does not
+	// serve that model" — advice about a model nobody asked about.
+	m.handleModelsFetched(modelsFetchedMsg{provider: "groq",
+		err: errors.New("no key"), hint: "no api key for groq — /login groq stores one"})
+	tr := m.transcript()
+	if !strings.Contains(tr, "groq") || !strings.Contains(tr, "/login groq") {
+		t.Errorf("no-key error does not name the next step: %s", tr)
+	}
+	if strings.Contains(tr, "does not serve that model") {
+		t.Errorf("a missing key was reported as a bad model: %s", tr)
+	}
+
+	// A live fetch failure is provider jargon, and gets the same
+	// next-step treatment a turn error gets.
+	m.entries = nil
+	m.handleModelsFetched(modelsFetchedMsg{provider: "groq",
+		err: errors.New("401 Unauthorized")})
+	tr = m.transcript()
+	if !strings.Contains(tr, "groq") || !strings.Contains(tr, "next:") {
+		t.Errorf("fetch error lacks a next step: %s", tr)
 	}
 
 	// A fetch that lands while another picker is open is noted, never

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Chmgx81/tilde/internal/sandbox"
@@ -91,6 +93,10 @@ func (RunSkillScript) Tier() Tier { return TierActionAllowed }
 // scriptTimeout bounds a skill script so a hung one cannot wedge a turn.
 const scriptTimeout = 60 * time.Second
 
+// skillOutputMaxBytes caps a script's output, like every other
+// unbounded read in the tools.
+const skillOutputMaxBytes = 1 << 20
+
 func (t RunSkillScript) Execute(ctx context.Context, args string) (string, error) {
 	var a struct {
 		Skill  string `json:"skill"`
@@ -142,14 +148,30 @@ func (t RunSkillScript) Execute(ctx context.Context, args string) (string, error
 		cmd = sandbox.Command(runCtx, "sh", scriptPath)
 	}
 	cmd.Stdin = strings.NewReader(a.Input)
-	out, err := cmd.Output()
+	// Bounded like every other unbounded read: cmd.Output would grow a
+	// buffer until the process died, and a skill script is exactly the
+	// kind of thing that can print without end.
+	var out bytes.Buffer
+	var over atomic.Bool
+	capped := &cappedWriter{w: &out, limit: skillOutputMaxBytes}
+	capped.onFull = func() {
+		over.Store(true)
+		cancel()
+	}
+	cmd.Stdout = capped
+	cmd.Stderr = capped
+	err := cmd.Run()
+	if over.Load() {
+		return "", fmt.Errorf("run_skill_script: script %s printed more than %s of output and was stopped",
+			matched, humanBytes(skillOutputMaxBytes))
+	}
 	if runCtx.Err() == context.DeadlineExceeded {
 		return "", fmt.Errorf("run_skill_script: timed out after %s", scriptTimeout)
 	}
 	if err != nil {
 		return "", fmt.Errorf("run_skill_script: %w", err)
 	}
-	result := strings.TrimSpace(string(out))
+	result := strings.TrimSpace(out.String())
 	if !json.Valid([]byte(result)) {
 		return "", fmt.Errorf("run_skill_script: script %s broke the I/O contract — stdout must be JSON, got: %.200s",
 			matched, result)

@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -154,12 +155,34 @@ func openReadable(path string) (*os.File, error) {
 	return f, nil
 }
 
-// readFileGuarded is os.ReadFile through openReadable.
+// maxFileReadBytes caps one file read. read_file is read-tier: it runs
+// in every mode with no prompt, so an uncapped io.ReadAll on a 64 MiB
+// file is the model's way to exhaust the process's memory — and under
+// a memory limit the Go runtime's OOM is a fatal, unrecoverable crash
+// that takes tilde and the turn with it. web_fetch (256 KiB), grep
+// (1 MiB per file), list_dir (500) and glob (200) are all bounded for
+// the same reason; this matches them.
+const maxFileReadBytes = 1 << 20
+
+// readFileGuarded is os.ReadFile through openReadable, capped at
+// maxFileReadBytes. edit_file and apply_patch go through here too: both
+// need the whole file to work correctly, and a model that has read the
+// cap from a failed edit will not try again with a larger one.
 func readFileGuarded(path string) ([]byte, error) {
 	f, err := openReadable(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return io.ReadAll(f)
+	data, err := io.ReadAll(io.LimitReader(f, maxFileReadBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxFileReadBytes {
+		// Silent truncation here would corrupt an edit (the context
+		// would silently not match a file past the cut) — refuse
+		// instead, and say why.
+		return nil, fmt.Errorf("%s is larger than the %d-byte read limit; read it in sections", path, maxFileReadBytes)
+	}
+	return data, nil
 }

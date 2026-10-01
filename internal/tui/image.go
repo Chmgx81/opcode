@@ -112,12 +112,17 @@ func detectImageMime(data []byte) string {
 	return ""
 }
 
+// humanBytes is a size in the largest unit that still says something.
+// Below a kibibyte the old "%.0f KiB" rounded to "0 KiB", so a small
+// paste or a tiny icon reported as zero.
 func humanBytes(n int) string {
 	switch {
 	case n >= 1<<20:
 		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
-	default:
+	case n >= 1<<10:
 		return fmt.Sprintf("%.0f KiB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
 	}
 }
 

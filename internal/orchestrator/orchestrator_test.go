@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -197,6 +198,30 @@ func TestLoopProviderErrorEndsTurnWithError(t *testing.T) {
 	}
 }
 
+func TestLoopEmptyResponseIsAnErrorAndStaysOutOfHistory(t *testing.T) {
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.UsageEvent, Usage: llm.Usage{PromptTokens: 5}}},
+		{{Type: llm.TextEvent, Text: "recovered"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, t.TempDir())
+
+	events := drain(t, orch.Send(context.Background(), "go"))
+	last := events[len(events)-1]
+	if last.Kind != EventError || !errors.Is(last.Err, ErrEmptyResponse) {
+		t.Fatalf("last event = %+v, want EventError(ErrEmptyResponse)", last)
+	}
+	for _, m := range orch.History() {
+		if m.Role == "assistant" {
+			t.Fatalf("empty reply was recorded in history: %+v", orch.History())
+		}
+	}
+
+	events = drain(t, orch.Send(context.Background(), "again"))
+	if last := events[len(events)-1]; last.Kind != EventTurnComplete {
+		t.Fatalf("session did not recover after an empty reply: %+v", last)
+	}
+}
+
 func TestLoopStopsAtMaxRounds(t *testing.T) {
 	dir := t.TempDir()
 	// Every scripted round calls the same tool again: the loop must
@@ -335,16 +360,22 @@ func TestSteerBeforeAnyTurnIsPending(t *testing.T) {
 	events := drain(t, orch.Send(context.Background(), "go"))
 
 	// The steer was queued with no turn running; it must still be
-	// delivered to the next round rather than lost or dropped silently.
+	// delivered to the next request rather than lost or dropped
+	// silently. It lands BEFORE the new message: the user typed it
+	// against the conversation that was on screen, and the new
+	// question came after.
 	if len(p.gotRequests) != 1 {
 		t.Fatalf("got %d requests, want 1", len(p.gotRequests))
 	}
 	msgs := p.gotRequests[0].Messages
 	if len(msgs) != 2 {
-		t.Fatalf("got %d messages, want user + pending steer", len(msgs))
+		t.Fatalf("got %d messages, want pending steer + user", len(msgs))
 	}
-	if msgs[len(msgs)-1].Content != "early" {
-		t.Errorf("pending steer missing: %+v", msgs[len(msgs)-1])
+	if msgs[0].Content != "early" {
+		t.Errorf("pending steer missing: %+v", msgs[0])
+	}
+	if msgs[1].Content != "go" {
+		t.Errorf("the new message must come after the steer: %+v", msgs[1])
 	}
 	var complete bool
 	for _, ev := range events {
@@ -388,8 +419,8 @@ func TestCancelledTurnReportsErrCancelled(t *testing.T) {
 	}
 	orch, _ := newTestOrchestrator(p, nil, dir)
 	ctx, cancel := context.WithCancel(context.Background())
-	events := orch.Send(ctx, "go")
 	cancel()
+	events := orch.Send(ctx, "go")
 
 	var got error
 	for ev := range events {
@@ -1110,5 +1141,510 @@ func TestStaleCompactionIsDiscardedAfterSeed(t *testing.T) {
 	}
 	if h := orch.History(); len(h) != 1 || h[0].Content != "resumed" {
 		t.Errorf("history = %+v, want the resumed one untouched", h)
+	}
+}
+
+// toolHeavyHistory is a long, tool-heavy conversation: a user message,
+// an assistant turn that calls one tool, and that tool's result. Its
+// length decides where the fixed-count cut lands, so a range of
+// lengths sweeps every alignment against a tool round.
+func toolHeavyHistory(n int) []llm.Message {
+	var out []llm.Message
+	for i := 0; len(out) < n; i++ {
+		id := fmt.Sprintf("c%d", i)
+		out = append(out,
+			llm.Message{Role: "user", Content: fmt.Sprintf("q%d", i)},
+			llm.Message{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: id, Name: "read_file", Arguments: `{}`}}},
+			llm.Message{Role: "tool", ToolCallID: id, Content: "contents"},
+		)
+	}
+	return out[:n]
+}
+
+// allToolResults builds a history that is nothing but tool results.
+// Nothing can be done for it — the messages cannot be answered by
+// anything in the list — so the only correct outcome is no compaction
+// at all.
+func allToolResults(n int) []llm.Message {
+	out := make([]llm.Message, n)
+	for i := range out {
+		out[i] = llm.Message{Role: "tool", ToolCallID: fmt.Sprintf("c%d", i), Content: "contents"}
+	}
+	return out
+}
+
+// allUserMessages and allPlainAnswers cover the shapes that cannot break
+// the cut, and are here so a future change to compactionCut is caught
+// when it starts mangling them.
+func allUserMessages(n int) []llm.Message {
+	out := make([]llm.Message, n)
+	for i := range out {
+		out[i] = llm.Message{Role: "user", Content: fmt.Sprintf("q%d", i)}
+	}
+	return out
+}
+
+func allPlainAnswers(n int) []llm.Message {
+	out := make([]llm.Message, n)
+	for i := range out {
+		out[i] = llm.Message{Role: "assistant", Content: fmt.Sprintf("a%d", i)}
+	}
+	return out
+}
+
+// multiCallHistory: rounds that call three tools at once, and assistant
+// turns that speak before calling — both make the tool runs longer than
+// one message, so a count-based cut has more ways to land mid-round.
+func multiCallHistory(rounds int) []llm.Message {
+	var out []llm.Message
+	for i := 0; i < rounds; i++ {
+		prefix := fmt.Sprintf("c%d-", i)
+		calls := make([]llm.ToolCall, 3)
+		for j := range calls {
+			calls[j] = llm.ToolCall{ID: fmt.Sprintf("%s%d", prefix, j), Name: "read_file", Arguments: `{}`}
+		}
+		out = append(out, llm.Message{Role: "user", Content: fmt.Sprintf("q%d", i)},
+			llm.Message{Role: "assistant", Content: "looking", ToolCalls: calls})
+		for _, c := range calls {
+			out = append(out, llm.Message{Role: "tool", ToolCallID: c.ID, Content: "contents"})
+		}
+	}
+	return out
+}
+
+// TestCompactionLeavesAListTheProviderAccepts: the cut that keeps the
+// newest keepRecent messages is a COUNT, so in a tool-heavy session it
+// regularly lands in the middle of a tool round. The kept tail then
+// opens with a tool result whose assistant tool_calls were summarized
+// away, and every provider answers that with a hard 400. The cut has
+// to move back to a boundary the wire accepts.
+func TestCompactionLeavesAListTheProviderAccepts(t *testing.T) {
+	type compactionCase struct {
+		name    string
+		history []llm.Message
+		// unsummarizable marks a history that is malformed before
+		// compaction ever sees it — nothing here can answer a tool
+		// result, so the only correct outcome is no compaction.
+		unsummarizable bool
+	}
+	cases := []compactionCase{
+		{name: "empty", history: nil},
+		{name: "one message", history: allUserMessages(1)},
+		{name: "shorter than keepRecent", history: allUserMessages(3)},
+		{name: "exactly keepRecent", history: allUserMessages(4)},
+		{name: "just over the floor", history: allUserMessages(7)},
+		{name: "all user", history: allUserMessages(20)},
+		{name: "all plain answers", history: allPlainAnswers(20)},
+		{name: "all tool results", history: allToolResults(20), unsummarizable: true},
+		{name: "multi-call rounds", history: multiCallHistory(6)},
+	}
+	// Every alignment of the count-based cut against a tool round.
+	for n := 6; n <= 20; n++ {
+		cases = append(cases, compactionCase{
+			name:    fmt.Sprintf("tool heavy, %d messages", n),
+			history: toolHeavyHistory(n),
+		})
+	}
+	// The exact shape the bug was found with: the recap stands in for
+	// the first user message and its tool call, and the tail starts
+	// with a tool result.
+	cases = append(cases, compactionCase{
+		name: "recap then a tool round the count cuts into",
+		history: append(
+			[]llm.Message{{Role: "user", Content: "Context recap: earlier work"}},
+			toolHeavyHistory(20)...),
+	})
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var seen []llm.ChatRequest
+			p := funcProvider(func(ctx context.Context, req llm.ChatRequest) (<-chan llm.ChatEvent, error) {
+				mu.Lock()
+				seen = append(seen, req)
+				mu.Unlock()
+				return eventsChan(llm.ChatEvent{Type: llm.TextEvent, Text: "recap"}), nil
+			})
+			orch, _ := newTestOrchestrator(p, nil, t.TempDir())
+			orch.ContextWindow = 1000
+			orch.Seed(tc.history)
+			orch.setPromptTokens(300)
+			orch.compactionCandidate() // anchors the baseline
+			orch.setPromptTokens(900)  // growth past the trigger
+
+			if _, err := orch.maybeCompact(context.Background(), InjectRecapFirst); err != nil {
+				t.Fatalf("maybeCompact: %v", err)
+			}
+
+			// The summarizer round is a request too, carrying the
+			// summarized prefix on its own: it must be a list a
+			// provider accepts as well.
+			for i, req := range seen {
+				if !strings.HasPrefix(req.System, "Summarize") {
+					continue
+				}
+				if err := Validate(req.Messages); err != nil {
+					t.Errorf("summary request %d is malformed: %v", i, err)
+				}
+			}
+			if tc.unsummarizable {
+				// Compaction must decline rather than send a prefix
+				// whose tool results answer nothing.
+				if len(seen) != 0 {
+					t.Errorf("summarizer ran on a history it cannot summarize")
+				}
+				if len(orch.History()) != len(tc.history) {
+					t.Errorf("history was rewritten: %d messages, want the %d seeded",
+						len(orch.History()), len(tc.history))
+				}
+				return
+			}
+			assertTailIsAnswerable(t, orch.History())
+		})
+	}
+}
+
+// assertTailIsAnswerable checks the invariants a compaction cut can
+// break, written out rather than delegated to Validate: a test that
+// calls the function under test proves nothing about it.
+func assertTailIsAnswerable(t *testing.T, msgs []llm.Message) {
+	t.Helper()
+	if len(msgs) > 0 && msgs[0].Role == "tool" {
+		t.Errorf("compacted history opens with a tool result: %+v", msgs[0])
+	}
+	asked := map[string]bool{}
+	for i, m := range msgs {
+		switch m.Role {
+		case "assistant":
+			asked = map[string]bool{}
+			for _, tc := range m.ToolCalls {
+				asked[tc.ID] = true
+			}
+		case "tool":
+			if !asked[m.ToolCallID] {
+				t.Errorf("message %d: tool result %q answers no surviving assistant tool call", i, m.ToolCallID)
+			}
+		}
+	}
+}
+
+// TestCompactionStillSummarizesAKeptTail: the boundary must not cost
+// the compaction its purpose. On a history whose tail is already at a
+// safe boundary, exactly keepRecent messages survive verbatim.
+func TestCompactionStillSummarizesAKeptTail(t *testing.T) {
+	orch, _ := newTestOrchestrator(&fakeProvider{}, nil, t.TempDir())
+	orch.ContextWindow = 1000
+	orch.Seed([]llm.Message{
+		{Role: "user", Content: "q1"}, {Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"}, {Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "q3"}, {Role: "assistant", Content: "a3"},
+		{Role: "user", Content: "q4"},
+	})
+	orch.setPromptTokens(300)
+	orch.compactionCandidate()
+	orch.setPromptTokens(900)
+	old, gen := orch.compactionCandidate()
+	if old == nil {
+		t.Fatal("expected compaction to be due")
+	}
+	if len(old) != 7-keepRecent {
+		t.Errorf("summarized %d messages, want %d", len(old), 7-keepRecent)
+	}
+	if !orch.applyCompaction(gen, len(old), llm.Message{Role: "user", Content: "recap"}, InjectRecapFirst) {
+		t.Fatal("applyCompaction refused a live generation")
+	}
+	if got := len(orch.History()); got != keepRecent+1 {
+		t.Errorf("compacted history = %d messages, want %d kept + recap", got, keepRecent)
+	}
+}
+
+// TestCompactionCutStopsAtAProtocolBoundary: the cut itself, over the
+// shapes that can break it. A cut of 0 means there is no boundary at
+// all in the history, and compactionCandidate refuses to compact then.
+func TestCompactionCutStopsAtAProtocolBoundary(t *testing.T) {
+	tests := []struct {
+		name    string
+		history []llm.Message
+		want    int
+	}{
+		{"empty", nil, -keepRecent},
+		{"shorter than the kept tail", allUserMessages(3), -1},
+		{"tail already at a boundary", allUserMessages(9), 5},
+		// A tool round is user, assistant, tool: walking back from
+		// the tool result stops on the assistant that owns it, which
+		// is a boundary the wire accepts.
+		{"tail would open on a tool result", toolHeavyHistory(12), 7},
+		// A three-call round: the walk stops on its assistant.
+		{"tail would open on a tool result of a long round", multiCallHistory(6), 26},
+		{"nothing survives the walk back", allToolResults(20), 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := compactionCut(tc.history)
+			if got != tc.want {
+				t.Fatalf("cut = %d, want %d", got, tc.want)
+			}
+			if got <= 0 {
+				return // nothing to keep; the candidate gate refuses
+			}
+			tail := tc.history[got:]
+			if tail[0].Role == "tool" {
+				t.Errorf("tail opens on a tool result: %+v", tail[0])
+			}
+			if prev := tc.history[got-1]; prev.Role == "assistant" && len(prev.ToolCalls) > 0 {
+				t.Errorf("tail starts right after %+v", prev)
+			}
+		})
+	}
+}
+
+// TestValidateRejectsWhatProvidersReject: the invariants themselves.
+// Each case is a list that reached history through a different bug.
+func TestValidateRejectsWhatProvidersReject(t *testing.T) {
+	// ok means the list must pass. The three passing cases are there
+	// to keep the check from becoming a blunt "reject anything odd":
+	// a list the providers accept is not an error.
+	tests := []struct {
+		name string
+		msgs []llm.Message
+		ok   bool
+	}{
+		{"empty is fine", nil, true},
+		{"a plain exchange is fine", []llm.Message{
+			{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}, true},
+		{"images make an empty user message valid", []llm.Message{
+			{Role: "user", Images: []llm.Image{{MimeType: "image/png", Data: []byte("x")}}},
+			{Role: "assistant", Content: "a screenshot"}}, true},
+		{"a tool result with nothing before it", []llm.Message{
+			{Role: "tool", ToolCallID: "c1", Content: "result"}}, false},
+		{"a tool result whose call was summarized away", []llm.Message{
+			{Role: "user", Content: "recap"},
+			{Role: "tool", ToolCallID: "c1", Content: "result"},
+			{Role: "assistant", Content: "ok"}}, false},
+		{"a tool result with an empty id", []llm.Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "", Name: "read_file"}}},
+			{Role: "tool", ToolCallID: "", Content: "result"}}, false},
+		{"a tool result answering a later round's call", []llm.Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "c1", Name: "read_file"}}},
+			{Role: "tool", ToolCallID: "c2", Content: "result"}}, false},
+		{"an empty user message", []llm.Message{
+			{Role: "user"}, {Role: "assistant", Content: "hello"}}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(tc.msgs)
+			if tc.ok && err != nil {
+				t.Errorf("Validate = %v, want nil", err)
+			}
+			if !tc.ok && err == nil {
+				t.Errorf("Validate accepted a list every provider rejects: %+v", tc.msgs)
+			}
+		})
+	}
+}
+
+// TestMalformedToolCallIsReportedAndNeverRecorded: a call the provider
+// emitted without an id has no tool result it can be attached to, and
+// one without a name has nothing to run. Either used to enter history
+// as an unanswered tool_calls entry, which the next request rejects.
+// The model must still be told, as a normal message.
+func TestMalformedToolCallIsReportedAndNeverRecorded(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "readable.txt")
+	if err := os.WriteFile(target, []byte("the file contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "", Name: "read_file", Arguments: fmt.Sprintf(`{"path": %q}`, target)}},
+			{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c2", Name: "", Arguments: `{}`}},
+			{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c3", Name: "read_file", Arguments: fmt.Sprintf(`{"path": %q}`, target)}}},
+		{{Type: llm.TextEvent, Text: "ok"}},
+	}}
+	orch, _ := newTestOrchestrator(p, nil, dir)
+	drain(t, orch.Send(context.Background(), "go"))
+
+	h := orch.History()
+	if err := Validate(h); err != nil {
+		t.Fatalf("history a provider would reject: %v\n%+v", err, h)
+	}
+	if err := Validate(p.gotRequests[1].Messages); err != nil {
+		t.Fatalf("the model was sent a list it rejects: %v", err)
+	}
+	// The two malformed calls are reported; neither is recorded as a
+	// call, so nothing is left waiting for a result that cannot exist.
+	asst := h[1]
+	if len(asst.ToolCalls) != 1 || asst.ToolCalls[0].ID != "c3" {
+		t.Fatalf("assistant message = %+v, want only the well-formed call", asst)
+	}
+	if h[2].Role != "tool" || h[2].ToolCallID != "c3" {
+		t.Fatalf("message 2 = %+v, want the result for c3", h[2])
+	}
+	// The well-formed call in the same round still ran.
+	if !strings.Contains(h[2].Content, "the file contents") {
+		t.Errorf("the valid call was not executed: %q", h[2].Content)
+	}
+	// The notes land after the round's results: a user message in
+	// between would push a tool_result out of the turn it answers.
+	for _, m := range h[3:5] {
+		if m.Role != "user" || !strings.Contains(m.Content, "was not run") {
+			t.Errorf("malformed call not reported to the model: %+v", m)
+		}
+	}
+}
+
+// TestRoundCapsToolCallsAndAnswersTheRest: MaxToolRounds bounds rounds,
+// not calls, so one round could append thousands of tool results to a
+// single history. The excess is answered with an error rather than
+// dropped — a dropped call would leave its tool_calls unanswered and
+// the next request would 400.
+func TestRoundCapsToolCallsAndAnswersTheRest(t *testing.T) {
+	counter := &countingTool{}
+	round := make([]llm.ChatEvent, 0, 100)
+	for i := 0; i < 100; i++ {
+		round = append(round, llm.ChatEvent{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+			ID: fmt.Sprintf("c%d", i), Name: "count", Arguments: `{}`}})
+	}
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		round,
+		{{Type: llm.TextEvent, Text: "ok"}},
+	}}
+	orch, reg := newTestOrchestrator(p, nil, t.TempDir())
+	reg.Register(counter)
+	drain(t, orch.Send(context.Background(), "go"))
+
+	if got := counter.n.Load(); got != maxCallsPerRound {
+		t.Errorf("executed %d calls, want the cap of %d", got, maxCallsPerRound)
+	}
+	h := orch.History()
+	if err := Validate(h); err != nil {
+		t.Fatalf("history a provider would reject: %v", err)
+	}
+	if len(h) != 2+100+1 {
+		t.Fatalf("history = %d messages, want every one of the 100 calls answered", len(h))
+	}
+	if len(h[1].ToolCalls) != 100 {
+		t.Errorf("assistant message carries %d calls, want all 100 recorded", len(h[1].ToolCalls))
+	}
+	for i, m := range h[2:102] {
+		if m.Role != "tool" || m.ToolCallID != fmt.Sprintf("c%d", i) {
+			t.Fatalf("message %d = %+v, want the result for c%d", i+2, m, i)
+		}
+		if over := i >= maxCallsPerRound; over && !strings.Contains(m.Content, "too many tool calls") {
+			t.Errorf("message %d was not told why it did not run: %q", i+2, m.Content)
+		} else if !over && strings.Contains(m.Content, "too many tool calls") {
+			t.Errorf("message %d was refused, but it is inside the cap: %q", i+2, m.Content)
+		}
+	}
+}
+
+// countingTool records how often it ran, so the per-round cap can be
+// counted rather than inferred.
+type countingTool struct{ n atomic.Int64 }
+
+func (*countingTool) Name() string        { return "count" }
+func (*countingTool) Description() string { return "counts its executions" }
+func (*countingTool) Parameters() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+func (*countingTool) Tier() tools.Tier { return tools.TierReadOnly }
+func (c *countingTool) Execute(ctx context.Context, args string) (string, error) {
+	c.n.Add(1)
+	return "counted", nil
+}
+
+// TestSteerLandsWhereTheUserTypedIt covers both timings of a steer.
+// Mid-round it folds in at the round boundary. Typed after the turn has
+// already ended there is no boundary left: the text used to sit in the
+// queue until the NEXT user message, which put it after the new
+// question in the model's context while the transcript showed it under
+// the turn the user was actually looking at.
+func TestSteerLandsWhereTheUserTypedIt(t *testing.T) {
+	t.Run("mid-round, at the boundary", func(t *testing.T) {
+		steered := make(chan struct{})
+		p := &steerableProvider{steered: steered, rounds: [][]llm.ChatEvent{
+			{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
+				ID: "call-1", Name: "read_file", Arguments: `{"path": "x"}`}}},
+			{{Type: llm.TextEvent, Text: "done"}},
+		}}
+		orch, _ := newTestOrchestrator(p, nil, t.TempDir())
+		events := orch.Send(context.Background(), "go")
+		p.waitForRequest(t)
+		orch.Steer("use path y instead")
+		close(steered)
+		for ev := range events {
+			if ev.Kind == EventError {
+				t.Fatalf("unexpected error: %v", ev.Err)
+			}
+		}
+		last := p.gotRequests[1].Messages
+		if last[len(last)-1].Content != "use path y instead" {
+			t.Errorf("steer not folded in after the tool result: %+v", last)
+		}
+	})
+
+	t.Run("after the turn ended, before the next question", func(t *testing.T) {
+		p := &fakeProvider{rounds: [][]llm.ChatEvent{
+			{{Type: llm.TextEvent, Text: "turn one done"}},
+			{{Type: llm.TextEvent, Text: "turn two done"}},
+		}}
+		orch, _ := newTestOrchestrator(p, nil, t.TempDir())
+		drain(t, orch.Send(context.Background(), "first question"))
+
+		// The turn is over and the user steers the conversation they
+		// are looking at, then types a new question.
+		orch.Steer("late steer")
+		drain(t, orch.Send(context.Background(), "second question"))
+
+		msgs := p.gotRequests[1].Messages
+		if len(msgs) != 4 {
+			t.Fatalf("second request has %d messages: %+v", len(msgs), msgs)
+		}
+		if msgs[2].Role != "user" || msgs[2].Content != "late steer" {
+			t.Errorf("the steer is not where the user typed it: %+v", msgs[2])
+		}
+		if msgs[3].Content != "second question" {
+			t.Errorf("the new question must follow the steer: %+v", msgs[3])
+		}
+	})
+}
+
+// TestEffortIsSafeToReadWhileItIsSwitched: the effort is written by the
+// UI goroutine (SetEffort, mid-turn switch) and read for every request
+// and every subagent. Reading the field directly is a data race; the
+// accessor is what makes it safe, and this is the only thing that keeps
+// it that way.
+func TestEffortIsSafeToReadWhileItIsSwitched(t *testing.T) {
+	orch, _ := newTestOrchestrator(&fakeProvider{}, nil, t.TempDir())
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for _, effort := range []string{"low", "medium", "high", ""} {
+			for i := 0; i < 200; i++ {
+				orch.SetEffort(effort)
+			}
+		}
+		close(stop)
+	}()
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = orch.Effort()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if got := orch.Effort(); got != "" {
+		t.Errorf("Effort() = %q, want the last write", got)
 	}
 }

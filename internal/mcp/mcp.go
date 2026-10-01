@@ -379,7 +379,7 @@ func (c *Client) listTools(ctx context.Context) ([]ToolDef, error) {
 		if t.InputSchema == nil {
 			t.InputSchema = json.RawMessage(`{"type": "object"}`)
 		}
-		defs = append(defs, ToolDef{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
+		defs = append(defs, ToolDef(t))
 	}
 	return defs, nil
 }

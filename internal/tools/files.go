@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -16,7 +17,7 @@ type ReadFile struct{}
 func (ReadFile) Name() string { return "read_file" }
 
 func (ReadFile) Description() string {
-	return "Read a file's contents from disk. Paths are relative to the current working directory unless absolute."
+	return "Read a file's contents from disk. Paths are relative to the current working directory unless absolute. Content is capped at 1 MiB; a larger file is truncated and says so."
 }
 
 func (ReadFile) Parameters() json.RawMessage {
@@ -41,11 +42,28 @@ func (ReadFile) Execute(ctx context.Context, args string) (string, error) {
 	if a.Path == "" {
 		return "", fmt.Errorf("read_file: path is required")
 	}
-	data, err := readFileGuarded(a.Path)
+	// read_file is read-tier, so it is never prompted: the cap is the
+	// only thing between a large file and an out-of-memory crash.
+	// Truncation is reported in the text, the way web_fetch does it,
+	// so the model knows it is not seeing the whole file.
+	f, err := openReadable(a.Path)
 	if err != nil {
 		return "", fmt.Errorf("read_file: %w", err)
 	}
-	return string(data), nil
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxFileReadBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("read_file: %w", err)
+	}
+	truncated := len(data) > maxFileReadBytes
+	if truncated {
+		data = data[:maxFileReadBytes]
+	}
+	out := string(data)
+	if truncated {
+		out += "\n… (truncated at 1 MiB; read the rest in sections with offset or grep)"
+	}
+	return out, nil
 }
 
 // ListDir lists a directory's entries, one per line, directories

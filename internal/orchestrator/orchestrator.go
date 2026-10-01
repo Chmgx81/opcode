@@ -55,6 +55,14 @@ type Event struct {
 // loop cannot spin forever. 25 is far beyond any legitimate use.
 const MaxToolRounds = 25
 
+// maxCallsPerRound bounds the tool calls dispatched from ONE model
+// round. MaxToolRounds bounds rounds, not calls: a single round can
+// emit thousands of calls, and each one appends its arguments and
+// result to history. Past the cap the extra calls are answered with an
+// error result rather than dropped — a dropped call would leave its
+// assistant tool_calls unanswered, which the next request rejects.
+const maxCallsPerRound = 32
+
 // maxToolResultChars caps what a tool result contributes to the context.
 // bash output in particular can be enormous; the model gets the head
 // of it and a note that it was truncated.
@@ -144,15 +152,22 @@ func New(provider llm.Provider, model, system string, registry *tools.Registry, 
 	}
 }
 
-// SetMode switches the permission mode. The next model request picks up
-// the new tool set and mode instruction; the gate's Decide callback is
-// the caller's to rebuild (it owns the prompt plumbing).
 // SetEffort switches the reasoning effort; the next model request
 // carries it.
 func (o *Orchestrator) SetEffort(effort string) {
 	o.cfgMu.Lock()
 	defer o.cfgMu.Unlock()
 	o.ReasoningEffort = effort
+}
+
+// Effort reports the live reasoning effort. Read it through this method,
+// never off the field: SetEffort is called from the UI goroutine while
+// the turn goroutine is streaming, so the field alone is a data race
+// (the subagent runner reads it for every child it starts).
+func (o *Orchestrator) Effort() string {
+	o.cfgMu.Lock()
+	defer o.cfgMu.Unlock()
+	return o.ReasoningEffort
 }
 
 // SetMode switches the permission mode. The next model request picks
@@ -265,6 +280,22 @@ func (o *Orchestrator) Steer(text string) {
 	o.pendingSteer = append(o.pendingSteer, text)
 }
 
+// drainSteerIntoHistory folds every pending steering message into the
+// history as user messages. The turn calls it at each round boundary;
+// a new message calls it first, so a steer that missed the last
+// boundary still lands where the user meant it.
+func (o *Orchestrator) drainSteerIntoHistory() {
+	steers := o.drainSteer()
+	if len(steers) == 0 {
+		return
+	}
+	msgs := make([]llm.Message, len(steers))
+	for i, steer := range steers {
+		msgs[i] = llm.Message{Role: "user", Content: steer}
+	}
+	o.appendHistory(msgs...)
+}
+
 // drainSteer returns and clears pending steering messages.
 func (o *Orchestrator) drainSteer() []string {
 	o.steerMu.Lock()
@@ -290,6 +321,13 @@ func (o *Orchestrator) SendImages(ctx context.Context, userText string, images [
 	go func() {
 		defer close(events)
 		defer o.turnWg.Done()
+		// A steer typed after the previous turn's last round boundary
+		// is still queued here. Land it BEFORE the new message, or it
+		// rides into this turn after the question it was meant to
+		// refine — the transcript shows it under the earlier turn, so
+		// any other order makes the display and the model's context
+		// disagree.
+		o.drainSteerIntoHistory()
 		o.appendHistory(llm.Message{Role: "user", Content: userText, Images: images})
 		if err := o.runTurn(ctx, events); err != nil {
 			if ctx.Err() != nil {
@@ -301,6 +339,10 @@ func (o *Orchestrator) SendImages(ctx context.Context, userText string, images [
 	return events
 }
 
+// ErrEmptyResponse ends a turn whose model reply carried neither text
+// nor tool calls.
+var ErrEmptyResponse = errors.New("the model returned an empty response — send your message again, or switch models with /model")
+
 func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 	for round := 0; ; round++ {
 		if round >= MaxToolRounds {
@@ -311,13 +353,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		}
 		// Steering checkpoint: between rounds is the moment the spec
 		// promises — the previous tool call has finished.
-		if steers := o.drainSteer(); len(steers) > 0 {
-			msgs := make([]llm.Message, len(steers))
-			for i, steer := range steers {
-				msgs[i] = llm.Message{Role: "user", Content: steer}
-			}
-			o.appendHistory(msgs...)
-		}
+		o.drainSteerIntoHistory()
 		pos := InjectRecapFirst
 		if round > 0 {
 			// Mid-turn: the history ends in tool results and the
@@ -343,6 +379,13 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		// off the same snapshot, read under cfgMu so a mid-turn mode
 		// or effort switch cannot tear the request.
 		msgs := o.History()
+		// Every provider 400s on a malformed list, and a 400 is the
+		// worst possible report of our own bookkeeping bug: it says
+		// nothing about which message is wrong. Check the wire
+		// invariants here so the turn fails with the offending index.
+		if err := Validate(msgs); err != nil {
+			return fmt.Errorf("refusing to send a malformed history to the model: %w", err)
+		}
 		o.cfgMu.Lock()
 		provider, model, system, effort := o.Provider, o.Model, o.systemPrompt(), o.ReasoningEffort
 		o.cfgMu.Unlock()
@@ -382,6 +425,21 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			}
 		}
 
+		// A call the provider emitted without an id has no tool result
+		// it could be attached to, and one without a name has nothing
+		// to run. Recording either as a call is a hard 400 on the next
+		// request — an assistant tool_call the provider cannot match —
+		// so they are kept out of the assistant message entirely and
+		// reported as ordinary user notes afterwards.
+		calls, unanswerable := partitionCalls(calls)
+		if content == "" && len(calls) == 0 && len(unanswerable) == 0 {
+			// Nothing came back: no text, no calls. Recording an
+			// empty assistant message would poison the session (the
+			// Anthropic wire rejects an empty text block on every
+			// later request), and ending the turn quietly would
+			// look like tilde hung. Say so; the user can resend.
+			return ErrEmptyResponse
+		}
 		o.appendHistory(llm.Message{
 			Role:      "assistant",
 			Content:   content,
@@ -389,29 +447,40 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 		})
 
 		if len(calls) == 0 {
+			o.reportMalformedCalls(events, unanswerable)
 			events <- Event{Kind: EventTurnComplete}
 			return nil
 		}
 
 		for i, call := range calls {
 			events <- Event{Kind: EventToolStart, ToolCall: call}
-			result, err := o.dispatch(ctx, call)
-			if err != nil {
-				if ctx.Err() != nil {
-					o.answerCancelledCalls(calls[i:])
-					return ErrCancelled
-				}
-				// Tool failures go back to the model as the tool
-				// result; it can correct itself. The tool's own
-				// output — the shell's stderr, a sandbox-denial
-				// note — is the evidence of what actually failed,
-				// so it stays beside the error headline; without
-				// it the model could not see the failure's cause.
-				// Only harness-level errors end the turn.
-				out := strings.TrimSpace(result)
-				result = "error: " + err.Error()
-				if out != "" {
-					result += "\n" + out
+			var result string
+			if i >= maxCallsPerRound {
+				// Over the cap. The call is still answered, so the
+				// assistant's tool_calls each have their result; the
+				// model can recover on the next round instead of
+				// losing the whole round to a 400.
+				result = fmt.Sprintf("error: too many tool calls in one round; only the first %d were run", maxCallsPerRound)
+			} else {
+				out, err := o.dispatch(ctx, call)
+				if err != nil {
+					if ctx.Err() != nil {
+						o.answerCancelledCalls(calls[i:])
+						return ErrCancelled
+					}
+					// Tool failures go back to the model as the tool
+					// result; it can correct itself. The tool's own
+					// output — the shell's stderr, a sandbox-denial
+					// note — is the evidence of what actually failed,
+					// so it stays beside the error headline; without
+					// it the model could not see the failure's cause.
+					// Only harness-level errors end the turn.
+					result = "error: " + err.Error()
+					if trimmed := strings.TrimSpace(out); trimmed != "" {
+						result += "\n" + trimmed
+					}
+				} else {
+					result = out
 				}
 			}
 			o.appendHistory(llm.Message{
@@ -421,6 +490,50 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			})
 			events <- Event{Kind: EventToolResult, ToolCall: call, ToolResult: result}
 		}
+		o.reportMalformedCalls(events, unanswerable)
+	}
+}
+
+// reportMalformedCalls tells the model about the calls that could
+// neither be run nor recorded. They arrive as user messages, after the
+// round's tool results: a user message between an assistant's tool_calls
+// and their results would push the results out of the turn they answer,
+// which Anthropic rejects. Each call still gets a start and a result
+// event, because the UI renders tool calls from the event stream and a
+// call that never resolves would sit there forever.
+func (o *Orchestrator) reportMalformedCalls(events chan<- Event, calls []llm.ToolCall) {
+	for _, call := range calls {
+		result := "error: " + malformedCallError(call)
+		o.appendHistory(llm.Message{Role: "user", Content: result})
+		events <- Event{Kind: EventToolStart, ToolCall: call}
+		events <- Event{Kind: EventToolResult, ToolCall: call, ToolResult: result}
+	}
+}
+
+// partitionCalls splits a round's calls into the ones a tool result can
+// be attached to and the ones that cannot: a call with no id, or with
+// no name, has no matching message on the wire. Order is kept within
+// each group so the executed calls stay in the order the model emitted.
+func partitionCalls(calls []llm.ToolCall) (answerable, unanswerable []llm.ToolCall) {
+	for _, call := range calls {
+		if call.ID == "" || call.Name == "" {
+			unanswerable = append(unanswerable, call)
+			continue
+		}
+		answerable = append(answerable, call)
+	}
+	return answerable, unanswerable
+}
+
+// malformedCallError says why a call cannot be run or recorded.
+func malformedCallError(call llm.ToolCall) string {
+	switch {
+	case call.ID == "" && call.Name == "":
+		return "the model emitted a tool call with no id and no name; it was not run"
+	case call.ID == "":
+		return fmt.Sprintf("the model emitted a call to %q with no id; it was not run", call.Name)
+	default:
+		return "the model emitted a tool call with no name; it was not run"
 	}
 }
 
@@ -439,7 +552,16 @@ func (o *Orchestrator) answerCancelledCalls(calls []llm.ToolCall) {
 
 // dispatch resolves the tool and runs it through the permission gate.
 // An unknown tool is reported to the model rather than failing the turn.
+// A call that cannot even be named or identified is a harness-level
+// error: there is nothing to look up and no result to attach it to, so
+// it must not come back as a nil error with a nil tool.
 func (o *Orchestrator) dispatch(ctx context.Context, call llm.ToolCall) (string, error) {
+	if call.Name == "" {
+		return "", errors.New("the model emitted a tool call with no name; there is nothing to run")
+	}
+	if call.ID == "" {
+		return "", errors.New("the model emitted a tool call with no id; its result could not be matched to it")
+	}
 	tool, ok := o.Registry.Get(call.Name)
 	if !ok {
 		return fmt.Sprintf("error: no tool named %q", call.Name), nil
@@ -475,7 +597,9 @@ func truncate(s string) string {
 const CompactionFraction = 0.75
 
 // keepRecent is how many of the newest messages survive a compaction
-// verbatim; everything older becomes the recap.
+// verbatim; everything older becomes the recap. It is a count, so the
+// cut it implies can land in the middle of a tool round — compactionCut
+// moves the real cut back to a boundary the wire accepts.
 const keepRecent = 4
 
 // InjectionPos says where a compaction recap lands in the history.
@@ -546,12 +670,41 @@ func (o *Orchestrator) compactionCandidate() ([]llm.Message, uint64) {
 	if growth < int(float64(remaining)*CompactionFraction) {
 		return nil, 0
 	}
-	if len(o.history) <= keepRecent+2 {
-		return nil, 0 // not enough worth summarizing
+	cut := compactionCut(o.history)
+	if cut <= 2 {
+		// Nothing worth summarizing — either the history is shorter
+		// than the kept tail, or the safe boundary sits so far back
+		// that summarizing the rest would drop the conversation.
+		return nil, 0
 	}
-	old := make([]llm.Message, len(o.history)-keepRecent)
+	old := make([]llm.Message, cut)
 	copy(old, o.history)
+	// The summarizer round is a request of its own, and it carries
+	// this prefix alone. A prefix that is malformed on its own — a
+	// hand-seeded or resumed history that starts with a tool result —
+	// would 400, so skip the compaction instead.
+	if Validate(old) != nil {
+		return nil, 0
+	}
 	return old, o.histGen
+}
+
+// compactionCut returns where the compaction cut may fall: the
+// keepRecent-th-from-last boundary, walked back until the tail can
+// stand on its own. A count alone is not a safe cut — a tool-heavy
+// session puts a tool result at that index, and the tail then opens
+// with a tool result whose assistant tool_calls were summarized away.
+// OpenAI answers 400 ("tool message without preceding tool_calls") and
+// Anthropic 400s on the unknown tool_use_id. So the tail must not
+// start on a tool result, and must not start right after an assistant
+// that is still carrying tool_calls.
+func compactionCut(history []llm.Message) int {
+	cut := len(history) - keepRecent
+	for cut > 0 && (history[cut].Role == "tool" ||
+		(history[cut-1].Role == "assistant" && len(history[cut-1].ToolCalls) > 0)) {
+		cut--
+	}
+	return cut
 }
 
 // applyCompaction swaps the summarized prefix (the first nOld messages)
@@ -618,4 +771,46 @@ func (o *Orchestrator) summarize(ctx context.Context, old []llm.Message) (string
 		return "", fmt.Errorf("summarizer returned nothing")
 	}
 	return s, nil
+}
+
+// Validate reports whether msgs is a message list the providers will
+// accept. Every invariant here is a hard 400 in both wire formats, and
+// each one has been produced by real bookkeeping mistakes: a compaction
+// cut that split a tool round in two, a tool call the provider emitted
+// without an id, a resumed session whose only content was an image.
+// Checking here turns an opaque provider rejection into a message that
+// names the offending index.
+func Validate(msgs []llm.Message) error {
+	// IDs of the tool calls each assistant message is still waiting
+	// on. A tool result may only consume one of these, and only while
+	// its assistant turn is the one being answered.
+	pending := map[string]bool{}
+	for i, m := range msgs {
+		switch m.Role {
+		case "tool":
+			if len(pending) == 0 {
+				return fmt.Errorf("message %d: tool result for %q has no assistant tool call before it", i, m.ToolCallID)
+			}
+			if !pending[m.ToolCallID] {
+				return fmt.Errorf("message %d: tool result for %q does not match any tool call of the assistant message it follows", i, m.ToolCallID)
+			}
+			delete(pending, m.ToolCallID)
+		case "assistant":
+			// A new assistant turn retires the previous one's
+			// unanswered calls: the round is over, and the providers
+			// would reject the older results at this point anyway.
+			pending = map[string]bool{}
+			for _, tc := range m.ToolCalls {
+				if tc.ID == "" {
+					return fmt.Errorf("message %d: assistant calls %q with no id, so no result can match it", i, tc.Name)
+				}
+				pending[tc.ID] = true
+			}
+		case "user":
+			if m.Content == "" && len(m.Images) == 0 {
+				return fmt.Errorf("message %d: user message has no content and no image", i)
+			}
+		}
+	}
+	return nil
 }

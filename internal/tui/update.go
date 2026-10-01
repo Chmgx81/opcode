@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// keep it sized to the box: terminal minus border+padding.
 		m.composer.SetWidth(maxInt(msg.Width-2, 10))
 		m.resizeComposer()
+		m.syncComposerPlaceholder()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -67,7 +69,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.awaitingPlan = msg.req
 		// The plan lands in the transcript rendered as markdown; the
 		// approval prompt below the composer carries the decision.
-		m.add(entry{kind: entryPlan, text: msg.req.plan})
+		//
+		// Sanitized here as well as in PlanApprove, which is where the
+		// body is sanitized today. The display boundary is a property
+		// of the renderer, not of one caller: a plan is model-authored
+		// text going straight into a frame, and "the only producer
+		// already cleaned it" is the kind of assumption that holds
+		// until someone adds a second producer.
+		m.add(entry{kind: entryPlan, text: safe.Text(msg.req.plan)})
 		return m, nil
 
 	case editorDoneMsg:
@@ -75,6 +84,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case todoMsg:
 		m.todos = msg
+		return m, nil
+
+	case shellDoneMsg:
+		// The output and the cause are untrusted display text like
+		// every other thing a tool produces — a command can print an
+		// escape sequence as readily as a file can contain one, and
+		// the escape's output used to reach the transcript raw.
+		m.shell = nil
+		if msg.err != nil {
+			// Output first, cause on its own line — one glued-together
+			// line was unreadable (audit U7).
+			m.add(entry{kind: entryErr,
+				text: strings.TrimSpace(safe.Text(msg.out)) + "\n" + safe.Text(msg.err.Error())})
+			return m, nil
+		}
+		m.add(entry{kind: entryDim, text: safe.Text(msg.out)})
 		return m, nil
 
 	case orchestratorMsg:
@@ -157,8 +182,30 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// The help overlay closes on any key.
+	// The help overlay closes on any key — except the scroll keys,
+	// which move the window: the sheet is longer than most terminals,
+	// and an overlay that could only be dismissed could not be read.
 	if m.helpOpen {
+		switch msg.String() {
+		case "up", "k", "ctrl+p":
+			m.helpTop = maxInt(m.helpTop-1, 0)
+			return m, nil
+		case "down", "j", "ctrl+n":
+			m.helpTop++
+			return m, nil
+		case "pgup", "b":
+			m.helpTop = maxInt(m.helpTop-10, 0)
+			return m, nil
+		case "pgdown", " ", "f":
+			m.helpTop += 10
+			return m, nil
+		case "home", "g":
+			m.helpTop = 0
+			return m, nil
+		case "end", "G":
+			m.helpTop = 1 << 30 // helpView clamps to the last page
+			return m, nil
+		}
 		m.helpOpen = false
 		return m, nil
 	}
@@ -247,7 +294,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if v.proceed {
 			// Approval graduates the session into a working mode so
 			// the NEXT model request carries the action tools.
-			mode := m.opt.Mode
+			var mode string
 			if v.auto {
 				mode = tools.ModeFullAuto
 			} else {
@@ -291,6 +338,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// explicit /exit needs no arming.
 		if time.Since(m.quitArmedAt) < quitWindow {
 			m.cancelTurn()
+			m.cancelShell()
 			return m, tea.Quit
 		}
 		m.quitArmedAt = time.Now()
@@ -299,11 +347,26 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showToast("interrupted — ctrl+c again to exit")
 			return m, nil
 		}
+		if m.shell != nil {
+			// Same posture as a turn: the first press stops the work
+			// in flight and hints at the exit.
+			m.cancelShell()
+			m.showToast("interrupted — ctrl+c again to exit")
+			return m, nil
+		}
 		m.showToast("ctrl+c again to exit")
 		return m, nil
 	case "esc":
 		if m.working {
 			m.cancelTurn()
+			return m, nil
+		}
+		// An in-flight shell escape interrupts the same way, and it
+		// says so: the command's process group is killed by the
+		// context, and a status line left up for a process that is
+		// gone would look like a hang.
+		if m.shell != nil {
+			m.cancelShell()
 			return m, nil
 		}
 		// With no turn in flight, esc closes the command palette
@@ -346,7 +409,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "?":
 		if !m.working && m.composer.Value() == "" {
-			m.helpOpen = true
+			m.openHelp()
 			return m, nil
 		}
 	case "enter":
@@ -437,40 +500,81 @@ func (m *Model) handlePaste(text string) {
 		return
 	}
 	m.pastes = append(m.pastes, text)
-	token := fmt.Sprintf("[paste %d · %d lines]", len(m.pastes), lines)
+	// The token is generated from the vocabulary's separator, so the
+	// plain posture gets an ASCII token that still reads as a token.
+	// deadPasteTokens matches on the bracket-and-"paste " shape, not on
+	// the separator, so the two forms are interchangeable.
+	token := fmt.Sprintf("[paste %d "+GlyphSep+" %d lines]", len(m.pastes), lines)
 	m.pasteAt[token] = text
 	m.composer.InsertString(token)
 	m.showToast(fmt.Sprintf("pasted %d lines collapsed to a token", lines))
 }
 
+// mentionCap bounds one @mention's contribution to a turn.
+const mentionCap = 2048
+
 // expandPastes replaces paste tokens with their stored content, and
 // @path mentions with the file's contents (capped).
+//
+// It runs on the tea goroutine, so the read is bounded by the reader,
+// not by a length check afterwards: os.ReadFile of "@/dev/zero" (or
+// any multi-gigabyte file) allocated the whole thing before anything
+// could cap it. A directory, a pipe, or a permission error each get a
+// visible note instead — silence would send a half-read file to the
+// model as though it were whole.
 func (m *Model) expandPastes(text string) string {
 	for token, content := range m.pasteAt {
 		if strings.Contains(text, token) {
 			text = strings.ReplaceAll(text, token, "\n"+content+"\n")
 		}
 	}
-	// @file mentions: read the file, cap the contribution.
+	// @file mentions: read at most mentionCap+1 bytes, so "was there
+	// more?" is a fact rather than a guess.
 	fields := strings.Fields(text)
 	for _, f := range fields {
 		if !strings.HasPrefix(f, "@") || len(f) < 2 {
 			continue
 		}
 		path := strings.TrimPrefix(f, "@")
-		data, err := os.ReadFile(path)
+		content, err := readMention(path)
 		if err != nil {
-			text = strings.Replace(text, f, f+" (unreadable: "+err.Error()+")", 1)
+			text = strings.Replace(text, f,
+				f+" (could not attach "+safe.Text(path)+": "+safe.Text(err.Error())+")", 1)
 			continue
 		}
-		content := string(data)
-		if len(content) > 2048 {
-			content = content[:2048] + "\n… (truncated)"
-		}
 		text = strings.Replace(text, f,
-			fmt.Sprintf("file %s contents:\n%s\n(end of %s)", path, content, path), 1)
+			fmt.Sprintf("file %s contents:\n%s\n(end of %s)", safe.Text(path), content, safe.Text(path)), 1)
 	}
 	return text
+}
+
+// readMention returns a file's first mentionCap bytes as display text,
+// or an error explaining why not. The content is sanitized like any
+// other untrusted display text: a file is exactly as capable of
+// carrying a terminal escape as a tool result is, and this one is
+// echoed straight into the transcript.
+func readMention(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return readCapped(f)
+}
+
+// readCapped does the capping itself, on the reader, so a source that
+// never ends is stopped by the same bound that sizes a huge file.
+// Split out only so the bound is testable without one.
+func readCapped(r io.Reader) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(r, mentionCap+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > mentionCap {
+		data = append(data[:mentionCap], '\n')
+		return safe.Text(string(data)) + "… (truncated at " + humanBytes(mentionCap) + ")", nil
+	}
+	return safe.Text(string(data)), nil
 }
 
 // cycleMode moves through the permission modes: tab forward, shift+tab
@@ -552,7 +656,10 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 	}
 	if strings.HasPrefix(raw, "!") && len(raw) > 1 {
 		cmd := strings.TrimSpace(strings.TrimPrefix(raw, "!"))
-		m.add(entry{kind: entryUser, text: dimStyle.Render("! " + cmd)})
+		// The echo is what the user typed, and it goes into the
+		// transcript: a pasted escape sequence must not reach the
+		// terminal through the echo either.
+		m.add(entry{kind: entryUser, text: dimStyle.Render("! " + safe.Text(cmd))})
 		// No permission prompt — the user typed it — but the escape
 		// must land in the audit log like any other command run
 		// (audit C13). Recorded before execution so a hanging or
@@ -561,15 +668,23 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 		if auditErr := m.opt.Orch.Gate.RecordUserAction("shell-escape", args); auditErr != nil {
 			m.add(entry{kind: entryErr, text: "audit log write failed: " + auditErr.Error()})
 		}
-		out, err := (tools.Bash{}).Execute(context.Background(), args)
-		if err != nil {
-			// Output first, cause on its own line — one glued-together
-			// line was unreadable (audit U7).
-			m.add(entry{kind: entryErr, text: strings.TrimSpace(out) + "\n" + err.Error()})
-		} else {
-			m.add(entry{kind: entryDim, text: out})
+		// As a tea.Cmd under a cancellable context, not inline: the
+		// inline form blocked the render loop for the length of the
+		// command (a `!sleep 300` was an unkillable frozen TUI) and
+		// had no way for esc to reach it.
+		ctx, cancel := context.WithCancel(context.Background())
+		run := &shellRun{name: cmd, cancel: cancel, done: make(chan struct{})}
+		m.shell = run
+		return inputShell, func() tea.Msg {
+			out, err := (tools.Bash{}).Execute(ctx, args)
+			// Release the context whether it finished or was cut, so
+			// the exit path's "was it killed" check has one answer.
+			run.stop()
+			// The output is sanitized where it is displayed, not here:
+			// the display boundary is one place, and a message that
+			// crossed it already clean would be clean by luck.
+			return shellDoneMsg{out: out, err: err}
 		}
-		return inputShell, nil
 	}
 
 	text := m.expandPastes(raw)
@@ -635,7 +750,7 @@ func (m *Model) runCommand(cmdName, arg string) tea.Cmd {
 		m.cancelTurn()
 		return tea.Quit
 	case "/help":
-		m.helpOpen = true
+		m.openHelp()
 		return nil
 	case "/login":
 		if arg == "" {
@@ -672,6 +787,9 @@ func (m *Model) runCommand(cmdName, arg string) tea.Cmd {
 	case "/diff":
 		m.showDiff()
 		return nil
+	case "/update":
+		m.updateRedirect()
+		return nil
 	}
 	// Unknown "/...": the typed text stays in recall history as-is
 	// (recall shows what was typed, including the typo).
@@ -681,6 +799,17 @@ func (m *Model) runCommand(cmdName, arg string) tea.Cmd {
 		m.add(entry{kind: entryErr, text: "unknown command " + cmdName + " — /help lists the commands"})
 	}
 	return nil
+}
+
+// updateRedirect handles a typed "/update". Every update surface
+// points at `tilde update`, so a user who types it as a slash command
+// is doing the obvious thing — name the shell instead of answering
+// "unknown command", and say the quiet part: the install replaces the
+// binary this process is running, which is why it is not a slash
+// command.
+func (m *Model) updateRedirect() {
+	m.add(entry{kind: entryDim, text: "`tilde update` runs in a shell, not in this session: " +
+		"it replaces the running binary. Quit and run it — `tilde update --check` reports without installing."})
 }
 
 // deadPasteTokens returns the [paste N] tokens in text that have no
@@ -890,6 +1019,51 @@ func (m *Model) notePlanVerdict(v planVerdict) {
 	}
 }
 
+// errorWithNextStep is what a turn's error reads as in the
+// transcript. The raw cause stays — a user pasting it into an issue
+// needs the real text — and the shapes that come back most often get
+// the one thing the message itself does not say: what to do next.
+// A message it does not recognize passes through alone; a wrong guess
+// would send the user somewhere useless.
+func errorWithNextStep(provider, msg string) string {
+	if provider == "" {
+		provider = "the provider"
+	}
+	var step string
+	switch low := strings.ToLower(msg); {
+	case strings.Contains(low, "401"), strings.Contains(low, "unauthorized"),
+		strings.Contains(low, "invalid api key"), strings.Contains(low, "no api key"):
+		step = "the provider rejected the key — /login " + provider + " stores a new one, /doctor checks the chain"
+	case strings.Contains(low, "403"), strings.Contains(low, "forbidden"):
+		step = "this key is not allowed to make that call — check the account's plan and access, or /login a key that is"
+	case strings.Contains(low, "429"), strings.Contains(low, "rate limit"),
+		strings.Contains(low, "too many requests"):
+		step = "the provider is rate limiting — wait a moment, then send it again"
+	case strings.Contains(low, "402"), strings.Contains(low, "insufficient"):
+		step = "the account is out of credit — top it up with the provider, then retry"
+	case strings.Contains(low, "model") && (strings.Contains(low, "not found") ||
+		strings.Contains(low, "does not exist") ||
+		strings.Contains(low, "unknown model") ||
+		strings.Contains(low, "unsupported")):
+		// Scoped to phrases that name the model as the problem. The
+		// bare word "model" also appears in a provider's own
+		// "could not list models" and in a 404 for some other URL, and
+		// answering either with "that model is not served" is advice
+		// about a model the user never asked about.
+		step = "the provider does not serve that model — /model picks one it lists"
+	case strings.Contains(low, "connection refused"), strings.Contains(low, "no such host"),
+		strings.Contains(low, "dial tcp"), strings.Contains(low, "network is unreachable"),
+		strings.Contains(low, "i/o timeout"), strings.Contains(low, "context deadline"),
+		strings.Contains(low, "tls handshake"), strings.Contains(low, "eof"):
+		step = "tilde could not reach " + provider + " — check the network, and the base url in models.json if you changed it"
+	case strings.Contains(low, "certificate"), strings.Contains(low, "x509"):
+		step = "the provider's certificate did not verify — that is a machine trust problem; /doctor names the terminal's state"
+	default:
+		return "error: " + msg
+	}
+	return "error: " + msg + "\nnext: " + step
+}
+
 func mustJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
@@ -970,16 +1144,16 @@ func min3(a, b, c int) int {
 }
 
 func (m *Model) listSkills() {
-	if m.opt.Skills == nil {
-		m.add(entry{kind: entryDim, text: "no skills loaded"})
-		return
+	names := []string{}
+	if m.opt.Skills != nil {
+		names = m.opt.Skills.Names()
 	}
-	names := m.opt.Skills.Names()
 	if len(names) == 0 {
-		// An empty state with a way forward beats a bare "none"
-		// (audit U10): where skills come from, and the way out.
+		// One message for both "nothing installed" and "no skills
+		// wired": the advice is the same either way, and an empty
+		// state with a way forward beats a bare "none" (audit U10).
 		m.add(entry{kind: entryDim,
-			text: "no skills loaded — add one under ~/.tilde/skills/ or .tilde/skills/ (a folder with SKILL.md); esc closes this view"})
+			text: "no skills loaded — add one under ~/.tilde/skills/ or .tilde/skills/ (a folder with SKILL.md)"})
 		return
 	}
 	var rows []string
@@ -1001,10 +1175,10 @@ func (m *Model) listMcp() {
 	}
 	names := m.opt.MCPNames()
 	if len(names) == 0 {
-		// Same empty-state rule: where servers come from, and the
-		// way out (audit U10). mcp.json is read from ~/.tilde/.
+		// Same empty-state rule: where servers come from, and what
+		// picks them up (audit U10). mcp.json is read from ~/.tilde/.
 		m.add(entry{kind: entryDim,
-			text: "no MCP servers connected — add one to ~/.tilde/mcp.json and restart tilde; esc closes this view"})
+			text: "no MCP servers connected — add one to ~/.tilde/mcp.json and restart tilde"})
 		return
 	}
 	m.add(entry{kind: entryDim, text: strings.Join(names, "\n")})
@@ -1200,7 +1374,7 @@ func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 			}
 			m.add(entry{kind: entryErr, text: "turn interrupted"})
 		} else {
-			m.add(entry{kind: entryErr, text: "error: " + safe.Text(ev.Err.Error())})
+			m.add(entry{kind: entryErr, text: errorWithNextStep(m.opt.ProviderName, safe.Text(ev.Err.Error()))})
 		}
 		return m, m.turnEnded()
 	}
@@ -1210,7 +1384,7 @@ func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 // addResultEntry stores a tool result with enough structure to render
 // collapsed, expanded, or as an edit_file diff.
 func (m *Model) addResultEntry(ev orchestrator.Event) {
-	res := strings.ReplaceAll(strings.TrimSpace(ev.ToolResult), "\n", " ⏎ ")
+	res := strings.ReplaceAll(strings.TrimSpace(ev.ToolResult), "\n", " "+GlyphJoin+" ")
 	e := entry{kind: entryResult, tool: ev.ToolCall.Name, summary: res, full: ev.ToolResult}
 	switch ev.ToolCall.Name {
 	case "edit_file":
@@ -1351,7 +1525,9 @@ func (m *Model) openModelPicker() {
 		}
 	}
 	if len(items) == 0 {
-		m.add(entry{kind: entryDim, text: "no providers or models configured in models.json"})
+		m.add(entry{kind: entryDim,
+			text: "no providers or models configured in models.json — add one under " +
+				filepath.Join(m.opt.TildeHome, "models.json") + " or /models <provider> to browse a live list"})
 		return
 	}
 	m.picker = newPicker(pickerModels, "switch model", items)
@@ -1409,7 +1585,10 @@ func (m *Model) openSessionsPicker() {
 			text: fmt.Sprintf("skipped %d unreadable session file(s) — damaged or written by a newer tilde", skipped)})
 	}
 	if len(items) == 0 {
-		m.add(entry{kind: entryDim, text: "no saved sessions in " + session.Dir(m.opt.TildeHome)})
+		// An empty list needs a way forward, not just a path: say what
+		// saves a session (any completed turn) and where they land.
+		m.add(entry{kind: entryDim, text: "no saved sessions in " + session.Dir(m.opt.TildeHome) +
+			" — tilde saves a session when a turn ends, and /sessions lists them"})
 		return
 	}
 	m.picker = newPicker(pickerSessions, "resume session", items)
@@ -1456,7 +1635,11 @@ func firstUserText(s *session.Session) string {
 		if msg.Role != "user" || strings.TrimSpace(msg.Content) == "" {
 			continue
 		}
-		preview := strings.Join(strings.Fields(msg.Content), " ")
+		// Sanitized: a session file is a file, and its first user
+		// message is displayed in the picker. Whatever put the escape
+		// sequence there — the model, a hand-edited file, another
+		// tool — it must not reach the terminal from here.
+		preview := strings.Join(strings.Fields(safe.Text(msg.Content)), " ")
 		return truncate(preview, 48)
 	}
 	return ""

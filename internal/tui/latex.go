@@ -51,16 +51,6 @@ var latexSymbols = map[string]string{
 	"aleph": "ℵ", "star": "⋆", "dagger": "†", "checkmark": "✓",
 }
 
-// latexFuncs read as themselves without the backslash.
-var latexFuncs = map[string]bool{
-	"sin": true, "cos": true, "tan": true, "cot": true, "sec": true,
-	"csc": true, "arcsin": true, "arccos": true, "arctan": true,
-	"sinh": true, "cosh": true, "tanh": true, "log": true, "ln": true,
-	"exp": true, "min": true, "max": true, "lim": true, "sup": true,
-	"inf": true, "det": true, "dim": true, "ker": true, "deg": true,
-	"arg": true, "gcd": true, "hom": true, "mod": true,
-}
-
 // supMap and subMap cover the characters with Unicode super/subscript
 // forms; anything else keeps the readable caret/underscore form.
 var supMap = map[rune]rune{

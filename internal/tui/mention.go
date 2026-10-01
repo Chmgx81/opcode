@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // The @-mention file picker: typing "@" in the composer opens a
@@ -129,7 +131,20 @@ func (m *Model) completeAt() {
 }
 
 // atMenuOpen reports whether the mention menu owns Enter/arrows/Esc.
+// Only a menu with rows can own them: with no matches Enter is a
+// plain submit, which is what a user who typed a path wants.
 func (m *Model) atMenuOpen() bool { return len(m.atMenu) > 0 }
+
+// atQueryLive reports whether the composer ends in a mention the user
+// has not dismissed. This is what the picker box hangs off, so a
+// mention that matched nothing still gets an answer instead of
+// silence.
+func (m *Model) atQueryLive() bool {
+	if m.login != nil || m.picker != nil || m.atDismissed {
+		return false
+	}
+	return atPattern.FindStringSubmatchIndex(m.composer.Value()) != nil
+}
 
 // dismissAt closes the menu and remembers the query, so typing more
 // of the same mention does not reopen it until a fresh "@" appears.
@@ -147,11 +162,26 @@ func (m *Model) shellMode() bool {
 	return strings.HasPrefix(m.composer.Value(), "!")
 }
 
+// syncComposerPlaceholder drops the hint when it cannot fit. bubbles
+// does not clip a placeholder, so a nineteen-column hint on a
+// sixteen-column pane is a row the frame cannot absorb — and the
+// overflow takes the whole render with it. The two rules still frame
+// the input, so a narrow composer is bare rather than broken.
+func (m *Model) syncComposerPlaceholder() {
+	room := m.composer.Width() - lipgloss.Width(m.composer.Prompt)
+	ph := ""
+	if room >= lipgloss.Width(composerPlaceholder) {
+		ph = composerPlaceholder
+	}
+	if m.composer.Placeholder != ph {
+		m.composer.Placeholder = ph
+	}
+}
+
 // syncComposerPrompt swaps the composer prompt glyph with the mode:
-// "!" amber for shell escapes, "~" otherwise.
-// syncComposerPrompt keeps the bare composer's prompt honest: the
-// brand glyph normally, "!" in shell mode — colored to match, since
-// without a box the glyph IS the mode signal.
+// "!" amber for shell escapes, "~" otherwise. The prompt glyph is the
+// mode signal in a composer that has no box around it, so it is
+// colored to match.
 func (m *Model) syncComposerPrompt() {
 	if m.shellMode() {
 		m.composer.Prompt = GlyphShell + " "
