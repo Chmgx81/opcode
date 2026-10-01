@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -36,6 +38,91 @@ func TestApplyThemeNameSwapsTokens(t *testing.T) {
 	}
 	if HexAccent != before {
 		t.Error("failed apply changed the palette")
+	}
+}
+
+// Contrast arithmetic, WCAG 2.1 relative luminance. Text colors are
+// held to 4.5:1 and a boundary to 3:1, against BOTH surfaces a token
+// actually sits on: the terminal floor and the code panel. The floor is
+// approximated per theme because a terminal's real background is not
+// knowable — a dark theme is dark, a light one light.
+func relLum(hex string) float64 {
+	lin := func(v uint32) float64 {
+		f := float64(v) / 255
+		if f <= 0.03928 {
+			return f / 12.92
+		}
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+	// uint32, not float64: %x scans into an integer, and a float target
+	// leaves every channel at zero — which reads as a contrast ratio of
+	// exactly 1.00 and fails every row in the table.
+	var r, g, b uint32
+	fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b)
+	return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b)
+}
+
+func contrastRatio(a, b string) float64 {
+	la, lb := relLum(a), relLum(b)
+	hi, lo := math.Max(la, lb), math.Min(la, lb)
+	return (hi + 0.05) / (lo + 0.05)
+}
+
+// themeFloors is what each theme assumes about the terminal it is drawn
+// on, for the contrast table below.
+var themeFloors = map[string]string{
+	"dark":  "#0d1117",
+	"green": "#050806",
+	"light": "#ffffff",
+}
+
+// TestThemeContrastIsLegible: every theme's text tokens clear 4.5:1
+// against the floor and the code panel, and every boundary token clears
+// the 3:1 a UI edge needs. The subtle gray and the border were both
+// under their bars — the placeholder and the hints at 3.9:1, the
+// composer's own rules at 2.0:1 — which is a frame the eye cannot find
+// and a hint it has to squint at.
+func TestThemeContrastIsLegible(t *testing.T) {
+	for _, th := range themes {
+		floor := themeFloors[th.name]
+		tokens := []struct {
+			name, hex string
+			min       float64
+		}{
+			{"accent", th.hex[0], 4.5},
+			{"info", th.hex[1], 4.5},
+			{"success", th.hex[5], 4.5},
+			{"danger", th.hex[6], 4.5},
+			{"warning", th.hex[7], 4.5},
+			{"dim", th.hex[8], 4.5},
+			{"subtle", th.hex[9], 4.5},
+			{"deep (border)", th.hex[2], 3.0}, // a boundary, not text
+		}
+		for _, tok := range tokens {
+			for _, surface := range []struct {
+				name, hex string
+			}{{"floor", floor}, {"code panel", th.hex[4]}} {
+				got := contrastRatio(tok.hex, surface.hex)
+				if got < tok.min {
+					t.Errorf("theme %s: %s on the %s is %.2f:1, want %.1f:1",
+						th.name, tok.name, surface.name, got, tok.min)
+				}
+			}
+		}
+	}
+}
+
+// TestEveryThemeTokenIsHex: a malformed hex renders as a terminal
+// default, so the palette silently collapses to one color and the
+// contrast table above passes on a value nothing ever draws.
+func TestEveryThemeTokenIsHex(t *testing.T) {
+	for _, th := range themes {
+		for i, hex := range th.hex {
+			var r, g, b uint32
+			if n, err := fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b); err != nil || n != 3 {
+				t.Errorf("theme %s token %d = %q is not a hex color: %v", th.name, i, hex, err)
+			}
+		}
 	}
 }
 

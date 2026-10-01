@@ -2,6 +2,8 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,52 +212,148 @@ func ShellEscaped(args string) bool {
 	return a.Sandbox != nil && !*a.Sandbox
 }
 
-// pathInWritableRoots reports whether path resolves inside one of
-// the sandbox's writable roots — the identical bound a sandboxed
-// shell command gets. In-process writes cannot be Landlocked, so
-// the gate bounds them by path, resolving symlinks along the whole
-// path: a lexical in-tree path that points outside must not
-// auto-run.
+// pathInWritableRoots reports whether path — resolved the way the
+// kernel resolves it when it opens the file — lands inside one of the
+// sandbox's writable roots, the identical bound a sandboxed shell
+// command gets. In-process writes cannot be Landlocked, so the gate
+// bounds them by path.
+//
+// The resolution has to be the kernel's, component by component, and
+// not filepath.Clean's: Clean (which filepath.Abs calls) collapses
+// "link/.." lexically, before the link is ever followed, so with
+// docs -> /outside/vault inside the project it reported
+// "project/../secret.txt" — inside the roots — while the write landed
+// in /outside. The gate and the kernel have to agree about where the
+// write goes, or the gate approves nothing. A lexical in-tree path
+// that resolves outside must not auto-run.
 //
 // The path need not exist yet — writing a file that is being created,
-// or one whose directory is being created, is ordinary work. So the
-// longest EXISTING prefix is resolved and the missing tail is
-// re-appended. Resolving only the immediate parent (as an earlier
-// revision did) refused every "Add File: src/pkg/thing.go" as being
-// outside the project; the parts that do not exist cannot be
-// symlinks, so they need no resolution, and every component that does
-// exist is still resolved. A path that exists but will not resolve —
-// a symlink loop, a dangling link — fails closed.
+// or one whose directory is being created, is ordinary work, so a
+// missing tail is joined lexically. It is joined only when no symlink
+// has been followed: after one, "missing" means a dangling link, and
+// the honest answer to a dangling link is no answer, so it is refused
+// along with loops and unreadable components.
 func pathInWritableRoots(path string) bool {
-	abs, err := filepath.Abs(path)
-	if err != nil {
+	resolved, ok := resolveLikeKernel(path)
+	if !ok {
 		return false
 	}
-	existing, rest := abs, ""
-	for {
-		resolved, err := filepath.EvalSymlinks(existing)
-		if err == nil {
-			abs = filepath.Join(resolved, rest)
-			break
-		}
-		if _, statErr := os.Lstat(existing); statErr == nil {
-			// It exists but will not resolve — a loop or a dangling
-			// link. Nothing honest to check; refuse.
-			return false
-		}
-		parent := filepath.Dir(existing)
-		if parent == existing {
-			return false
-		}
-		rest = filepath.Join(filepath.Base(existing), rest)
-		existing = parent
-	}
 	for _, root := range sandbox.WritableRoots() {
-		if withinDir(abs, root) {
+		if withinDir(resolved, resolvedWritableRoot(root)) {
 			return true
 		}
 	}
 	return false
+}
+
+// resolvedWritableRoot resolves a writable root the same way a path is
+// resolved, so an in-root write is not mistaken for an out-of-root one
+// on a machine where a root is itself a symlink (/tmp -> /private/tmp
+// on macOS, /home -> /var/home on Fedora Atomic). A root that will not
+// resolve at all is kept as written: WritableRoots is the tool's own
+// list, not model input, so it is compared lexically rather than
+// refused.
+func resolvedWritableRoot(dir string) string {
+	if resolved, ok := resolveLikeKernel(dir); ok {
+		return resolved
+	}
+	return dir
+}
+
+// maxSymlinkHops bounds symlink following, like the kernel's own
+// ELOOP limit: a cycle must terminate, not spin.
+const maxSymlinkHops = 40
+
+// resolveLikeKernel resolves path to the absolute path the kernel
+// would open: symlinks are followed and ".." applies to the already
+// resolved prefix, exactly as open(2) does. ok is false when the path
+// cannot be resolved honestly — a symlink loop, a dangling link, a
+// component that may not be stat'ed, no working directory for a
+// relative path.
+func resolveLikeKernel(path string) (resolved string, ok bool) {
+	if !filepath.IsAbs(path) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return "", false
+		}
+		// Concatenation, not Join: Join cleans, and cleaning here is
+		// the bug being fixed.
+		path = wd + string(filepath.Separator) + path
+	}
+	resolved = filepath.VolumeName(path) + string(filepath.Separator)
+	queue := pathComponents(path)
+	hops := 0
+	// fromLink counts the components still unresolved that arrived from
+	// a followed symlink's target. A missing component is only joinable
+	// lexically once none are outstanding: a component that came from a
+	// link's target and does not exist means the link dangles, and where
+	// a dangling link would land once something creates the file is
+	// anybody's guess. That distinction is the whole reason this tracks
+	// a counter rather than just "have we followed a link".
+	fromLink := 0
+	for len(queue) > 0 {
+		part := queue[0]
+		queue = queue[1:]
+		switch part {
+		case "", ".":
+		case "..":
+			resolved = filepath.Dir(resolved)
+		default:
+			candidate := filepath.Join(resolved, part)
+			fi, err := os.Lstat(candidate)
+			if err != nil {
+				// Only "does not exist" may be joined lexically: the
+				// components after it cannot be symlinks, so there is
+				// nothing left to resolve. Every other error (ENOTDIR
+				// through a symlinked file, EACCES, ELOOP) has no
+				// honest answer, so it is refused.
+				if !errors.Is(err, fs.ErrNotExist) || fromLink > 0 {
+					return "", false
+				}
+				return filepath.Join(append([]string{candidate}, queue...)...), true
+			}
+			if fi.Mode()&os.ModeSymlink == 0 {
+				resolved = candidate
+				if fromLink > 0 {
+					fromLink--
+				}
+				continue
+			}
+			if hops++; hops > maxSymlinkHops {
+				return "", false
+			}
+			target, err := os.Readlink(candidate)
+			if err != nil {
+				return "", false
+			}
+			if filepath.IsAbs(target) {
+				resolved = filepath.VolumeName(target) + string(filepath.Separator)
+			}
+			parts := pathComponents(target)
+			queue = append(parts, queue...)
+			// Only components that will actually be resolved count: the
+			// empty head of an absolute target and any "." are skipped
+			// by the loop, and counting them would leave the counter
+			// permanently above zero — refusing every later missing
+			// component as a dangling link.
+			for _, p := range parts {
+				if p != "" && p != "." {
+					fromLink++
+				}
+			}
+		}
+	}
+	return resolved, true
+}
+
+// pathComponents splits a path into components without cleaning it.
+// Windows accepts both separators, because the model writes paths the
+// way humans do; everywhere else a backslash is a file name.
+func pathComponents(p string) []string {
+	if filepath.Separator == '/' {
+		return strings.Split(p, "/")
+	}
+	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
 }
 
 func withinDir(path, dir string) bool {

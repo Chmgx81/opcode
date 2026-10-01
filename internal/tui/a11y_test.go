@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // TestTypeAheadGuard: keys inside the guard window after a dialog
@@ -120,12 +122,173 @@ func TestTranscriptPager(t *testing.T) {
 	}
 }
 
+// everyGlyph is the whole vocabulary, by name, so a new glyph cannot be
+// added without deciding its ASCII form: the list is the check.
+func everyGlyph() map[string]string {
+	return map[string]string{
+		"brand": GlyphBrand, "shell": GlyphShell, "prompt": GlyphPrompt,
+		"user": GlyphUser, "bullet": GlyphBullet, "branch": GlyphBranch,
+		"caret": GlyphCaret, "ok": GlyphOK, "error": GlyphError,
+		"warn": GlyphWarn, "info": GlyphInfo, "deleted": GlyphDeleted,
+		"added": GlyphAdded, "doing": GlyphDoing, "todoOn": GlyphTodoOn,
+		"todoOff": GlyphTodoOff, "queued": GlyphQueued, "update": GlyphUpdate,
+		"mask": GlyphMask, "modePlan": GlyphModePlan, "modeBuild": GlyphModeBuild,
+		"modeFullAuto": GlyphModeFullAuto, "thought": GlyphThought,
+		"rule": GlyphRule, "sep": GlyphSep, "join": GlyphJoin,
+	}
+}
+
+// TestEveryGlyphDegrades: every mark in the vocabulary has an ASCII
+// form. The check is by name over the whole set, so a glyph added
+// later without one fails here rather than in a screen reader.
+func TestEveryGlyphDegrades(t *testing.T) {
+	unicode := everyGlyph()
+	adaptGlyphs(true)
+	plain := everyGlyph()
+	adaptGlyphs(false)
+
+	for name := range unicode {
+		p, ok := plain[name]
+		if !ok {
+			t.Errorf("glyph %q has no plain counterpart", name)
+			continue
+		}
+		for _, r := range p {
+			if r > 0x7f {
+				t.Errorf("glyph %q: plain form %q still carries %q", name, p, r)
+			}
+		}
+		if p == "" {
+			t.Errorf("glyph %q disappears under --plain", name)
+		}
+	}
+	if plain["sep"] == "" || plain["rule"] == "" {
+		t.Error("the chrome marks have no ASCII form")
+	}
+}
+
+// TestStateMarkersStayDistinct: the marks that encode a STATE — the
+// task list's three, the ok/error/warn trio — must stay distinguishable
+// from one another under --plain. Two states collapsing onto one ASCII
+// string is a state the reader cannot read back, which is the whole
+// reason the vocabulary exists. (Collisions ACROSS contexts — the
+// prompt's ">" and the mode line's, say — are fine: a reader never has
+// both in one glance.)
+func TestStateMarkersStayDistinct(t *testing.T) {
+	adaptGlyphs(true)
+	defer adaptGlyphs(false)
+	for _, group := range [][]string{
+		{GlyphTodoOn, GlyphTodoOff, GlyphDoing},            // the task list
+		{GlyphOK, GlyphError, GlyphWarn, GlyphInfo},        // verdicts
+		{GlyphModePlan, GlyphModeBuild, GlyphModeFullAuto}, // the footer's mode
+	} {
+		seen := map[string]bool{}
+		for _, g := range group {
+			if seen[g] {
+				t.Errorf("two state markers share the plain form %q", g)
+			}
+			seen[g] = true
+		}
+	}
+}
+
+// TestFrameIsAsciiUnderPlain: the whole rendered frame — a full
+// transcript, every dialog, the composer, the footer — must carry no
+// rune above 0x7f under the plain posture. The box borders and the
+// composer's rules were the two that did not: lipgloss composes them,
+// so the vocabulary never reached them.
+func TestFrameIsAsciiUnderPlain(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.opt.Plain = true
+	adaptGlyphs(true)
+	t.Cleanup(func() { adaptGlyphs(false) })
+	m.opt.UpdateTag = "v9.9.9"
+	m.working = true
+	m.workingSince = time.Now()
+	m.effort = "high"
+	m.overlayRows = 30
+	m.todos = []tools.Todo{
+		{Content: "done one", Status: tools.TodoDone},
+		{Content: "doing one", Status: tools.TodoInProgress},
+		{Content: "pending one", Status: tools.TodoPending},
+	}
+	m.composer.Prompt = GlyphBrand + " "
+	m.syncComposerPrompt()
+
+	// The states that need an open view before they can render at all.
+	m.picker = newPicker(pickerModels, "switch model",
+		[]pickerItem{{Label: "a-model", Detail: "a provider"}})
+	m.composer.SetValue("/m")
+	defer func() { m.composer.SetValue("") }()
+	permRows, _, _ := m.permDialogRows(newPermReq("bash", `{"command":"npm init -y"}`), 80)
+	states := map[string]string{
+		"composer":   strings.Join(m.composerView(), "\n"),
+		"permission": strings.Join(permRows, "\n"),
+		"help":       strings.Join(m.helpRows(80), "\n"),
+		"picker":     strings.Join(m.pickerRows(80), "\n"),
+		"palette":    strings.Join(m.paletteRows(80), "\n"),
+		"@ mention":  strings.Join(m.atMenuRows(80), "\n"),
+		"todos":      strings.Join(m.todosView(), "\n"),
+		"markdown": strings.Join(renderMarkdown(
+			"## head\n\n- [x] done\n\n- a bullet\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> q\n", 74), "\n"),
+	}
+	// Residuals, named rather than waved through: the truncation
+	// ellipsis, which a screen reader reads as the punctuation it is,
+	// and the startup banner, which is not part of these states. The
+	// spec's "plain posture" section lists both; anything else above
+	// 0x7f in the plain frame is a bug.
+	const residual = "…"
+	for name, frame := range states {
+		for _, r := range stripANSI(frame) {
+			if r > 0x7f && !strings.ContainsRune(residual, r) {
+				t.Errorf("%s: the plain frame still carries %q", name, r)
+			}
+		}
+	}
+}
+
+// TestPlainBorderAndUnicodeBorder: the border swap is in both
+// directions, and the unicode one is the rounded frame the reference
+// look is built on.
+func TestPlainBorderAndUnicodeBorder(t *testing.T) {
+	defer adaptGlyphs(false)
+	adaptGlyphs(true)
+	if got := dialogBorder().TopLeft; got != "+" {
+		t.Errorf("plain border corner = %q, want +", got)
+	}
+	if got := dialogBorder().Left; got != "|" {
+		t.Errorf("plain border left = %q, want |", got)
+	}
+	adaptGlyphs(false)
+	if got := dialogBorder().TopLeft; got != "╭" {
+		t.Errorf("unicode border corner = %q, want the rounded frame", got)
+	}
+}
+
+// TestPlainOrPicksByPosture: the punctuation helper the few marks
+// outside the vocabulary ask — an arrow pair, an em dash.
+func TestPlainOrPicksByPosture(t *testing.T) {
+	defer adaptGlyphs(false)
+	adaptGlyphs(true)
+	if got := plainOr("↑↓", "up/dn"); got != "up/dn" {
+		t.Errorf("plainOr = %q, want up/dn", got)
+	}
+	adaptGlyphs(false)
+	if got := plainOr("↑↓", "up/dn"); got != "↑↓" {
+		t.Errorf("plainOr = %q, want the arrows", got)
+	}
+}
+
 // TestAdaptGlyphs: the plain posture swaps every glyph for ASCII and
 // back — nothing disappears.
 func TestAdaptGlyphs(t *testing.T) {
 	adaptGlyphs(true)
 	defer adaptGlyphs(false)
-	for _, g := range []string{GlyphOK, GlyphError, GlyphWarn, GlyphBranch, GlyphTodoOn} {
+	for _, g := range []string{
+		GlyphOK, GlyphError, GlyphWarn, GlyphBranch, GlyphTodoOn,
+		GlyphTodoOff, GlyphMask, GlyphUpdate,
+	} {
 		for _, r := range g {
 			if r > 0x7f {
 				t.Errorf("plain glyph %q still carries a non-ASCII rune", g)
@@ -134,6 +297,11 @@ func TestAdaptGlyphs(t *testing.T) {
 	}
 	if GlyphOK != "[ok]" || GlyphModeBuild != ">" {
 		t.Errorf("plain glyphs = %q / %q, want [ok] / >", GlyphOK, GlyphModeBuild)
+	}
+	// The update badge is the newest glyph; it needs its own ASCII
+	// form or the screen-reader posture loses the signal entirely.
+	if GlyphUpdate != "^" {
+		t.Errorf("plain update glyph = %q, want ^", GlyphUpdate)
 	}
 }
 

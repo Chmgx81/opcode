@@ -1,8 +1,11 @@
 package session
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -157,5 +160,152 @@ func TestNewFileAndEmptySession(t *testing.T) {
 	s := New("m", "mode")
 	if s.History() != nil {
 		t.Error("empty session must have no history")
+	}
+}
+
+// TestSaveDoesNotMutateTheCallersTree: redaction is a property of the
+// FILE, not of the conversation. The caller's tree is the live history
+// the model is talking about; rewriting it in place replaces text the
+// model already saw with "[redacted]", and a second Save of the same
+// tree then differs from the first.
+func TestSaveDoesNotMutateTheCallersTree(t *testing.T) {
+	dir := t.TempDir()
+	s := FromHistory("m", "plan", []llm.Message{
+		{Role: "user", Content: "my key is sk-secret-value"},
+		{Role: "assistant", ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "bash", Arguments: `{"command": "curl -H 'tok: sk-secret-value'"}`},
+			{ID: "c2", Name: "read_file", Arguments: `{"path": "notes.txt"}`}}},
+		{Role: "user", Images: []llm.Image{{MimeType: "image/png", Data: []byte("png bytes")}}},
+	})
+	before := deepCopy(t, s)
+
+	path := filepath.Join(dir, "s.json")
+	if err := s.Save(path, []string{"sk-secret-value"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if !reflect.DeepEqual(s, before) {
+		t.Errorf("Save changed the caller's tree:\nbefore %s\nafter  %s", mustJSON(t, before), mustJSON(t, s))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "sk-secret-value") {
+		t.Errorf("the saved file leaks the credential:\n%s", data)
+	}
+	if !strings.Contains(string(data), "[redacted]") {
+		t.Error("nothing was redacted in the saved file")
+	}
+	// Idempotent from the caller's side: the same tree saves the same
+	// bytes twice, which is only true if Save wrote a copy.
+	if err := s.Save(path, []string{"sk-secret-value"}); err != nil {
+		t.Fatalf("second Save: %v", err)
+	}
+	again, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(data) {
+		t.Error("saving the same tree twice produced two different files")
+	}
+}
+
+// deepCopy clones a session through JSON, so the comparison against the
+// caller's own pointers cannot be fooled by shared state.
+func deepCopy(t *testing.T, s *Session) *Session {
+	t.Helper()
+	var out Session
+	if err := json.Unmarshal([]byte(mustJSON(t, s)), &out); err != nil {
+		t.Fatal(err)
+	}
+	return &out
+}
+
+func mustJSON(t *testing.T, s *Session) string {
+	t.Helper()
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// TestImagesSurviveSaveAndResume: the model saw the attachment once, so
+// a resumed session has to see it again. Without it the turn resumes as
+// an empty user message, which every provider rejects — "screenshot,
+// /exit, --continue" broke the session outright.
+func TestImagesSurviveSaveAndResume(t *testing.T) {
+	first := llm.Image{MimeType: "image/png", Data: []byte("\x89PNG first shot")}
+	second := llm.Image{MimeType: "image/jpeg", Data: []byte{0xff, 0xd8, 0xff, 0xe0}}
+	history := []llm.Message{
+		{Role: "user", Content: "what does this show?", Images: []llm.Image{first}},
+		{Role: "assistant", Content: "a chart"},
+		// An attachment with no text at all: the shape that used to
+		// resume as an empty, rejected user message.
+		{Role: "user", Images: []llm.Image{second}},
+		{Role: "assistant", Content: "another chart"},
+	}
+	path := filepath.Join(t.TempDir(), "s.json")
+	if err := FromHistory("m", "plan", history).Save(path, nil); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := loaded.History()
+	if len(got) != len(history) {
+		t.Fatalf("resumed %d messages, want %d", len(got), len(history))
+	}
+	if len(got[0].Images) != 1 || got[0].Images[0].MimeType != first.MimeType ||
+		!bytes.Equal(got[0].Images[0].Data, first.Data) {
+		t.Errorf("the attachment was lost: %+v", got[0].Images)
+	}
+	if got[0].Content != "what does this show?" {
+		t.Errorf("content = %q, want the caption", got[0].Content)
+	}
+	// An image-only turn keeps its image and is NOT given placeholder
+	// text: it is a complete message.
+	if len(got[2].Images) != 1 || !bytes.Equal(got[2].Images[0].Data, second.Data) {
+		t.Errorf("the image-only turn lost its image: %+v", got[2])
+	}
+	if got[2].Content != "" {
+		t.Errorf("content = %q, want it left alone", got[2].Content)
+	}
+}
+
+// TestLoadSubstitutesTextForAnImageOnlyMessage: a session file written
+// before attachments were persisted (or edited by hand) can hold a user
+// message with no content at all. Resumed as it stands, that is an
+// empty user turn and every provider rejects it, so the session could
+// not continue at all.
+func TestLoadSubstitutesTextForAnImageOnlyMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		node string
+		want bool
+	}{
+		{"user message with nothing in it", `{"id":"a","role":"user","content":""}`, true},
+		{"user message with text", `{"id":"a","role":"user","content":"hello"}`, false},
+		{"assistant message with nothing in it", `{"id":"a","role":"assistant","content":""}`, false},
+		{"tool result with nothing in it", `{"id":"a","role":"tool","tool_call_id":"c1","content":""}`, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "s.json")
+			body := `{"id":"x","root":"a","active":"a","nodes":{"a":` + tc.node + `}}`
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			got := s.History()[0].Content
+			if substituted := got == missingImageNote; substituted != tc.want {
+				t.Errorf("content = %q, want substituted=%v", got, tc.want)
+			}
+		})
 	}
 }

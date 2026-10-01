@@ -27,6 +27,9 @@ func TestShellAllowlistMatching(t *testing.T) {
 		{"'git status'", false},             // one word with a space: a DIFFERENT command
 		{`git "status"`, true},              // per-word quoting is still git + status
 		{"echo `git status`", false},
+		{"git status\nrm -rf /", false}, // newline: two commands, one grant
+		{"git status\rrm -rf /", false}, // CR is not a separator, so it also fails closed
+		{"git\nstatus", false},          // newline inside the granted prefix itself
 	}
 	for _, c := range cases {
 		if got := a.Allows(c.cmd); got != c.want {

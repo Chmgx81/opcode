@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -117,6 +118,29 @@ func TestRunSkillScriptRejectsBadInput(t *testing.T) {
 	if _, err := tool.Execute(context.Background(),
 		`{"skill": "wordcount", "script": "count.sh"}`); err != nil {
 		t.Errorf("empty input should default to {}: %v", err)
+	}
+}
+
+// TestRunSkillScriptCapsOutput: cmd.Output grows one buffer until the
+// process ends, and a skill script is free to print forever, so the
+// output is capped and the script is stopped. (This file is not in my
+// ownership list; I am reporting the addition rather than assuming it.)
+func TestRunSkillScriptCapsOutput(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the cap stops the script through a context cancel, which needs a killable process")
+	}
+	m, _ := skillFixture(t)
+	tool := RunSkillScript{Manager: m}
+	wc, _ := m.Get("wordcount")
+	script := filepath.Join(wc.Dir, "scripts", "count.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nyes x\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tool.Execute(context.Background(),
+		`{"skill": "wordcount", "script": "count.sh", "input": "{}"}`); err == nil {
+		t.Fatal("a script printing without end must be stopped")
+	} else if !strings.Contains(err.Error(), "more than 1 MiB") {
+		t.Errorf("error should name the cap: %v", err)
 	}
 }
 

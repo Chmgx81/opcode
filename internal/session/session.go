@@ -30,6 +30,12 @@ type Node struct {
 	Content    string         `json:"content"`
 	ToolCalls  []llm.ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+	// Images are the attachments of a user message. They are stored
+	// inline (base64 in the JSON), which costs disk on image-heavy
+	// sessions, and the cost buys a resumed session that still knows
+	// what it was looking at instead of resuming into an empty
+	// user message that every provider rejects.
+	Images []llm.Image `json:"images,omitempty"`
 }
 
 // Session is one conversation tree plus its pointer state.
@@ -74,6 +80,7 @@ func FromHistory(model, mode string, history []llm.Message) *Session {
 			Content:    m.Content,
 			ToolCalls:  m.ToolCalls,
 			ToolCallID: m.ToolCallID,
+			Images:     m.Images,
 		}
 		s.Nodes[node.ID] = node
 		if s.Root == "" {
@@ -129,6 +136,7 @@ func (s *Session) History() []llm.Message {
 			Content:    n.Content,
 			ToolCalls:  n.ToolCalls,
 			ToolCallID: n.ToolCallID,
+			Images:     n.Images,
 		})
 	}
 	return out
@@ -136,19 +144,16 @@ func (s *Session) History() []llm.Message {
 
 // Save writes the session to path with credential values redacted
 // (Section 3.10: sessions get exported and shared).
+//
+// The redaction is applied to a copy: the caller's tree is the live
+// conversation, and rewriting its nodes in place would replace text the
+// model already saw with "[redacted]" — and make a second Save of the
+// same tree lossy in a way the caller cannot undo.
 func (s *Session) Save(path string, secrets []string) error {
-	redactor := tools.NewRedactor(secrets...)
-	for _, n := range s.Nodes {
-		n.Content = redactor.Redact(n.Content)
-		for i, tc := range n.ToolCalls {
-			tc.Arguments = redactor.Redact(tc.Arguments)
-			n.ToolCalls[i] = tc
-		}
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := json.MarshalIndent(s.redacted(secrets), "", "  ")
 	if err != nil {
 		return err
 	}
@@ -156,6 +161,41 @@ func (s *Session) Save(path string, secrets []string) error {
 	// mid-write must leave the previous complete session in place.
 	return config.WriteFileAtomic(path, data, 0o600)
 }
+
+// redacted returns a copy of the session with every known credential
+// replaced. Only the two fields that carry model- or tool-authored
+// text are rewritten; ids, roles and the tree shape are copied as they
+// are.
+func (s *Session) redacted(secrets []string) *Session {
+	redactor := tools.NewRedactor(secrets...)
+	out := &Session{
+		ID:     s.ID,
+		Model:  s.Model,
+		Mode:   s.Mode,
+		Nodes:  make(map[string]*Node, len(s.Nodes)),
+		Root:   s.Root,
+		Active: s.Active,
+	}
+	for id, n := range s.Nodes {
+		cp := *n
+		cp.Content = redactor.Redact(n.Content)
+		if len(n.ToolCalls) > 0 {
+			cp.ToolCalls = make([]llm.ToolCall, len(n.ToolCalls))
+			for i, tc := range n.ToolCalls {
+				tc.Arguments = redactor.Redact(tc.Arguments)
+				cp.ToolCalls[i] = tc
+			}
+		}
+		out.Nodes[id] = &cp
+	}
+	return out
+}
+
+// missingImageNote replaces the content of a user message that is
+// empty because its only content was an image. Such a message is
+// rejected by every provider as an empty turn, so a session that
+// carried one would resume straight into a 400.
+const missingImageNote = "(an image was attached to this message; the attachment was not preserved in this session)"
 
 // Load reads a session file.
 func Load(path string) (*Session, error) {
@@ -169,6 +209,11 @@ func Load(path string) (*Session, error) {
 	}
 	if s.Nodes == nil {
 		s.Nodes = map[string]*Node{}
+	}
+	for _, n := range s.Nodes {
+		if n.Role == "user" && n.Content == "" && len(n.Images) == 0 {
+			n.Content = missingImageNote
+		}
 	}
 	return &s, nil
 }

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // fakeTool lets the matrix tests pin a tier without a real tool.
@@ -165,6 +167,180 @@ func TestAskModeBoundedActions(t *testing.T) {
 	promptCalled = false
 	if !decide(Bash{}, `{"command": "ls"}`) || !promptCalled {
 		t.Error("shell call without an active sandbox must prompt in ask mode")
+	}
+}
+
+// rootSandbox narrows the writable roots to one directory tree so a
+// path genuinely outside the project is outside every root.
+// WritableRoots is the working directory plus os.TempDir() plus the dev
+// caches, so a plain t.TempDir() for the "outside" tree would sit
+// inside /tmp — which IS a root — and the escape tests would prove
+// nothing. Repointing TMPDIR (and HOME, for the caches) at a fresh
+// temp dir leaves the real temp dir outside the bound.
+func rootSandbox(t *testing.T) (project, outside string) {
+	t.Helper()
+	realTmp := os.TempDir()
+	newTmp := t.TempDir()
+	t.Setenv("TMPDIR", newTmp)
+	t.Setenv("TMP", newTmp)
+	t.Setenv("TEMP", newTmp)
+	t.Setenv("HOME", newTmp)
+	t.Setenv("USERPROFILE", newTmp)
+	var err error
+	if outside, err = os.MkdirTemp(realTmp, "tilde-outside-"); err != nil {
+		t.Fatalf("outside dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(outside) })
+	project = t.TempDir()
+	return project, outside
+}
+
+// TestWriteThroughSymlinkDotDotStaysInsideRoots is the bypass that
+// let a build-mode write land outside the writable roots with no
+// prompt: filepath.Abs cleans "docs/.." lexically, so the gate saw
+// "project/secret.txt" (in root) while the kernel resolved the symlink
+// first and popped to the target's parent. The gate's answer has to be
+// the kernel's answer, so the write is no longer bounded — the dialog
+// appears, or the headless run denies.
+// join is filepath.Join without the cleaning: "docs/../x" must reach
+// the gate exactly as written, since the cleaning is the bug.
+func join(parts ...string) string { return strings.Join(parts, string(filepath.Separator)) }
+
+func TestWriteThroughSymlinkDotDotStaysInsideRoots(t *testing.T) {
+	project, outside := rootSandbox(t)
+	vault := filepath.Join(outside, "vault")
+	if err := os.Mkdir(vault, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []string{"docs", "cfg"} {
+		if err := os.Symlink(vault, filepath.Join(project, link)); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+	t.Chdir(project)
+	prompted := false
+	decide := PolicyDecide(ModeBuild, func(Tool, string) bool { prompted = true; return true })
+
+	args, _ := json.Marshal(map[string]string{"path": join("docs", "..", "secret.txt")})
+	if !decide(WriteFile{}, string(args)) || !prompted {
+		t.Error("write_file through docs/.. was credited as bounded; the write lands in the vault's parent")
+	}
+
+	// The same spelling through edit_file — the other write tool the
+	// gate credits the same bound for.
+	prompted = false
+	args, _ = json.Marshal(map[string]string{
+		"path": join("cfg", "..", "authorized_keys"),
+		"old":  "a", "new": "b",
+	})
+	if !decide(EditFile{}, string(args)) || !prompted {
+		t.Error("edit_file through cfg/.. was credited as bounded")
+	}
+}
+
+// pathInWritableRoots must agree with the kernel for every shape a
+// model emits: existing file, new file, new nested dirs, the traversal
+// escapes, symlink loops, dangling links, and the ordinary "." and
+// ".." that stay inside.
+func TestPathInWritableRoots(t *testing.T) {
+	root, outside := rootSandbox(t)
+	mk := func(path, content string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	mk(filepath.Join(root, "file.txt"), "x")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mk(filepath.Join(root, "sub", "nested.txt"), "x")
+	// A symlink out of the root, a loop, and a link to nowhere.
+	if err := os.Symlink(outside, filepath.Join(root, "docs")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(root, "loop-a"), filepath.Join(root, "loop-b")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "loop-b"), filepath.Join(root, "loop-a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "gone.txt"), filepath.Join(root, "dangling")); err != nil {
+		t.Fatal(err)
+	}
+	// And one pointing back inside: the in-project symlinked directory.
+	if err := os.Symlink(filepath.Join(root, "sub"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+
+	// The project is the only writable root: outside lives in the real
+	// temp dir, which rootSandbox moved out of the bound.
+	t.Chdir(root) // a relative path resolves against the project
+
+	inside := []string{
+		"file.txt",
+		filepath.Join("sub", "nested.txt"),
+		"new.txt",                               // does not exist yet
+		filepath.Join("src", "pkg", "thing.go"), // nested dirs that do not exist
+		".",
+		filepath.Join("sub", "..", "file.txt"), // stays inside
+		filepath.Join(".", "file.txt"),
+		filepath.Join(root, "file.txt"),
+		filepath.Join(root, "sub", "nested.txt"),
+		// A symlinked directory that points back inside the project is
+		// ordinary layout (monorepos, docs -> ../docs). Creating a new
+		// file through one is ordinary work and must not be refused —
+		// the resolved path is still inside, and the kernel would put
+		// it there.
+		filepath.Join("alias", "fresh.txt"),
+		filepath.Join("alias", "deep", "fresh.txt"),
+	}
+	for _, path := range inside {
+		if !pathInWritableRoots(path) {
+			t.Errorf("pathInWritableRoots(%q) = false, want true (ordinary in-root work)", path)
+		}
+	}
+
+	outsidePaths := map[string]string{
+		"symlink then parent": join("docs", "..", "secret.txt"),
+		"parent":              join("..", "secret.txt"),
+		"two parents":         join("..", "..", "secret.txt"),
+		"absolute outside":    filepath.Join(outside, "secret.txt"),
+		"through symlink":     filepath.Join("docs", "secret.txt"),
+		"dangling symlink":    "dangling",
+		"root escape":         string(filepath.Separator),
+	}
+	for name, path := range outsidePaths {
+		if pathInWritableRoots(path) {
+			t.Errorf("%s: pathInWritableRoots(%q) = true, want false", name, path)
+		}
+	}
+}
+
+// A symlink loop must terminate, not spin: the resolution walks with a
+// bounded hop count, like the kernel's own ELOOP limit.
+func TestPathInWritableRootsTerminatesOnSymlinkLoop(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a")
+	if err := os.Symlink(filepath.Join(dir, "b"), a); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(a, filepath.Join(dir, "b")); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan bool, 1)
+	go func() { done <- pathInWritableRoots(a) }()
+	select {
+	case in := <-done:
+		if in {
+			t.Error("a symlink loop resolved as inside the roots")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("pathInWritableRoots did not terminate on a symlink loop")
 	}
 }
 

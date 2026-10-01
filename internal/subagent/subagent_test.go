@@ -2,6 +2,7 @@ package subagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -225,14 +226,26 @@ func TestEmitterSetAndDrop(t *testing.T) {
 
 func TestSubagentToolCallsShareTheGate(t *testing.T) {
 	dir := t.TempDir()
+	// The write path must be absolute and inside the temp dir: a
+	// relative one resolves against the test binary's working
+	// directory, which is the package source, and the test then
+	// leaves x.txt in the repo (it was committed once).
+	target, err := filepath.Abs(filepath.Join(dir, "x.txt"))
+	if err != nil {
+		t.Fatalf("abs: %v", err)
+	}
+	args, err := json.Marshal(map[string]string{"path": target, "content": "hi"})
+	if err != nil {
+		t.Fatalf("marshal args: %v", err)
+	}
 	// The subagent's tool call must land in the same audit log as the
 	// parent's — one trust boundary.
 	runner, fp, _ := newRunner(t, dir, [][]llm.ChatEvent{
 		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{
-			ID: "c1", Name: "write_file", Arguments: `{"path": "x.txt", "content": "hi"}`}}},
+			ID: "c1", Name: "write_file", Arguments: string(args)}}},
 		{{Type: llm.TextEvent, Text: "written"}},
 	})
-	_, err := runner.Run(context.Background(), "write x.txt", "writer", func(Event) {})
+	_, err = runner.Run(context.Background(), "write x.txt", "writer", func(Event) {})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

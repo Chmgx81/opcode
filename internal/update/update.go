@@ -152,15 +152,17 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	// The explicit check is the freshest signal the startup notice
-	// has: record it for the next launch. Best-effort — a cache
-	// write failure must not fail the update itself.
-	if o.CacheHome != "" {
-		WriteCache(CachePath(o.CacheHome), tag, time.Now())
-	}
 	latest, ok := parseRelease(tag)
 	if !ok {
 		return fmt.Errorf("the latest release tag %q is not a vMAJOR.MINOR.PATCH version; refusing to use it", tag)
+	}
+	// The explicit check is the freshest signal the startup notice
+	// has: record it for the next launch, replacing any recorded
+	// failure. After the tag is validated, so a malformed response
+	// never lands in the cache as a version. Best-effort — a cache
+	// write failure must not fail the update itself.
+	if o.CacheHome != "" {
+		WriteCache(CachePath(o.CacheHome), Cache{Tag: tag, CheckedAt: time.Now()})
 	}
 
 	switch c := compare(cur, latest); {

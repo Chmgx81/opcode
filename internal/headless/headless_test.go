@@ -176,6 +176,67 @@ func TestRunBoundedWriteRuns(t *testing.T) {
 	}
 }
 
+// TestTextModeSanitizesPromptAndErrors: text mode prints untrusted bytes
+// straight to the terminal, so the prompt echo and both error prints
+// were the remaining raw paths. An error string embeds filesystem paths
+// and model-supplied fragments, so a crafted file name was enough to
+// drive the terminal — a title grab, a screen clear, a key remap. JSON
+// mode stays exempt: encoding/json escapes every control character.
+func TestTextModeSanitizesPromptAndErrors(t *testing.T) {
+	const payload = "pre\x1b]0;pwned\x07post\x1b[2Jend"
+	p := &scriptedProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ErrorEvent, Err: fmt.Errorf("could not read %s", payload)}},
+	}}
+	orch := orchestrator.New(p, "m", "s", &tools.Registry{}, &tools.Gate{})
+
+	var buf bytes.Buffer
+	// The prompt is caller input, sanitized for the same reason: it is
+	// echoed to the terminal before anything else runs.
+	if err := Run(context.Background(), orch, payload, Options{Out: &buf}); err == nil {
+		t.Fatal("the turn error must surface")
+	}
+	out := buf.String()
+	if strings.ContainsAny(out, "\x1b\x07") {
+		t.Errorf("text-mode output carries control bytes:\n%q", out)
+	}
+	if strings.Contains(out, "pwned") {
+		t.Errorf("an OSC payload survived into the terminal:\n%q", out)
+	}
+	// The readable text is still there — sanitizing is not censoring.
+	if !strings.Contains(out, "prepostend") {
+		t.Errorf("the readable text was lost:\n%q", out)
+	}
+	if !strings.Contains(out, "could not read") {
+		t.Errorf("the error itself was lost:\n%q", out)
+	}
+}
+
+// JSON mode is deliberately exempt and must keep delivering honest
+// bytes: encoding/json escapes the control characters itself, so a
+// downstream tool can read the real value back.
+func TestJSONModeKeepsHonestBytes(t *testing.T) {
+	const payload = "pre\x1b]0;pwned\x07post"
+	p := &scriptedProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.TextEvent, Text: payload}},
+	}}
+	orch := orchestrator.New(p, "m", "s", &tools.Registry{}, &tools.Gate{})
+
+	var buf bytes.Buffer
+	if err := Run(context.Background(), orch, payload, Options{Out: &buf, JSON: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// Every line is still valid JSON, and the escaped ESC round-trips.
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			t.Fatalf("non-JSON line: %q", line)
+		}
+	}
+	if !strings.Contains(buf.String(), `\u001b`) {
+		t.Errorf("JSON mode should carry the escaped form, not the stripped one:\n%q", buf.String())
+	}
+}
+
 // TestRunTextModeSanitizesResults: text mode prints tool output to the
 // terminal, so a poisoned payload — title grab, screen clear, keyboard
 // remap — must arrive stripped. JSON mode is exempt: json.Marshal

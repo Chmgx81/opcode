@@ -11,6 +11,7 @@ package subagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -94,6 +95,10 @@ func subset(reg *tools.Registry) *tools.Registry {
 	return &out
 }
 
+// noFinalAnswer is the explicit result of a subagent that produced no
+// text, so the parent sees a statement rather than an empty string.
+const noFinalAnswer = "the subagent finished without a final answer"
+
 // Run drives one subagent turn for task and returns its final answer.
 // Progress is reported through emit as it happens; blocking here is
 // fine because the parent dispatches tool calls on its own goroutine
@@ -128,13 +133,19 @@ func (r *Runner) Run(ctx context.Context, task, title string, emit func(Event)) 
 		default:
 			continue
 		}
+		if ev.Kind == orchestrator.EventError && errors.Is(ev.Err, orchestrator.ErrEmptyResponse) {
+			// The parent gets an explicit no-answer result rather than
+			// a failed tool call: it can retry or work around it.
+			emit(Event{Title: title, Kind: EventDone, Text: ""})
+			return noFinalAnswer, nil
+		}
 		emit(e)
 		if ev.Kind == orchestrator.EventError {
 			return "", fmt.Errorf("subagent: %s", ev.Err)
 		}
 	}
 	if strings.TrimSpace(answer) == "" {
-		return "the subagent finished without a final answer", nil
+		return noFinalAnswer, nil
 	}
 	return answer, nil
 }

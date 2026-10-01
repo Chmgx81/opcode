@@ -107,11 +107,17 @@ func (ApplyPatch) Execute(ctx context.Context, args string) (string, error) {
 }
 
 // safePatchPath is the floor full-auto stands on. The gate's
-// writable-roots bound still governs prompting; this refuses only
-// what no mode should do: parent traversal (which escapes the
-// project however it is spelled) and absolute paths outside the
-// writable roots. Relative in-tree paths and absolute in-roots
-// paths both pass — the model emits either.
+// writable-roots bound still governs prompting; this is the floor
+// under that: every path, however spelled, must resolve inside the
+// writable roots, plus the plain refusal of parent traversal (which
+// escapes the project however it is resolved). Relative in-tree paths
+// and absolute in-roots paths both pass — the model emits either.
+//
+// A relative path used to return true on its own, with no resolution
+// at all, so in full-auto (where the gate's bound check is skipped by
+// design) "docs/authorized_keys" wrote through a symlink out of the
+// project and "*** Delete File: assets/important.txt" deleted there.
+// The comment above claimed otherwise; the check now does what it said.
 func safePatchPath(path string) bool {
 	if path == "" {
 		return false
@@ -121,8 +127,5 @@ func safePatchPath(path string) bool {
 			return false
 		}
 	}
-	if filepath.IsAbs(path) {
-		return pathInWritableRoots(path)
-	}
-	return true
+	return pathInWritableRoots(path)
 }

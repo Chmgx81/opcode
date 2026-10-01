@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Chmgx81/tilde/internal/sandbox"
@@ -21,7 +22,7 @@ type Bash struct{}
 func (Bash) Name() string { return "bash" }
 
 func (Bash) Description() string {
-	return "Run a command in bash (bash -c) in the current working directory and return its combined stdout and stderr. Sandboxed by default: writes are kernel-confined to the working directory, /tmp, and dev caches, and network sockets are blocked. Pass {\"sandbox\": false} only when confinement breaks the command — that escape asks the user for approval."
+	return "Run a command in bash (bash -c) in the current working directory and return its combined stdout and stderr, capped at 2 MiB. Sandboxed by default: writes are kernel-confined to the working directory, /tmp, and dev caches, and network sockets are blocked. Pass {\"sandbox\": false} only when confinement breaks the command — that escape asks the user for approval."
 }
 
 func (Bash) Parameters() json.RawMessage {
@@ -40,6 +41,62 @@ func (Bash) Tier() Tier { return TierActionAllowed }
 // bashTimeout bounds a command so a hung process can't wedge the
 // agent loop forever.
 const bashTimeout = 5 * time.Minute
+
+// bashMaxBytes caps the combined output of one command. bash is
+// Action-Allowed, but in build mode a sandboxed command runs without
+// prompting and in full-auto every command does, so `yes` or
+// `dd if=/dev/zero` would otherwise grow one bytes.Buffer until the
+// process died — under a memory limit the Go runtime's OOM is a fatal,
+// unrecoverable crash that loses the turn. 2 MiB is far above a real
+// build or test log (web_fetch caps at 256 KiB, read_file at 1 MiB).
+const bashMaxBytes = 2 << 20
+
+// cappedWriter accepts the first limit bytes and then discards the
+// rest, calling onFull exactly once — when data is actually dropped,
+// not when the total merely reaches the cap. It never returns an error:
+// the point is to keep the pipe drained, not to break the child's
+// writes.
+type cappedWriter struct {
+	w         *bytes.Buffer
+	limit     int
+	written   int
+	onFull    func()
+	fullFired bool
+}
+
+func (c *cappedWriter) Write(p []byte) (int, error) {
+	if room := c.limit - c.written; room > 0 {
+		n := len(p)
+		if n > room {
+			n = room
+		}
+		c.w.Write(p[:n])
+		c.written += n
+		if n == len(p) {
+			return len(p), nil
+		}
+	}
+	if !c.fullFired {
+		c.fullFired = true
+		if c.onFull != nil {
+			c.onFull()
+		}
+	}
+	return len(p), nil
+}
+
+// humanBytes renders a byte cap the way web.go reports its own, so the
+// two truncation notes read alike.
+func humanBytes(n int) string {
+	switch {
+	case n >= 1<<20 && n%(1<<20) == 0:
+		return fmt.Sprintf("%d MiB", n/(1<<20))
+	case n >= 1<<10 && n%(1<<10) == 0:
+		return fmt.Sprintf("%d KiB", n/(1<<10))
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
+}
 
 func (Bash) Execute(ctx context.Context, args string) (string, error) {
 	var a struct {
@@ -62,25 +119,48 @@ func (Bash) Execute(ctx context.Context, args string) (string, error) {
 		defer cancel()
 		ownDeadline = true
 	}
+	// runCtx carries the output cap: cancelling it stops the command
+	// through the same process-group kill the timeout uses.
+	runCtx, stopRun := context.WithCancel(ctx)
+	defer stopRun()
 	var cmd *exec.Cmd
 	// sandboxed tracks which branch built the command, so a denial
 	// is only classified when the confinement was actually applied —
 	// an unsandboxed EACCES is a real permission error.
 	sandboxed := !(a.Sandbox != nil && !*a.Sandbox)
 	if a.Sandbox != nil && !*a.Sandbox {
-		cmd = sandbox.PlainCommand(ctx, "bash", "-c", a.Command)
+		cmd = sandbox.PlainCommand(runCtx, "bash", "-c", a.Command)
 	} else {
-		cmd = sandbox.Command(ctx, "bash", "-c", a.Command)
+		cmd = sandbox.Command(runCtx, "bash", "-c", a.Command)
 	}
 	// One buffer behind both streams, as CombinedOutput does: with
 	// the same writer on Stdout and Stderr, exec copies them through a
 	// single goroutine, so interleaving is preserved and the buffer
 	// needs no lock.
+	//
+	// The buffer is capped, and exceeding the cap stops the command by
+	// cancelling the context it runs under — which is the same
+	// process-group kill the timeout uses, so a command that floods
+	// stdout leaves no process group behind. Returning a write error
+	// instead would make exec report "signal: broken pipe", which
+	// reads like a harness failure rather than the honest reason.
 	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err := runKillingGroup(ctx, cmd)
+	var over atomic.Bool
+	capped := &cappedWriter{w: &buf, limit: bashMaxBytes}
+	capped.onFull = func() {
+		over.Store(true)
+		stopRun()
+	}
+	cmd.Stdout = capped
+	cmd.Stderr = capped
+	err := runKillingGroup(runCtx, cmd)
 	out := buf.Bytes()
+	if over.Load() {
+		// Whatever the command managed to say before it was stopped is
+		// still the useful part; the cap is the honest headline.
+		return string(out) + fmt.Sprintf("\n… (output capped at %s; the command was stopped)", humanBytes(bashMaxBytes)),
+			fmt.Errorf("bash: produced more than %s of output and was stopped", humanBytes(bashMaxBytes))
+	}
 	if ctx.Err() == context.DeadlineExceeded {
 		if ownDeadline {
 			return string(out), fmt.Errorf("bash: timed out after %s", bashTimeout)

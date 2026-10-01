@@ -51,11 +51,24 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 		}
 		return s
 	}
+	// safeForTerminal is the same treatment the event loop below gives
+	// untrusted bytes, applied to the prompt echo and the error prints.
+	// Those were raw: an error string embeds filesystem paths and
+	// model-supplied fragments, and the prompt is whatever the caller
+	// passed — a crafted file name or a pasted tool result was enough to
+	// drive the terminal. JSON mode stays exempt (encoding/json escapes
+	// control characters).
+	safeForTerminal := func(s string) string {
+		if opt.JSON {
+			return redact(s)
+		}
+		return redact(safe.Text(s))
+	}
 
 	if opt.JSON {
 		emit(map[string]any{"kind": "start", "prompt": redact(prompt)})
 	} else {
-		fmt.Fprintf(w, "~ %s\n", prompt)
+		fmt.Fprintf(w, "~ %s\n", safeForTerminal(prompt))
 	}
 
 	events := orch.Send(ctx, prompt)
@@ -105,14 +118,14 @@ func Run(ctx context.Context, orch *orchestrator.Orchestrator, prompt string, op
 			if opt.JSON {
 				emit(map[string]any{"kind": "compaction_failed", "error": redact(ev.Err.Error())})
 			} else {
-				fmt.Fprintf(w, "[compaction skipped] %s\n", ev.Err.Error())
+				fmt.Fprintf(w, "[compaction skipped] %s\n", safeForTerminal(ev.Err.Error()))
 			}
 		case orchestrator.EventError:
 			err = ev.Err
 			if opt.JSON {
 				emit(map[string]any{"kind": "error", "error": redact(ev.Err.Error())})
 			} else {
-				fmt.Fprintf(w, "\nerror: %v\n", ev.Err)
+				fmt.Fprintf(w, "\nerror: %s\n", safeForTerminal(ev.Err.Error()))
 			}
 		}
 	}

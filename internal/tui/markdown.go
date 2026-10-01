@@ -48,14 +48,14 @@ func brandMarkdown() ansi.StyleConfig {
 		Link:     ansi.StylePrimitive{Color: strPtr(HexInfo), Underline: boolPtr(true)},
 		LinkText: ansi.StylePrimitive{Color: strPtr(HexInfo)},
 		Item: ansi.StylePrimitive{
-			BlockPrefix: "• ", Color: strPtr(HexAccent),
+			BlockPrefix: tableGlyph("• ", "* "), Color: strPtr(HexAccent),
 		},
 		Enumeration: ansi.StylePrimitive{
 			BlockPrefix: ". ", Color: strPtr(HexAccent), Bold: boolPtr(true),
 		},
 		Task: ansi.StyleTask{
 			Ticked:   GlyphOK,
-			Unticked: GlyphWarn,
+			Unticked: GlyphTodoOff,
 		},
 		Code: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{
 			Color: strPtr(HexAccent),
@@ -79,7 +79,7 @@ func brandMarkdown() ansi.StyleConfig {
 				KeywordReserved:   ansi.StylePrimitive{Color: strPtr(HexAccent)},
 				KeywordType:       ansi.StylePrimitive{Color: strPtr(HexWarning)},
 				Operator:          ansi.StylePrimitive{Color: strPtr(HexAccent)},
-				Punctuation:       ansi.StylePrimitive{Color: strPtr("#9AA79D")},
+				Punctuation:       ansi.StylePrimitive{Color: strPtr(HexDim)},
 				Name:              ansi.StylePrimitive{Color: strPtr(HexText)},
 				NameBuiltin:       ansi.StylePrimitive{Color: strPtr(HexInfo)},
 				NameTag:           ansi.StylePrimitive{Color: strPtr(HexAccent)},
@@ -101,19 +101,24 @@ func brandMarkdown() ansi.StyleConfig {
 			StyleBlock: ansi.StyleBlock{
 				StylePrimitive: ansi.StylePrimitive{Color: strPtr(HexText)},
 			},
-			CenterSeparator: strPtr("┼"),
-			ColumnSeparator: strPtr("│"),
-			RowSeparator:    strPtr("─"),
+			CenterSeparator: strPtr(tableGlyph("┼", "|")),
+			ColumnSeparator: strPtr(tableGlyph("│", "|")),
+			RowSeparator:    strPtr(tableGlyph("─", "-")),
 		},
 		BlockQuote: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Color: strPtr(HexDim), Italic: boolPtr(true),
 			},
-			IndentToken: strPtr("│ "),
+			IndentToken: strPtr(tableGlyph("│ ", "| ")),
 		},
 		HorizontalRule: ansi.StylePrimitive{Color: strPtr(HexDeep)},
 	}
 }
+
+// tableGlyph is a markdown table or quote mark. These were hardcoded
+// Unicode, so --plain still drew box-drawing characters — the one
+// place in the rendered frame the vocabulary did not reach.
+func tableGlyph(unicode, ascii string) string { return plainOr(unicode, ascii) }
 
 // mdRenderer returns the cached renderer for a wrap width, building it
 // on first use. Renderers are process-lifetime: they are stateless
@@ -142,7 +147,12 @@ func mdRenderer(width int) (*glamour.TermRenderer, error) {
 // 36): the reader sees α, not \alpha.
 func renderMarkdown(text string, width int) []string {
 	text = convertMath(text)
-	r, err := mdRenderer(maxInt(width-4, 20))
+	// Glamour gets a floor of 20 columns because it misbehaves below
+	// it; on a terminal narrower than that the rendered rows are
+	// clipped back to the real width, so a 14-column pane gets 14
+	// columns rather than 20 columns of overflow.
+	wrapped := maxInt(width-4, 20)
+	r, err := mdRenderer(wrapped)
 	if err != nil {
 		return wrapAll(text, width)
 	}
@@ -156,7 +166,7 @@ func renderMarkdown(text string, width int) []string {
 		if strings.TrimSpace(l) == "" && (len(body) == 0) {
 			continue
 		}
-		body = append(body, l)
+		body = append(body, clipCols(l, width))
 	}
 	// Drop glamour's trailing document margin too.
 	for len(body) > 0 && strings.TrimSpace(body[len(body)-1]) == "" {

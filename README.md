@@ -72,7 +72,7 @@ manager at first use), then the environment — the provider's
 
 | Mode | What the model gets |
 |---|---|
-| `plan` | reads free (read_file, list_dir, grep, glob, current_time), `present_plan` free; every write, command, or fetch it proposes asks you first. It researches, presents a plan, you approve |
+| `plan` | read-tier tools (read_file, list_dir, grep, glob, current_time, load_skill) and the draft-only ones (`present_plan`, `todo_write`) run free; every write, command, or fetch it proposes asks you first. It researches, presents a plan, you approve |
 | `build` | the sandbox is the safety: sandboxed commands and in-tree writes run without prompting; sandbox escapes and out-of-tree writes ask — the default |
 | `full-auto` | runs without prompting, still logged |
 
@@ -94,15 +94,26 @@ work; **No** is preselected.
 
 On Linux, shell commands run under a kernel Landlock ruleset:
 reads and execution anywhere, **writes only to the project
-directory, `/tmp`, and dev caches** (`~/.cache`, `~/go/pkg/mod`,
-`~/.cargo/registry`, `~/.npm`). A command that tries to write to
-`~/.ssh` or your home fails with `Permission denied` — enforced by
-the kernel, not by tilde. On by default where the kernel supports
-it. A model can pass `{"sandbox": false}` when confinement breaks
-a command — that escape always goes through the approval dialog in
-plan and build modes. PATH bin dirs (`~/go/bin`,
+directory, `$TMPDIR`, and the dev caches that exist on this
+machine** (`$XDG_CACHE_HOME` or `~/.cache`, `~/go/pkg/mod`,
+`~/.cargo/registry`, `~/.npm`, plus `$GOCACHE` / `$GOMODCACHE` when
+set). A command that tries to write to `~/.ssh` or your home fails
+with `Permission denied` — enforced by the kernel, not by tilde.
+Landlock landed in Linux 5.13; tilde probes the kernel's ABI and
+grants exactly the rights that version defines. On by default where
+the kernel supports it. A model can pass `{"sandbox": false}` when
+confinement breaks a command — that escape always goes through the
+approval dialog in plan and build modes. PATH bin dirs (`~/go/bin`,
 `~/.local/bin`) stay read-only, so a command can't drop an
 executable where your shell will find it.
+
+On x86_64 Linux a seccomp filter also denies `AF_INET`, `AF_INET6`
+and `AF_PACKET` sockets to sandboxed commands — a confined command
+that could read your files still could not phone home. The filter is
+hand-written x86_64 BPF, so on other architectures the file
+confinement applies and the network stays open; the startup status
+line says which you got. See [SECURITY.md](SECURITY.md) for what
+the sandbox is and is not.
 
 In-process file writes (`write_file`, `edit_file`) can't be
 Landlocked, so the gate bounds them by path instead: writes inside
@@ -118,7 +129,7 @@ actually confine.
 |---|---|
 | **Enter** | send — mid-turn: steer at the next round boundary |
 | **↑ / ↓** | recall a previous prompt (persists across sessions) |
-| **Ctrl+J** | newline |
+| **Ctrl+J / Shift+Enter** | newline |
 | **Ctrl+V** | attach the clipboard image — the model sees it |
 | **Ctrl+E** | edit the composer in `$VISUAL`/`$EDITOR` |
 | **Alt+Enter** | queue a follow-up |
@@ -128,17 +139,20 @@ actually confine.
 | **Ctrl+R** | expand / collapse tool results & thinking |
 | **Ctrl+O** | transcript — scroll the whole conversation, results expanded |
 | **Alt+. / Alt+,** | reasoning effort — low / medium / high, or the provider default |
-| **?** | everything else |
+| **?** | help overlay — every key and command (empty, idle composer) |
 
 `/model` switches models at runtime. `/models` browses every
 provider's models — fetched live from the provider, never a cached
 list — and switching provider + model applies without a restart.
-`/sessions` resumes one. `/theme` picks the palette — dark, light,
-or the original green — with a live preview; esc restores. `/diff`
-shows the working tree's git changes, colored, untracked files
-included. `/doctor` diagnoses the whole setup — version, config, key, sandbox,
+`/sessions` resumes one. `/mode` shows or switches the permission
+mode. `/skills` and `/mcp` list what is loaded. `/theme` picks the
+palette — dark, light, or the original green — with a live preview;
+esc restores. `/diff` shows the working tree's git changes, colored,
+untracked files included. `/login` and `/logout` store and remove a
+provider's key. `/doctor` diagnoses the whole setup — version, config, key, sandbox,
 trust, MCP, update check, terminal — one line per subsystem with the next step
-when something is wrong. Unknown `/commands` error in place with a
+when something is wrong. `?` or `/help` lists every key and command;
+/`/exit` (or `/quit`) leaves. Unknown `/commands` error in place with a
 suggestion instead of billing a model turn.
 Typing `@` opens a live file picker (type to filter, enter to attach);
 `!` turns the composer amber — shell mode, Enter runs it directly, no
@@ -150,12 +164,14 @@ Exits are graceful: the first Ctrl+C interrupts and hints, the second
 quits, and tilde saves the session and says so on the way out —
 `~ tilde — session saved · resume it with /sessions`.
 
-The model's built-in tools: read_file, list_dir, grep (content search), glob (pattern find), current_time, web_fetch,
-apply_patch (V4A multi-file patches — the format Codex uses), write_file,
-edit_file, bash, plus skills, MCP tools, subagents, todo
-tracking, and present_plan. Read-tier tools are free in every mode;
-apply_patch runs without prompting in build mode while every file it
-touches stays inside the sandbox's writable roots.
+The model's built-in tools: read_file, list_dir, grep (content
+search), glob (pattern find), current_time, web_fetch, apply_patch
+(V4A multi-file patches — the format Codex uses), write_file,
+edit_file, bash, load_skill and run_skill_script, spawn_subagent,
+todo_write, and present_plan — plus whatever your MCP servers
+expose. Read-tier tools are free in every mode; apply_patch runs
+without prompting in build mode while every file it touches stays
+inside the sandbox's writable roots.
 
 Accessibility: for 400 ms after a permission, plan, or trust dialog opens, keystrokes are
 swallowed (a fast typist cannot accidentally approve), and
@@ -174,9 +190,10 @@ with counts, windowed so long lists stay compact.
 **Skills** — drop a `SKILL.md` folder in `~/.tilde/skills/`; the model
 sees the index, loads the body only when it matches. Project skills
 stay locked until you trust the project (a fingerprinted, one-time
-prompt). **MCP** — stdio servers from `~/.tilde/mcp.json`. **Subagents**
-— the model can delegate; same gate, no recursion. **Sessions** —
-tree-structured, resume anytime. **Headless** —
+prompt). **MCP** — stdio servers from `~/.tilde/mcp.json`, and from
+a project's `.tilde/mcp.json` once that project is trusted.
+**Subagents** — the model can delegate; same gate, no recursion.
+**Sessions** — tree-structured, resume anytime. **Headless** —
 
 ```sh
 tilde -p "run the tests"        # one turn, plain text or --json
@@ -187,14 +204,31 @@ tilde -p "run the tests"        # one turn, plain text or --json
 ```sh
 go install github.com/Chmgx81/tilde/cmd/tilde@latest   # via Go
 tilde --help · tilde --version · tilde --continue     # resume latest
+tilde --resume /path/to/session.json                  # resume one session
+tilde --plain                                        # ASCII glyphs, no animation
+tilde --trust                                        # pre-approve a CI checkout
 tilde update [--check]    # update to the latest release (checksum-verified)
 ```
 
-tilde checks for updates once a day at startup (cached, silent when
-offline) and tells you when a newer release exists — `/doctor` shows
-the same check. Opt out with `"update_checks": false` in config.json
-or `TILDE_NO_UPDATE_CHECK=1`. Only the latest release gets security
-fixes.
+tilde checks for updates once a day at startup — one small HTTPS
+request, cached, silent when offline — and every surface names the
+same release:
+
+| Where | What it shows |
+|---|---|
+| startup | one note in the transcript — `Update available: v1.0.0 → v1.1.0` — plus the command to run |
+| the footer | a dim `↑ v1.1.0` beside the mode; it stays until you update, at any terminal width |
+| `?` | what the badge means, and the command that acts on it |
+| `/doctor` | the same check, plus whether the last one worked |
+| `tilde --version` | appends `(update available: v1.1.0 — run tilde update)` — from the cache, never the network |
+| the exit line | appends `· update available: v1.1.0 — run tilde update` to the session-saved line |
+
+`tilde update` runs in a shell, not inside a session: it replaces the
+binary the TUI is running from. Opt out of the check with
+`"update_checks": false` in config.json or `TILDE_NO_UPDATE_CHECK=1`.
+Source builds and `go install` builds are not release builds, so
+nothing is ever offered for them. Only the latest release gets
+security fixes.
 
 | Env | What it does |
 |---|---|
@@ -204,7 +238,10 @@ fixes.
 | `TILDE_TRUST=1` | pre-approve the project's executable surface |
 | `TILDE_NO_UPDATE_CHECK=1` | skip the startup update check |
 | `TILDE_ALLOW_LOCAL_FETCH=1` | let web_fetch reach loopback/private addresses |
-| `TILDE_INSTALL_DIR` / `TILDE_VERSION` | install.sh destination / pinned version |
+| `TILDE_INSTALL_DIR` | install.sh destination (default `~/.local/bin`) |
+| `TILDE_VERSION` | install.sh pinned release tag (default: latest) |
+| `TILDE_SKIP_CHECKSUM=1` | install.sh: skip sha256 verification (last resort) |
+| `TILDE_RELEASE_BASE_URL` | install.sh: release root (mirrors, testing) |
 
 Reduced motion: `{"animations": false}` in config.json — the spinner
 and toast animations become static glyphs, the information stays.
@@ -217,8 +254,11 @@ Screen readers: a detected reader (SCREEN_READER, atk-bridge) turns
 animations off for the session and says so — the config key still
 wins. The footer reflows on narrow terminals instead of wrapping.
 
-Everything is recorded honestly in [PROGRESS.md](PROGRESS.md) — what
-was verified live, what wasn't, and what is deferred. The architecture
-and per-phase specs live in [docs/specs/](docs/specs/).
+Everything is recorded honestly in [PROGRESS.md](PROGRESS.md) — the
+current state, what is deferred, and where to look.
+[docs/progress-log.md](docs/progress-log.md) is the full
+chronological build log: every phase, what was verified live and
+what was not. The architecture and per-phase specs live in
+[docs/specs/](docs/specs/) (start with its [index](docs/specs/README.md)).
 
 MIT — see [LICENSE](LICENSE).

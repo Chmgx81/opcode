@@ -3,13 +3,20 @@
 > Synthesis of the three Codex audits
 > ([tui](codex-tui-audit.md), [core](codex-core-audit.md),
 > [features](codex-features-audit.md)) against tilde's current
-> state (Phases 0–28 in PROGRESS.md). Ordered by value-to-effort;
+> state (Phases 0–28 in the build log). Ordered by value-to-effort;
 > each item names what tilde has today, what Codex does, and the
 > honest scope of adopting it. Nothing here is a commitment — it
 > is the menu, with the reasoning.
 >
 > Method note: the audits are static reads of Codex source; nothing
 > was executed. tilde's side is stated from its own code.
+>
+> **Status since writing:** this has not been re-synthesized past
+> Phase 28, so "Adopt" below means *adopted in principle*, not
+> *not yet done*. Six items did land, as Phases 37–42 — each of
+> those specs opens by naming the item it implements. See
+> [README.md](README.md) for the mapping. Treat the remaining
+> entries as an unworked menu.
 
 ---
 

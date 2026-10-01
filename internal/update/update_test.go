@@ -305,6 +305,49 @@ func TestCheckOnly(t *testing.T) {
 	assertUntouched(t, dir, path)
 }
 
+// TestRunRefreshesTheNoticeCache: an explicit check is the freshest
+// signal the startup notice has, so it records the tag — and clears a
+// failure an earlier launch left behind.
+func TestRunRefreshesTheNoticeCache(t *testing.T) {
+	srv := serve(t, newTag, linuxRelease(t, goodArchive(t)))
+	dir, path := target(t)
+	home := t.TempDir()
+	WriteCache(CachePath(home), Cache{Tag: "v0.9.0", CheckedAt: time.Now().Add(-72 * time.Hour), Err: "offline"})
+
+	o := opts(srv.Server, path, nil)
+	o.CheckOnly = true
+	o.CacheHome = home
+	if err := Run(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := ReadCache(CachePath(home))
+	if !ok || c.Tag != newTag || c.Err != "" {
+		t.Errorf("cache = %+v %v, want a clean %s", c, ok, newTag)
+	}
+	if got := Pending(curTag, c.Tag); got != newTag {
+		t.Errorf("Pending after the check = %q, want %q — the next launch must show it", got, newTag)
+	}
+	assertUntouched(t, dir, path)
+}
+
+// TestRunCachesNothingWhenTheTagIsJunk: a malformed latest response
+// must not land in the cache as a version, or the notice would go
+// quiet for a day over a transient upstream glitch.
+func TestRunCachesNothingWhenTheTagIsJunk(t *testing.T) {
+	srv := serve(t, "nightly", linuxRelease(t, goodArchive(t)))
+	_, path := target(t)
+	home := t.TempDir()
+	o := opts(srv.Server, path, nil)
+	o.CheckOnly = true
+	o.CacheHome = home
+	if err := Run(context.Background(), o); err == nil {
+		t.Fatal("a junk tag was accepted")
+	}
+	if _, ok := ReadCache(CachePath(home)); ok {
+		t.Error("a rejected tag must not be cached")
+	}
+}
+
 func TestDevBuildsAreNotUpdated(t *testing.T) {
 	for _, current := range []string{
 		"(devel)", "dev", "", "v1.0.0+dirty", "v1.0.1-0.20250101000000-abcdef123456",

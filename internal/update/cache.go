@@ -4,33 +4,53 @@
 // `tilde update` is explicit and stays the only thing that downloads.
 // Separately, at startup, main asks LatestKnown (below) whether the
 // cached latest-release tag is newer than the running binary and, if
-// so, adds one startup note: "Update available: vX -> vY. Run `tilde
+// so, adds one startup note: "Update available: vX → vY. Run `tilde
 // update` to install it." The cache refreshes at most once every 24h
-// with a short-timeout HTTPS GET to the releases API (a few KB);
-// failures are silent — an offline machine starts exactly as before.
-// Opt out with config.json "update_checks": false or
-// TILDE_NO_UPDATE_CHECK=1. Dev builds ((devel), pseudo-versions) and
-// platforms with no prebuilt binary never check: "newer" has no
-// meaning for them.
+// with a short-timeout HTTPS GET to the releases API (a few KB).
+// Failures are silent — an offline machine starts exactly as before —
+// but they are recorded, so /doctor can say the check failed rather
+// than guess, and a dead network is retried on an hourly schedule
+// instead of on every launch. Opt out with config.json
+// "update_checks": false or TILDE_NO_UPDATE_CHECK=1. Dev builds
+// ((devel), pseudo-versions) and platforms with no prebuilt binary
+// never check: "newer" has no meaning for them.
 package update
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 )
 
-// cacheTTL bounds the check rate: at most one network call per day,
-// however often tilde starts.
-const cacheTTL = 24 * time.Hour
+const (
+	// cacheTTL bounds a working check's rate: at most one network call
+	// per day, however often tilde starts.
+	cacheTTL = 24 * time.Hour
+	// failureTTL is the retry window after a failed check. Shorter
+	// than cacheTTL, so fixing a network is noticed the same
+	// afternoon; long enough that a laptop with no route does not pay
+	// the timeout on every launch.
+	failureTTL = time.Hour
 
-// checkTimeout bounds the startup check: the notice must never make
-// startup feel slow.
-const checkTimeout = 8 * time.Second
+	// checkTimeout bounds the startup check. The check blocks the
+	// first frame, so the budget is a startup budget, not a download
+	// budget: three seconds is enough for the releases API on a slow
+	// link, and a miss costs one failed attempt, not the session.
+	checkTimeout = 3 * time.Second
+
+	// maxCacheBytes bounds the cache read. The file tilde writes is
+	// ~150 bytes; anything larger is damaged, not informative, and
+	// must not be read into memory at launch.
+	maxCacheBytes = 8 << 10
+	// maxErrRunes caps the recorded failure text, so a chatty server
+	// cannot grow the cache file.
+	maxErrRunes = 200
+)
 
 // cacheName is the cache file under the user's tilde home. Dot-prefixed
 // so it stays out of the way of config.json, auth.json, sessions/.
@@ -39,8 +59,21 @@ const cacheName = ".update-cache.json"
 type cacheFile struct {
 	// Tag is the latest release tag seen ("v1.2.3").
 	Tag string `json:"tag"`
-	// CheckedAt is when the tag was fetched, UTC RFC3339.
+	// CheckedAt is when the attempt happened, UTC RFC3339.
 	CheckedAt string `json:"checked_at"`
+	// Err is why the last attempt failed, "" when it worked. Stored
+	// so /doctor can distinguish "offline" from "never ran" instead
+	// of reading a missing tag as either.
+	Err string `json:"error,omitempty"`
+}
+
+// Cache is one update-check attempt's result, as stored on disk. A
+// failed attempt keeps the last known Tag: the release it names is
+// still real, so the notice keeps working with no network at all.
+type Cache struct {
+	Tag       string    // the latest release tag seen, "" if never learned
+	CheckedAt time.Time // when the attempt happened
+	Err       string    // why it failed, "" when it worked
 }
 
 // CachePath returns the update-check cache file for a tilde home dir.
@@ -61,11 +94,12 @@ func ChecksEnabled(updateChecks *bool) bool {
 	return false
 }
 
-// Notice compares the running version against the cached latest tag.
-// It returns the startup-note text when the cache names a strictly
-// newer release, or "" when up to date, unknown, or unchecked. It
-// never touches the network.
-func Notice(current, cachedTag string) string {
+// Pending returns cachedTag when it is strictly newer than current,
+// and "" when there is nothing to offer: up to date, unknown, or a
+// build that is not a release. Every surface — the startup note, the
+// footer badge, `--version`, /doctor — asks here, so none of them can
+// disagree about whether an update exists.
+func Pending(current, cachedTag string) string {
 	if cachedTag == "" {
 		return ""
 	}
@@ -78,44 +112,71 @@ func Notice(current, cachedTag string) string {
 		return ""
 	}
 	if compare(cur, latest) < 0 {
-		return fmt.Sprintf("Update available: %s → %s. Run `tilde update` to install it.", current, cachedTag)
+		return cachedTag
 	}
 	return ""
 }
 
-// ReadCache returns the cached tag and check time. Missing, corrupt,
-// or empty files read as unchecked, never as an error the caller
-// must surface.
-func ReadCache(path string) (tag string, checkedAt time.Time, ok bool) {
-	data, err := os.ReadFile(path)
+// Notice is the startup-note sentence for a pending release: the same
+// comparison as Pending, spelled out with the way to act on it.
+func Notice(current, cachedTag string) string {
+	tag := Pending(current, cachedTag)
+	if tag == "" {
+		return ""
+	}
+	return fmt.Sprintf("Update available: %s → %s. Run `tilde update` to install it.", current, tag)
+}
+
+// ReadCache returns the last attempt's outcome. A missing, oversized,
+// or corrupt file reads as unchecked, never as an error the caller must
+// surface.
+func ReadCache(path string) (Cache, bool) {
+	f, err := os.Open(path)
 	if err != nil {
-		return "", time.Time{}, false
+		return Cache{}, false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxCacheBytes))
+	if err != nil {
+		return Cache{}, false
 	}
 	var c cacheFile
-	if err := json.Unmarshal(data, &c); err != nil || c.Tag == "" {
-		return "", time.Time{}, false
+	if json.Unmarshal(data, &c) != nil {
+		return Cache{}, false
 	}
 	t, err := time.Parse(time.RFC3339, c.CheckedAt)
 	if err != nil {
-		return "", time.Time{}, false
+		return Cache{}, false
 	}
-	return c.Tag, t, true
+	return Cache{Tag: c.Tag, CheckedAt: t, Err: c.Err}, true
 }
 
-// WriteCache records a freshly fetched tag. Best-effort like the
-// history file: a notice cache that cannot be written is a missed
+// WriteCache records one attempt, successful or not. Best-effort like
+// the history file: a notice cache that cannot be written is a missed
 // hint, not a failure.
-func WriteCache(path, tag string, now time.Time) {
-	data, err := json.Marshal(cacheFile{Tag: tag, CheckedAt: now.UTC().Format(time.RFC3339)})
+func WriteCache(path string, c Cache) {
+	if runes := []rune(c.Err); len(runes) > maxErrRunes {
+		c.Err = string(runes[:maxErrRunes])
+	}
+	data, err := json.Marshal(cacheFile{
+		Tag:       c.Tag,
+		CheckedAt: c.CheckedAt.UTC().Format(time.RFC3339),
+		Err:       c.Err,
+	})
 	if err != nil {
 		return
 	}
 	_ = os.WriteFile(path, append(data, '\n'), 0o600)
 }
 
-// Stale reports whether the cache needs a refresh.
-func Stale(checkedAt time.Time, now time.Time) bool {
-	return now.Sub(checkedAt) >= cacheTTL
+// Stale reports whether the cache needs another attempt: a working
+// check lasts a day, a failed one an hour.
+func Stale(c Cache, now time.Time) bool {
+	ttl := cacheTTL
+	if c.Err != "" {
+		ttl = failureTTL
+	}
+	return now.Sub(c.CheckedAt) >= ttl
 }
 
 // FetchLatestTag asks the releases API for the latest tag. It is the
@@ -135,31 +196,55 @@ func SupportedPlatform(goos, goarch string) bool {
 	return prebuilt[goos+"/"+goarch]
 }
 
+// Status is what one startup pass learned. Notice is the note to
+// show; Tag is the newer release behind it, empty when there is none.
+// The TUI renders Tag as a durable footer badge, and the exit line
+// repeats it, so the note is never the only place it appeared.
+type Status struct {
+	Notice string
+	Tag    string
+}
+
 // LatestKnown is the whole startup path in one call: read the cache,
-// refresh it when stale (silent on failure), and report the notice
-// text. current is the running build version; home is the tilde home
-// dir; apiURL is DefaultAPIURL in production. now is injectable for
-// tests.
-func LatestKnown(ctx context.Context, current, home, apiURL string, now time.Time) string {
-	// Dev builds and platforms with no prebuilt binary never check:
-	// "newer" has no meaning when nothing could be installed.
-	if _, ok := parseRelease(current); !ok {
-		return ""
+// refresh it when stale (silent on failure), and report what is known.
+// current is the running build version; home is the tilde home dir;
+// apiURL is DefaultAPIURL in production. now is injectable for tests.
+func LatestKnown(ctx context.Context, current, home, apiURL string, now time.Time) Status {
+	// Dev builds never check: "newer" has no meaning when nothing
+	// could be installed. (Platforms with no prebuilt release are
+	// gated by the caller, which knows the running GOOS/GOARCH.)
+	if !IsRelease(current) {
+		return Status{}
 	}
 	if now.IsZero() {
 		now = time.Now()
 	}
 	path := CachePath(home)
-	tag, checkedAt, ok := ReadCache(path)
-	if !ok || Stale(checkedAt, now) {
+	c, ok := ReadCache(path)
+	if !ok || Stale(c, now) {
 		fetchCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 		defer cancel()
-		if fresh, err := FetchLatestTag(fetchCtx, apiURL, nil); err == nil {
-			WriteCache(path, fresh, now)
-			tag = fresh
-		} else if !ok {
-			return ""
+		fresh, err := FetchLatestTag(fetchCtx, apiURL, nil)
+		switch {
+		case err != nil:
+			// Keep the last known tag — the release it names is still
+			// real — but record the failure so the next launch waits
+			// an hour instead of re-dialing, and /doctor can say so.
+			c = Cache{Tag: c.Tag, CheckedAt: now, Err: err.Error()}
+		case !IsRelease(fresh):
+			// An upstream tag tilde cannot read is not a version.
+			// Caching one would buy a day of silence under a tag no
+			// surface can show, so it counts as a failed attempt.
+			c = Cache{Tag: c.Tag, CheckedAt: now,
+				Err: fmt.Sprintf("the latest release tag %q is not a vMAJOR.MINOR.PATCH version", fresh)}
+		default:
+			c = Cache{Tag: fresh, CheckedAt: now}
 		}
+		WriteCache(path, c)
 	}
-	return Notice(current, tag)
+	tag := Pending(current, c.Tag)
+	if tag == "" {
+		return Status{}
+	}
+	return Status{Notice: Notice(current, c.Tag), Tag: tag}
 }

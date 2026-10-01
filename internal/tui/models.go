@@ -10,6 +10,7 @@ import (
 
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/safe"
 )
 
 // fetchModels is the seam tests swap; production points at the llm
@@ -22,6 +23,12 @@ type modelsFetchedMsg struct {
 	provider string
 	models   []llm.ModelInfo
 	err      error
+	// hint is set by the checks that never left the process (no key,
+	// unknown provider). Their message is already in plain words and
+	// names its own next step, so it bypasses errorWithNextStep — whose
+	// matcher would read "no key for openrouter" as a bad model name
+	// and answer with the wrong advice.
+	hint string
 }
 
 // providerConfigFor resolves a provider's wire config: an explicit
@@ -75,7 +82,10 @@ func (m *Model) providerDetail(name string, pc config.ProviderConfig) string {
 // provider; an argument fetches that provider's models directly.
 func (m *Model) openModelsPicker(arg string) tea.Cmd {
 	if m.working {
-		m.add(entry{kind: entryErr, text: "finish or interrupt the turn before switching models"})
+		// Browsing does not change the model, but the picker takes the
+		// keyboard and a turn in flight does not need one: say the
+		// actual reason rather than a switch that is not happening.
+		m.add(entry{kind: entryErr, text: "finish or interrupt the turn before browsing models"})
 		return nil
 	}
 	if arg != "" {
@@ -91,6 +101,11 @@ func (m *Model) openModelsPicker(arg string) tea.Cmd {
 			Label: name, Detail: m.providerDetail(name, pc), Provider: name, Action: "fetch",
 		})
 	}
+	if len(items) == 0 {
+		m.add(entry{kind: entryDim,
+			text: "no providers known — add one to models.json, or /models <provider> to fetch one by name"})
+		return nil
+	}
 	m.picker = newPicker(pickerProviders, "browse models — pick a provider", items)
 	m.picker.purpose = "models"
 	return nil
@@ -103,7 +118,8 @@ func (m *Model) fetchModelsCmd(provider string) tea.Cmd {
 	if !ok {
 		return func() tea.Msg {
 			return modelsFetchedMsg{provider: provider,
-				err: fmt.Errorf("unknown provider %q", provider)}
+				err:  fmt.Errorf("unknown provider %q", provider),
+				hint: "unknown provider " + provider + " — /models lists the known ones"}
 		}
 	}
 	var key string
@@ -114,7 +130,9 @@ func (m *Model) fetchModelsCmd(provider string) tea.Cmd {
 		if !ok && !config.IsLocalBaseURL(pc.BaseURL) {
 			return func() tea.Msg {
 				return modelsFetchedMsg{provider: provider,
-					err: fmt.Errorf("no key for %s — /login %s", provider, provider)}
+					err: fmt.Errorf("no key for %s", provider),
+					hint: "no api key for " + provider + " — /login " + provider +
+						" stores one, /doctor checks the resolution chain"}
 			}
 		}
 		key = k
@@ -134,17 +152,33 @@ func (m *Model) fetchModelsCmd(provider string) tea.Cmd {
 // or none) is noted dimly instead of surprising them.
 func (m *Model) handleModelsFetched(msg modelsFetchedMsg) {
 	if msg.err != nil {
-		m.add(entry{kind: entryErr,
-			text: "could not list models from " + msg.provider + ": " + msg.err.Error()})
+		// A local check (no key, unknown provider) already says what
+		// to do in plain words, and passes that copy as the hint: the
+		// next step is a key, not a retry, and the error mapper would
+		// answer a missing key with "the provider does not serve that
+		// model". A live fetch's failure IS provider jargon — an HTTP
+		// status, a body — so it goes through the same mapper a turn
+		// error does, and through safe.Text like all untrusted text.
+		if msg.hint != "" {
+			m.add(entry{kind: entryErr, text: msg.hint})
+			return
+		}
+		m.add(entry{kind: entryErr, text: errorWithNextStep(msg.provider,
+			"could not list models from "+msg.provider+": "+safe.Text(msg.err.Error()))})
 		return
 	}
 	if m.picker != nil || m.login != nil {
 		m.add(entry{kind: entryDim,
-			text: fmt.Sprintf("fetched %d models from %s — /models to browse", len(msg.models), msg.provider)})
+			text: fmt.Sprintf("fetched %d models from %s — close this view, then /models to browse",
+				len(msg.models), msg.provider)})
 		return
 	}
 	if len(msg.models) == 0 {
-		m.add(entry{kind: entryErr, text: msg.provider + " lists no models"})
+		// A live list that came back empty is a fact about the
+		// provider, not a failure of tilde, and the way out is the
+		// same picker over a different provider.
+		m.add(entry{kind: entryDim, text: msg.provider +
+			" listed no models — /models picks another provider, or set one by name with /model <model>"})
 		return
 	}
 	// Sorted regardless of source, so the picker is stable.
@@ -173,6 +207,11 @@ func (m *Model) openLoginPicker() {
 		items = append(items, pickerItem{
 			Label: name, Detail: "store an API key", Provider: name, Action: "login",
 		})
+	}
+	if len(items) == 0 {
+		m.add(entry{kind: entryDim, text: "no providers known — add one to models.json, " +
+			"or /login <provider> by name to store a key for it"})
+		return
 	}
 	m.picker = newPicker(pickerProviders, "login — pick a provider", items)
 	m.picker.purpose = "login"

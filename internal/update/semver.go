@@ -20,6 +20,15 @@ var semverRE = regexp.MustCompile(
 // builds made from an untagged commit; they are not releases.
 var pseudoRE = regexp.MustCompile(`[0-9]{14}-[0-9a-f]{12}$`)
 
+// IsRelease reports whether v is a tagged release version — the only
+// builds an update can apply to. (devel), pseudo-versions and
+// "+dirty" stamps are development builds: nothing could be installed
+// over them, so "newer" has no meaning and the checks stay off.
+func IsRelease(v string) bool {
+	_, ok := parseRelease(v)
+	return ok
+}
+
 type semver struct {
 	major, minor, patch uint64
 	pre                 []string

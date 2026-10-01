@@ -43,6 +43,11 @@ const version = "v0.3.0"
 //go:embed banner.txt
 var banner string
 
+// composerPlaceholder is the idle composer's hint. It is dropped
+// whole rather than clipped on a pane too narrow for it
+// (syncComposerPlaceholder).
+const composerPlaceholder = "ask tilde anything…"
+
 // Options wires the TUI to the rest of the system. Everything here is
 // injected; the package never loads config itself.
 type Options struct {
@@ -56,6 +61,14 @@ type Options struct {
 	// renders in the greeting, /doctor, and the resume banner.
 	// Empty falls back to the version const above.
 	Version string
+	// UpdateTag is the newer release tag the startup check knows
+	// about, or "" when there is nothing to offer. It renders as the
+	// footer badge and the /help line: the durable half of the
+	// update signal, which the startup note alone is not — that note
+	// scrolls away within a screenful. cmd/tilde derives it from
+	// update.LatestKnown, so the note, this badge, --version,
+	// /doctor, and the exit line all name the same release.
+	UpdateTag string
 	// ProviderName + BaseURL + API let /login rebuild the LLM client with the
 	// new key instead of needing a restart.
 	ProviderName string
@@ -240,6 +253,12 @@ type Model struct {
 	workingSince time.Time
 	cancel       context.CancelFunc
 
+	// shell is the in-flight "!command". It runs as a tea.Cmd on its
+	// own goroutine under a cancellable context: inline, it froze the
+	// whole render loop for the length of the command and could not be
+	// interrupted. esc cancels it like it cancels a turn.
+	shell *shellRun
+
 	awaitingTrust *TrustDecision
 	awaitingPerm  *permRequest
 	awaitingPlan  *planRequest
@@ -351,8 +370,20 @@ type Model struct {
 	// Overlay picker (/model, /sessions): filter-as-you-type list.
 	picker *picker
 
-	// help overlay ("?").
+	// help overlay ("?"), and how far it is scrolled. The sheet is
+	// longer than most terminals are tall — it lists every binding and
+	// every command — so it windows itself rather than truncating: a
+	// help overlay that silently dropped half the commands was worse
+	// than one that scrolls.
 	helpOpen bool
+	helpTop  int
+
+	// overlayRows is the content-row budget for the floating blocks in
+	// this frame, set by View before they render. A field, not an
+	// argument: the budget is the frame's arithmetic, and six
+	// renderers each recomputing it is six chances to disagree about
+	// how tall the terminal is.
+	overlayRows int
 
 	// toast is a transient status message above the composer;
 	// toastAnim counts remaining animation frames while it plays.
@@ -390,6 +421,29 @@ type editorDoneMsg struct {
 // todoMsg carries the model's current task list to the tea program.
 type todoMsg []tools.Todo
 
+// shellRun is one in-flight "!command": the command as the user typed
+// it, the cancel for its context, and the reason it is running at all
+// (shown on the status line — a command that takes two minutes is not
+// something to leave unannounced).
+type shellRun struct {
+	name   string
+	cancel context.CancelFunc
+	// done closes when the command's context is released, so a caller
+	// that quits out from under it can tell "killed" from "still
+	// running".
+	done chan struct{}
+	once sync.Once
+}
+
+// shellDoneMsg reports a finished "!command": its sanitized combined
+// output and the error, if any. The output is untrusted text by every
+// rule the model's own tool results follow — a command can print an
+// escape sequence like anything else.
+type shellDoneMsg struct {
+	out string
+	err error
+}
+
 func toastTick() tea.Cmd {
 	return tea.Tick(90*time.Millisecond, func(t time.Time) tea.Msg {
 		return toastTickMsg(t)
@@ -409,7 +463,7 @@ var commands = []command{
 	{"/help", "show keys and commands"},
 	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
 	{"/theme", "pick the palette — live preview, esc restores"},
-	{"/diff", "show the working tree's git changes, colored"},
+	{"/diff", "show the working tree's git changes"},
 	{"/mode", "show or switch permission mode"},
 	{"/model", "pick or switch the model"},
 	{"/sessions", "browse and resume a saved session"},
@@ -418,6 +472,7 @@ var commands = []command{
 	{"/models", "browse every provider's models, fetched live"},
 	{"/login", "store an API key (masked; bare form picks a provider)"},
 	{"/logout", "remove the stored key (/logout <provider>)"},
+	{"/update", "point at `tilde update` — it runs in a shell, not here"},
 }
 
 // displayVersion reports the running binary's version: the injected
@@ -431,7 +486,7 @@ func (m *Model) displayVersion() string {
 
 func New(opt Options) *Model {
 	ta := textarea.New()
-	ta.Placeholder = "ask tilde anything…"
+	ta.Placeholder = composerPlaceholder
 	// Strip the textarea's stock look, which reads as a highlight: the
 	// default focused CursorLine paints a black background rectangle
 	// (visible on any terminal whose floor isn't pure #000000), and the
@@ -572,6 +627,7 @@ func Run(m *Model) error {
 	m.composer.BlurredStyle.Prompt = accentStyle
 	m.composer.FocusedStyle.Placeholder = subtleStyle
 	m.composer.BlurredStyle.Placeholder = subtleStyle
+	m.syncComposerPlaceholder()
 	// Re-seat the textarea's internal style pointer (see
 	// syncComposerPrompt): the composer was copied out of New by
 	// value, and without this the prompt renders in the palette that
@@ -641,11 +697,25 @@ func (m *Model) sessionGrants(tool, args string) bool {
 			Command string `json:"command"`
 		}
 		if json.Unmarshal([]byte(args), &a) == nil && a.Command != "" &&
+			// The whole command is matched against the rule, and a
+			// command carrying a line break never matches. The
+			// allowlist's tokenizer splits on any whitespace, newline
+			// included, so a grant for "git status" otherwise covered
+			// "git status\ncurl evil" — the second command rides in
+			// under the first one's prefix. Fail closed instead.
+			!hasLineBreak(a.Command) &&
 			m.sessionAllow.Allows(a.Command) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasLineBreak reports whether a command spans lines. Bash treats a
+// newline as a command separator, so a multi-line "command" is two
+// commands and no prefix rule over its first tokens can vouch for it.
+func hasLineBreak(s string) bool {
+	return strings.ContainsAny(s, "\n\r")
 }
 
 // alwaysScope computes option 2's literal grant: for a plain
@@ -655,6 +725,11 @@ func (m *Model) sessionGrants(tool, args string) bool {
 // value of that flag (a grant from "git -C /tmp push" must not
 // cover "git -C /etc reset --hard"), and exactly what the user read
 // on the dialog is the safe width.
+//
+// A command spanning lines gets no prefix at all: its fields are
+// several commands, and "the first two" is a claim about none of them
+// (see hasLineBreak). The dialog says so on the option rather than
+// promising a scope that would never match.
 func alwaysScope(tool, args string) string {
 	if tool != "bash" {
 		return tool
@@ -665,7 +740,22 @@ func alwaysScope(tool, args string) string {
 	if json.Unmarshal([]byte(args), &a) != nil {
 		return tool
 	}
-	fields := strings.Fields(a.Command)
+	if hasLineBreak(a.Command) {
+		return noPrefixScope
+	}
+	// A metacharacter command gets no prefix either: the allowlist
+	// refuses to match one (it fails closed on anything it cannot
+	// tokenize exactly), so a rule cut from it would never fire and the
+	// dialog would be promising something that cannot happen.
+	if strings.ContainsAny(a.Command, ";|&$`><\\") {
+		return noPrefixScope
+	}
+	// Cut from the SANITIZED command, not the raw one: this string is
+	// both rendered in the dialog and stored as the session rule, and a
+	// command name carrying a control byte is untrusted display text
+	// like everything else the model sends. A control byte is not a
+	// shell metacharacter, so it survives the check above.
+	fields := strings.Fields(safe.Text(a.Command))
 	if len(fields) == 0 {
 		return tool
 	}
@@ -682,12 +772,27 @@ func alwaysScope(tool, args string) string {
 	return strings.Join(fields[:end], " ") + ":*"
 }
 
+// noPrefixScope is the scope label for a command no prefix rule can
+// cover. It reads as what actually happens — this one call is allowed
+// and nothing is remembered — rather than promising a rule the
+// matcher would refuse.
+const noPrefixScope = "this one command only (no rule to remember)"
+
 // prefixRule is the stored form of a shell always-allow: the program
 // and subcommand, no metacharacters — the ShellAllowlist's matching
-// fails closed on anything else anyway.
+// fails closed on anything else anyway. A line break is refused for
+// the same reason sessionGrants refuses to match one: the allowlist's
+// tokenizer treats it as whitespace, so the rule would match more
+// commands than the dialog named. noPrefixScope is refused for the
+// same reason again: it is a sentence, not a command, and storing it
+// would make a rule that matches nothing while looking like one that
+// does.
 func prefixRule(scope string) string {
+	if scope == noPrefixScope {
+		return ""
+	}
 	rule := strings.TrimSuffix(scope, ":*")
-	if strings.ContainsAny(rule, ";|&$`><\\") {
+	if hasLineBreak(rule) || strings.ContainsAny(rule, ";|&$`><\\") {
 		return ""
 	}
 	return rule
@@ -695,6 +800,13 @@ func prefixRule(scope string) string {
 
 // grantAlways applies option 2: a session-scoped rule, never a file
 // on disk, never a provider-side change.
+//
+// A bash command the rule builder refuses (a metacharacter, a line
+// break) gets NO grant at all. The alternative — falling through to
+// the per-tool allow — would blanket-allow every bash call while the
+// dialog had promised one narrow prefix, which is the one thing this
+// dialog must never do. The call itself is still approved; only the
+// remembering is skipped, and the note says so.
 func (m *Model) grantAlways(req *permRequest) {
 	// The write side of the C4 race: the dispatch goroutine may be
 	// reading these grants in decide() right now.
@@ -707,6 +819,10 @@ func (m *Model) grantAlways(req *permRequest) {
 			m.showToast("always allowed " + req.scope + " this session")
 			return
 		}
+		// No rule, and specifically none for the per-tool allow: the
+		// dialog said one command, so one command is what runs.
+		m.showToast("allowed once — tilde cannot remember a rule for a command that chains or spans lines")
+		return
 	}
 	if m.toolAllows == nil {
 		m.toolAllows = map[string]bool{}
@@ -752,6 +868,32 @@ func (m *Model) startTurn(text string, images []llm.Image) {
 			}
 		}
 	}()
+}
+
+// cancelShell stops an in-flight "!command". The context's cancel
+// reaches the whole process group (tools.Bash kills it), so a
+// backgrounded build does not outlive the esc. The state is cleared
+// here rather than waiting for the reply: the command is dead from
+// this moment, and leaving a status line up for a process that is gone
+// reads as a hang.
+func (m *Model) cancelShell() {
+	if m.shell == nil {
+		return
+	}
+	m.shell.stop()
+	m.shell = nil
+	m.add(entry{kind: entryErr, text: "shell command interrupted — the command was killed, not the shell"})
+}
+
+// stop cancels the command's context and closes done exactly once.
+// Both the interrupt and the exit path go through it, so "the command
+// was killed" is one fact rather than two code paths that have to
+// agree.
+func (r *shellRun) stop() {
+	r.once.Do(func() {
+		r.cancel()
+		close(r.done)
+	})
 }
 
 func (m *Model) cancelTurn() {

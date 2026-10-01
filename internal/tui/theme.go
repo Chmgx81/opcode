@@ -7,6 +7,14 @@ package tui
 
 // openThemePicker builds the theme list. The active theme is marked
 // in the detail so the picker opens showing the truth.
+// openHelp shows the "?" sheet from the top. Re-opening resets the
+// scroll: a user who came back for the commands they missed should
+// land on the keys, not on wherever they left off.
+func (m *Model) openHelp() {
+	m.helpOpen = true
+	m.helpTop = 0
+}
+
 func (m *Model) openThemePicker() {
 	var items []pickerItem
 	for _, name := range ThemeNames() {

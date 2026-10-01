@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func writeCtx(t *testing.T, path, content string) {
@@ -90,6 +91,41 @@ func TestAgentsContextCapsHugeFiles(t *testing.T) {
 	if !strings.Contains(got, "(file truncated)") {
 		t.Error("oversized context file not truncated")
 	}
+	if len(got) > agentsFileCap+2000 {
+		t.Errorf("context not capped: %d bytes", len(got))
+	}
+}
+
+// TestAgentsContextTruncationKeepsRunes: the cap lands mid-file, and
+// a half rune handed to the model's tokenizer is a corrupted prompt
+// that no error names. Back off to a boundary.
+func TestAgentsContextTruncationKeepsRunes(t *testing.T) {
+	userDir := t.TempDir()
+	cwd := t.TempDir()
+	// "€" is three bytes, so agentsFileCap (a multiple of 1024, not 3)
+	// splits one partway through.
+	writeCtx(t, filepath.Join(cwd, "AGENTS.md"), strings.Repeat("€", agentsFileCap))
+
+	got := AgentsContext(userDir, cwd)
+	if !utf8.ValidString(got) {
+		t.Error("truncation split a multi-byte rune — the prompt is corrupt UTF-8")
+	}
+	if !strings.Contains(got, "(file truncated)") {
+		t.Error("oversized context file not truncated")
+	}
+}
+
+// TestAgentsContextIsBoundedBeforeRead: the file size is the repo
+// author's choice, so the read is capped rather than "read it all,
+// then slice". A tiny stub cannot be OOMed, so this checks the bound
+// by measuring that a file far larger than the cap yields a result
+// that stays near the cap.
+func TestAgentsContextIsBoundedBeforeRead(t *testing.T) {
+	userDir := t.TempDir()
+	cwd := t.TempDir()
+	writeCtx(t, filepath.Join(cwd, "AGENTS.md"), strings.Repeat("y", 8*agentsFileCap))
+
+	got := AgentsContext(userDir, cwd)
 	if len(got) > agentsFileCap+2000 {
 		t.Errorf("context not capped: %d bytes", len(got))
 	}

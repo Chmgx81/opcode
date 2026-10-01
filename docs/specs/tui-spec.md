@@ -35,35 +35,62 @@ terminal's default foreground):
 |---|---|---|---|
 | accent | `#2dd4bf` | `#0f766e` | brand, selection, prompt, spinner |
 | muted | `#9aa0a6` | `#5f6368` | metadata, tool results |
-| subtle | `#6b7280` | `#80868b` | hints, placeholder, chrome |
+| subtle | `#8b93a0` | `#666b70` | hints, placeholder, chrome |
 | success | `#4ade80` | `#15803d` | ok, added |
 | warning | `#fbbf24` | `#b45309` | caution, shell mode, dialog borders |
 | danger | `#f87171` | `#b91c1c` | errors, removed |
 | info | `#60a5fa` | `#1d4ed8` | notices, links |
-| border | `#3f4650` | `#c5cad1` | panel rules |
+| border | `#6e7683` | `#7f858d` | panel rules |
 | surface.user | `#262a31` | `#eef0f3` | user-message block |
 | surface.code | `#1c2026` | `#f5f6f8` | code blocks |
 
 Dark/light adapts at startup (OSC 11 where available, else
 `TILDE_THEME=light|dark`). Never color as the only signal — a glyph
-or word rides along.
+or word rides along. A third theme, `green`, is the original Phase 7
+brand stack.
 
-**Glyphs** (the whole vocabulary):
+**Contrast.** Every text token clears WCAG 4.5:1 against both
+surfaces it sits on — the terminal floor and the code panel — and the
+border token clears the 3:1 a non-text boundary needs. `subtle` and
+`border` were both under their bars (3.9:1 and 2.0:1): the
+placeholder and the hints were a squint, and the composer's own rules
+were a frame the eye could not find. `TestThemeContrastIsLegible` is
+the table, and a palette edit that drops below either bar fails there
+rather than in a bug report.
 
-| Glyph | Meaning |
-|---|---|
-| `~` | the brand: header, composer prompt |
-| `⏸ › ⏵⏵` | modes: plan, build, full-auto |
-| `❯` | user message, picker selection |
-| `!` | composer shell-mode prompt |
-| `●` | tool action |
-| `⎿` | result under its action |
-| `✓` `✗` `⚠` | success, error, warning |
-| `☐ ◐ ☑` | todo: pending, active, done |
-| `⏵` | queued follow-up |
-| `△` | reasoning block |
-| `+` `−` | diff added / removed |
-| `…` | truncation, always with a count |
+**Glyphs** (the whole vocabulary, every one with an ASCII form for
+`--plain`):
+
+| Glyph | Plain | Meaning |
+|---|---|---|
+| `~` | `~` | the brand: header, composer prompt |
+| `⏸ › ⏵⏵` | `= > >>` | modes: plan, build, full-auto |
+| `❯` | `>` | user message, picker selection, composer prompt |
+| `!` | `!` | composer shell-mode prompt |
+| `●` | `*` | tool action |
+| `⎿` | `\-` | result under its action |
+| `✓` `✗` `⚠` | `[ok] [x] [!]` | success, error, warning |
+| `·` | `-` | neutral fact (doctor rows, line separators) |
+| `☐ ◐ ☑` | `[ ] @ [x]` | todo: pending, active, done |
+| `⏵` | `>` | queued follow-up |
+| `△` | `^` | reasoning block |
+| `↑` | `^` | footer: a newer release is available |
+| `•` | `*` | one masked character of a hidden secret |
+| `⏎` | `\|` | a line break inside a collapsed result |
+| `+` `−` | `+` `-` | diff added / removed |
+| `─` | `-` | the rules that frame the composer |
+| `…` | (kept) | truncation, always with a count |
+
+`TestEveryGlyphDegrades` walks the whole set by name, so a glyph added
+later without an ASCII form fails there. `TestStateMarkersStayDistinct`
+holds the task list, the verdict trio, and the mode glyphs apart from
+one another — two states collapsing onto one ASCII string is a state a
+reader cannot read back. The dialog boxes follow the posture too
+(`dialogBorder`): lipgloss composes the frame, so the rounded corners
+are the one mark the vocabulary does not own, and the ASCII box is
+`+-|`. Arrows and em dashes in chrome are punctuation, and ask
+`plainOr` rather than the vocabulary — the sheet spells `up/dn` and
+uses `-` where the arrow was.
 
 ---
 
@@ -83,8 +110,34 @@ to native scrollback at the next turn boundary (`tea.Println`):
 what's printed no longer redraws, and only the current turn can
 trip the `… N earlier lines` marker — past turns are in the
 terminal's own history, scrollable and searchable. Committed text is
-frozen: ctrl+r expansion applies to the live region only. Nothing
-exceeds the terminal; the dialog/composer tail is never trimmed.
+frozen: ctrl+r expansion applies to the live region only.
+
+**Nothing exceeds the terminal, ever** — no row wider than it, no
+frame taller than it. That is a property of the whole frame, not of
+each renderer, and it is enforced twice over. Every renderer clips or
+wraps its own rows, and `View` clips every row of the composed frame
+once more as the last line of defence, because a row past the edge is
+what corrupts bubbletea's inline renderer and it corrupts the whole
+app rather than one line of it. `TestFrameFitsEveryStateAtEveryWidth`
+sweeps every state across every width from 8 to 120 columns and four
+heights; `TestFrameFitsHostileTextAtEveryWidth` repeats it with
+unsanitized text so a path that forgets to sanitize fails there too.
+
+**Tall terminals and short ones.** The transcript trims from the
+front and says how many rows went. The dialog and composer tail does
+not trim — a dialog that lost its options is worse than one without a
+border — so the floating blocks size themselves against a row budget
+`View` publishes before they render (`floatingBlock`). The order the
+budget is spent in is the order a reader needs it: the border and the
+blank line go first, then the middle of a list, and a block whose
+content cannot fit shows nothing at all rather than one clipped row
+(the @-mention menu on an eight-row terminal). When a modal and the
+composer cannot both have their minimum, **the composer goes**: it is
+the block the user cannot act on while a modal owns the keyboard. The
+draft is untouched in the model and returns when the dialog closes.
+The permission dialog pins its title, the literal command, the three
+options, and the key hints through every trim: a dialog the user
+cannot answer is the one failure a permission dialog may not have.
 
 ### 3.1 Greeting (once, scrolls away)
 
@@ -131,8 +184,17 @@ Full-width rules frame the input — the findable frame without a
 box. The `~` sits in accent; shell mode flips it to `!` and the
 rules to amber. The mode line carries each mode's own glyph —
 `⏸` plan, `›` build, `⏵⏵` full-auto — so the
-brand `~` belongs to the composer alone. The footer drops hint segments on narrow
-terminals, never the mode.
+brand `~` belongs to the composer alone.
+
+The footer reflows from a candidate list, fullest to barest, first
+one that fits whole. **The mode is never dropped for anything else**:
+it is the state every keystroke is scoped by, so its bare form
+outranks the update badge alone, and on a terminal narrower than the
+bare mode the mode is clipped rather than replaced. (The badge used to
+win: "⏵⏵ full-auto" is twelve columns, so a ten-column terminal showed
+a truncated badge and no mode at all.) Hints drop first, then the
+`(tab to cycle)` reminder, then the effort dial — which the toast that
+set it and `/help` both name.
 
 ### 3.4 Permission dialog (build mode, Action-Allowed tools)
 
@@ -161,8 +223,30 @@ push:*` covers exactly that and its longer forms, never `git -C
 table (`--yes`/`-y`, `--quiet`/`-q`, `--force`/`-f`, `--verbose`/
 `-v`, `--recursive`/`-r`) so a grant matches its flags written either
 way; pairs that differ across tools deliberately do not merge
-(`--all`/`-a` — `grep -a` is `--text`). Metacharacters and
-untokenizable commands fail closed. Toast confirms what was granted.
+(`--all`/`-a` — `grep -a` is `--text`). Toast confirms what was
+granted.
+
+**What the dialog shows is what happens.** A grant is only kept when
+one can be formed, and a command that cannot be granted says so on the
+option rather than promising a scope that would never match:
+
+- **A metacharacter** (`;`, `|`, `&`, `$`, backtick, `<`, `>`, `\`).
+  The allowlist matches by token prefix and fails closed on anything it
+  cannot tokenize exactly, so a rule cut from `ls ; rm -rf /` could
+  never fire. Option 2 reads "this one command only (no rule to
+  remember)".
+- **A line break.** Bash reads a newline as a command separator, so a
+  multi-line "command" is several commands; and the allowlist's
+  tokenizer splits on any whitespace, newline included, so a grant for
+  `git status` used to match `git status\ncurl evil` — the second
+  command riding in under the first one's prefix. Both sides refuse
+  one now (`hasLineBreak`), in the rule and in the match.
+
+Either way the call itself is still approved — only the *remembering*
+is skipped — and option 2 never falls back to the per-tool grant.
+That fall-through would have allowed **every** bash call for the
+session while the dialog had promised one narrow prefix, which is the
+one thing this dialog may never do.
 
 ### 3.5 Pickers and palette
 
@@ -177,17 +261,27 @@ untokenizable commands fail closed. Toast confirms what was granted.
 One component: type to filter, arrows move, enter selects, esc
 closes, draft preserved. `/models` fetches the provider's real
 model list live; `/login` (bare) picks which provider's key to
-store.
+store. A filter matching nothing says so *and says how to widen it*,
+because "no matches" alone reads as a broken picker.
 
 ### 3.6 Other dialogs
 
-- **Trust prompt** — one line in a warning-bordered box: what
-  would run, `y` trust / `n` decline.
+- **Trust prompt** — what would run, `y` trust / `n` decline, on
+  their own row. Folded into the sentence, the answer keys were the
+  first thing the box's re-wrap pushed off the bottom, and a trust
+  prompt whose keys are missing is a prompt the user has to guess at.
 - **Plan approval** — `y` implement, `a` implement with
   auto-accept, `n` keep planning; approval switches the session's
   mode live.
 - **Login** — masked input in a box; Enter saves, Esc cancels and
-  discards.
+  discards. The mask is a vocabulary glyph, so `--plain` never paints
+  a non-ASCII bullet over the secret it hides.
+- **Help sheet** (`?`, or `/help`) — the whole binding list and the
+  whole command list. It is longer than a normal terminal, so it
+  **scrolls** (↑↓, pgup/pgdn, home/end) with the header, the update
+  badge, and the two most important bindings pinned. It does not
+  truncate: a silently shortened help sheet is a lie about what tilde
+  can do. Any other key closes it.
 
 ### 3.7 Todos (live panel at the transcript tail)
 
@@ -214,13 +308,21 @@ store.
 | Ctrl+E | edit the draft in `$VISUAL`/`$EDITOR` |
 | Tab / Shift+Tab | cycle permission mode forward / back |
 | Alt+. / Alt+, | reasoning effort up / down (unset → low → medium → high → unset) |
-| Esc | stop the turn, or close whatever is open |
-| Ctrl+C / Ctrl+D | press twice to exit — the first press arms a short window (and interrupts a running turn); `/exit` quits immediately |
+| Esc | stop the turn, stop a running `!command`, or close exactly one open thing — and with nothing open, do nothing (it never eats a draft) |
+| Ctrl+C / Ctrl+D | press twice to exit — the first press arms a short window and interrupts whatever is running (a turn, or a `!command`); `/exit` quits immediately |
 | Exit line | on a clean exit tilde prints `~ tilde — session saved · resume it with /sessions` |
-| `?` | help overlay (empty, idle composer) |
+| `?` | help sheet (empty, idle composer) — scrolls with ↑↓ / pgup / pgdn, any other key closes |
 | `/` | command palette (type to filter, arrows or ctrl+n/p, enter selects) |
-| `@` | file picker (live filter, `.gitignore`-aware) |
+| `@` | file picker (live filter over the project tree, capped at 1000 files / 6 levels deep; `.git`, `node_modules`, `vendor`, `dist` and friends are skipped) |
 | `!` | shell mode — Enter runs it directly, no model round trip |
+
+`TestEscClosesExactlyOneThing` walks every layer esc closes — palette,
+help, login, picker, @-mention, pager, permission, plan, trust — and
+checks both that the one layer closed and that the draft survived.
+`TestCommandsHelpAndSwitchAgree` checks the three copies of the
+command list (the `commands` var, the help sheet, and the dispatch
+switch) against each other, so a command handled but unlisted, or
+listed but unhandled, fails there.
 
 Slash commands: `/help /models /model /mode /skills /mcp
 /sessions /login /logout /theme /diff /doctor /exit /quit`.
@@ -249,14 +351,17 @@ doubles, so entries can be appended freely.
   stray "y" must not answer an approval they never read (Codex
   blocks input the same way).
 - **Plain posture** (`--plain`, `TILDE_PLAIN`, or a detected screen
-  reader): the glyph vocabulary degrades to ASCII (`✓` → `[ok]`,
-  `⎿` → `\-`, modes `⏸ › ⏵⏵` → `= > >>`), animations off; no glyph
-  disappears. The spinner is static under plain even with an
-  explicit `"animations": true`. Two known residuals: the `…`
-  ellipsis stays as punctuation (screen readers read it), and the
-  startup banner keeps its block-drawn logo. The window title is
-  sanitized (control and bidi characters stripped, 240-rune cap) —
-  OSC titles are an untrusted text surface.
+  reader): the glyph vocabulary degrades to ASCII (Section 2's table),
+  animations off; no glyph disappears. The dialog boxes follow
+  (`dialogBorder`: `+-|`), the composer's rules follow (`-`), and the
+  chrome's arrows and em dashes are spelled (`up/dn`, `-`). The
+  spinner is static under plain even with an explicit
+  `"animations": true`. Two known residuals: the `…` ellipsis stays as
+  punctuation (screen readers read it), and the startup banner keeps
+  its block-drawn logo. `TestFrameIsAsciiUnderPlain` asserts the whole
+  plain frame over every state with only the ellipsis whitelisted.
+  The window title is sanitized (control and bidi characters
+  stripped, 240-rune cap) — OSC titles are an untrusted text surface.
 - **Prompt history** (↑ recall) persists to `history.jsonl` under
   tilde's home (global, 500 entries, consecutive duplicates
   collapse, 0600, redacted against the session's secrets).
@@ -269,8 +374,10 @@ doubles, so entries can be appended freely.
 - **Untrusted text is sanitized at the display boundary**
   (`internal/safe`, Phase 32): everything the model or a tool
   produced — streamed text, reasoning, tool arguments, results,
-  subagent output, plan and approval dialog bodies, error text,
-  headless text-mode lines — passes `safe.Text` before it can reach
+  subagent output, plan and approval dialog bodies, error text, a
+  `!command`'s output and its wrapped failure, an `@mention`'s file, a
+  saved session's preview in the picker, the `!` echo, and headless
+  text-mode lines — passes `safe.Text` before it can reach
   the terminal. A typed parser strips CSI/OSC/DCS/SOS/PM/APC and the
   intermediate and two-rune escape forms, plus C0 (except `\n`,
   `\t`), DEL, and C1 runes; scanning is by rune so UTF-8 survives
@@ -279,12 +386,54 @@ doubles, so entries can be appended freely.
   display, not the context. JSON headless output is exempt
   (`encoding/json` escapes control characters; downstream tools get
   the honest bytes).
+
+  The boundary is a property of the *renderer*, not of one caller:
+  the approval dialog's literal command is sanitized **after** the
+  JSON unmarshal, because JSON escapes a control byte as the six ASCII
+  characters `␛`, so sanitizing the JSON string finds nothing to
+  strip and the byte comes back out of the unmarshal intact.
+  `TestEveryUntrustedPathIsInert` drives one hostile payload through
+  every one of those paths at once and asserts the rendered frame
+  carries no control byte — without `stripANSI`, which would eat the
+  very byte the payload arrives on.
 - **Errors** always read as the provider's message, never a raw
-  JSON dump; every error names the next step.
+  JSON dump; every error names the next step. The mapper
+  (`errorWithNextStep`) recognizes the shapes that come back most
+  often — a rejected key, a forbidden plan, a rate limit, no credit, an
+  unreachable host, a bad certificate — and its "the provider does not
+  serve that model" arm is scoped to phrases that actually name the
+  model as the problem. The bare word "model" also appears in the
+  provider's own "could not list models" and in a 404 for some other
+  URL, and answering either with "that model is not served" is advice
+  about a model the user never asked about. A message nobody
+  recognizes passes through alone rather than being guessed at.
+- **An `@mention`'s file is read with a bounded reader.** The cap is
+  the *reader's*, not a length check afterwards: `os.ReadFile` of
+  `@/dev/zero` (or any multi-gigabyte file) allocated the whole thing
+  on the render goroutine before anything could stop it. The read is
+  `mentionCap`+1 bytes so "was there more?" is a fact rather than a
+  guess, and a truncated mention says so. A directory, a pipe, or a
+  permission error each get a visible note — silence would send a
+  half-read file to the model as though it were whole.
 - **Sandbox** (Linux): shell writes confined to the project dir,
   `/tmp`, and dev caches; denials are kernel-enforced.
 - **Draft is never lost** — it survives dialogs, errors, resize,
-  and interrupts.
+  and interrupts. It is also not *shown* behind a modal on a terminal
+  too short to hold both, which is a hiding, not a loss: the value is
+  untouched in the model and returns when the dialog closes.
+- **The `!` escape is a real command, not a blocking call.** It runs
+  as a `tea.Cmd` under a cancellable context, so the render loop keeps
+  answering keys while it is out and `esc` (or the first ctrl+c) kills
+  the whole process group through it. It is announced on the status
+  line while it runs — a command that takes two minutes is not
+  something to leave unannounced — and the interrupt note says the
+  command was killed, not that it finished. It is recorded in the
+  audit log *before* execution, so a hanging or crashing command is
+  still on record. Inline it froze the whole TUI for the length of the
+  command and had no way for esc to reach it. The exit path kills it
+  too: ctrl+c's second press quits, and quitting mid-command used to
+  leave the process group running with nobody left to reap it
+  (`TestCtrlCExitDoesNotStrandTheCommand`).
 - **Headless** (`tilde -p`) imports no TUI package (CI-enforced),
   prompts never, fails closed.
 - **`/theme`** (Phase 34): the palette as a user choice — `dark`
@@ -313,6 +462,14 @@ doubles, so entries can be appended freely.
   and unknown commands degrade to their bare name instead of
   vanishing. The model's context keeps the raw LaTeX — display
   only.
+- **`/doctor`** is one transcript entry, one line per subsystem —
+  version, model/provider, api-key presence (never the key),
+  config.json and models.json loader verdicts, the live sandbox
+  posture, project trust, skills and MCP counts, the audit log, the
+  release-freshness check (cached — never a network call), and the
+  terminal's color profile. Every verdict glyph carries the next step
+  when something is wrong (✓ / ⚠ / ✗ / ·); the check re-reads the same
+  loaders the startup path uses and never repairs or writes anything.
 - **`/diff`** (Phase 35): the working tree's git changes in the
   transcript, colored with the verdict tokens (additions succeed,
   deletions danger, hunks info, headers chrome). `git diff
@@ -323,7 +480,16 @@ doubles, so entries can be appended freely.
   round trip, no permission prompt; output passes `safe.Text`, and
   git's own C-style quoting makes hostile filenames inert printable
   text. Every outcome is designed: not-a-repo and clean-tree notes,
-  a missing git binary named.
+  a missing git binary named. Diff lines are **clipped** to the
+  terminal, not wrapped: a wrapped diff line stops reading as one, and
+  a diff is mostly wider than a split pane.
+- **The expanded diff views clip too** (ctrl+r). A source line is
+  whatever the file holds — a minified bundle, a base64 blob, a long
+  literal — and the hunk rows carry a `+`/`-` verdict at column
+  zero, so clipping costs only the tail of the code. The plain
+  expanded result wraps with its six-space indent counted *outside*
+  the wrap budget, because `wrapAll`'s ten-column floor otherwise made
+  the row overflow below sixteen columns.
 - **The reasoning-effort knob** (Phase 39): reasoning is the most
   expensive dial, and it is now visible and turnable — alt+./alt+,
   cycle low / medium / high / provider-default with a toast naming
@@ -335,15 +501,6 @@ doubles, so entries can be appended freely.
   unset); Anthropic gets a `thinking` budget (low 1024, medium
   8192, high 16384). Subagents inherit the parent's live posture
   at spawn time — deliberately no independent knob.
-- **`/doctor`**: one transcript entry, one line per
-  subsystem — version, model/provider, api-key presence (never the
-  key), config.json and models.json loader verdicts, the live
-  sandbox posture, project trust, skills and MCP counts, the audit
-  log, the release-freshness check (cached — never a network call),
-  and the terminal's color profile. Every verdict glyph carries
-  the next step when something is wrong (✓ / ⚠ / ✗ / ·); the check
-  re-reads the same loaders the startup path uses and never repairs
-  or writes anything.
 - **Update notice**: at startup tilde compares the running version
   against the cached latest release (refreshed at most once a day
   over HTTPS, silent when offline) and adds one startup note when a
@@ -351,13 +508,42 @@ doubles, so entries can be appended freely.
   \`tilde update\` to install it.` Only the latest release gets
   security fixes, so a stale binary is a finding, not trivia. Opt
   out with `"update_checks": false` or `TILDE_NO_UPDATE_CHECK=1`;
-  dev builds and platforms without prebuilt binaries never check.
+  dev builds and platforms without prebuilt binaries never check. The
+  footer's badge is explained in the help sheet, pinned at its top so
+  a long sheet cannot scroll the news off the bottom of the screen.
 
 ---
 
-## 6. Not yet built (the honest list)
+## 6. The states every path is designed for
 
-Nothing. Every deferred item has landed as its own phase, verified
-live, logged in PROGRESS.md.
+The list is the deliverable: a state not on it is a state nobody
+looked at. `TestEmptyStatesNameAWayForward` holds the empty ones, and
+`TestFrameFitsEveryStateAtEveryWidth` holds the shape of every one of
+them from 8 to 120 columns.
 
-Each lands as its own phase, verified live, logged in PROGRESS.md.
+| State | What it does |
+|---|---|
+| First run, no messages | the greeting and the composer; the footer names `?` and `/` |
+| No saved sessions | names where they land and what saves one |
+| No skills / no MCP servers | names the file each comes from |
+| No models configured | names `models.json` and `/models <provider>` |
+| A provider listing nothing | says so and points at `/models` for another provider |
+| A filter matching nothing | names what was typed and how to widen it |
+| An `@` matching nothing | says the path must be under the working directory |
+| A mistyped `/command` | the closest real command, in place, never a model turn |
+| A turn error | the provider's message, plus the next step |
+| A permission dialog | title, tier in plain words, the literal command, three options, the keys — No preselected, every one pinned through any trim |
+| A `!command` running | named on the status line, interruptible with esc |
+| A `!command` failing | the output first, the cause on its own line |
+| A stale `/models` fetch | noted dimly, never a surprise picker swap |
+| A session file that will not parse | counted and reported, not skipped silently |
+| Every terminal 8×8 to 200×50 | no row wider than it, no frame taller |
+| `--plain` | ASCII, no glyph lost, no state readable only by color |
+
+## 7. Not yet built (the honest list)
+
+Nothing. Every deferred item in this spec has landed as its own
+phase, verified live, and logged in [PROGRESS.md](../../PROGRESS.md).
+Items deferred *out* of this spec (open designs, not UI gaps) are
+named in the "Deferred (named, not hidden)" sections of the Phase
+43 and Phase 44 entries there.

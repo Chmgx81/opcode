@@ -124,15 +124,6 @@ func typeAndEnter(m *Model, text string) tea.Cmd {
 	return cmd
 }
 
-func drain(t *testing.T, events <-chan orchestrator.Event) []orchestrator.Event {
-	t.Helper()
-	var out []orchestrator.Event
-	for ev := range events {
-		out = append(out, ev)
-	}
-	return out
-}
-
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	for i := 0; i < 200; i++ {
@@ -283,7 +274,10 @@ func TestLargePasteCollapsesToToken(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(pasted), Paste: true})
 
 	v := m.composer.Value()
-	if !strings.Contains(v, "[paste 1 · 6 lines]") {
+	// The token is built from the vocabulary, so it is the vocabulary's
+	// separator rather than a literal middle dot.
+	want := fmt.Sprintf("[paste 1 %s 6 lines]", GlyphSep)
+	if !strings.Contains(v, want) {
 		t.Fatalf("large paste not collapsed: %q", v)
 	}
 	if strings.Contains(v, "bravo") {
@@ -594,10 +588,29 @@ func TestHelpOverlay(t *testing.T) {
 		t.Fatal("? did not open help")
 	}
 	v := stripANSI(m.View())
-	if !strings.Contains(v, "shift+tab") || !strings.Contains(v, "/skills") {
-		t.Errorf("help content missing keys/commands:\n%s", v)
+	if !strings.Contains(v, "shift+tab") {
+		t.Errorf("help content missing keys:\n%s", v)
 	}
-	// Any key closes it.
+	// The sheet is longer than the terminal, so the commands live below
+	// the fold: pgdn scrolls, and the command list becomes visible
+	// rather than being trimmed away.
+	if !strings.Contains(v, "rows below") {
+		t.Errorf("help does not say it has more to show:\n%s", v)
+	}
+	for i := 0; i < 10; i++ {
+		m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	v = stripANSI(m.View())
+	if !strings.Contains(v, "/skills") {
+		t.Errorf("scrolled help missing commands:\n%s", v)
+	}
+	if !strings.Contains(v, "keys and commands") {
+		t.Errorf("scrolling lost the sheet's header:\n%s", v)
+	}
+	if !strings.Contains(v, "enter        send") {
+		t.Errorf("scrolling lost the pinned key rows:\n%s", v)
+	}
+	// Any other key closes it.
 	m.Update(keyMsg("x"))
 	if m.helpOpen {
 		t.Error("help did not close on keypress")
@@ -847,9 +860,11 @@ func TestTranscriptHierarchy(t *testing.T) {
 	// The placeholder: dim, and carrying no background rectangle — the
 	// textarea's stock focused CursorLine paints one and it reads as a
 	// selection highlight on any terminal whose floor isn't pure black.
+	// The palette is the source of truth, not a literal here: fg.subtle
+	// was deepened so the placeholder clears 4.5:1 (it read at 3.9:1),
+	// and a hardcoded SGR here would have hidden that change.
 	const dimSGR = "38;2;154;160;166"    // fg.muted #9aa0a6
-	const subtleSGR = "38;2;107;113;128" // fg.subtle #6b7280 (placeholder)
-	const accentSGR = "38;2;44;211;191"  // accent #2dd4bf (termenv rounds one step)
+	const subtleSGR = "38;2;139;147;160" // fg.subtle #8b93a0 (placeholder)
 	// The echoed query sits in the shaded panel (termenv renders
 	// #292929 one step down; the panel-fill SGR reflects that).
 	const panelFillSGR = "48;2;38;42;48" // surface.user #262a31 (rounds one step)
@@ -1441,7 +1456,11 @@ func TestTodosPanelRenders(t *testing.T) {
 		{Content: "write tests", Status: tools.TodoPending},
 	}))
 	view := stripANSI(m.View())
-	for _, want := range []string{"tasks (1/3 done)", "☑ read the config", "◐ fix the auth bug", "· write tests"} {
+	// The three markers come from the vocabulary, so the plain posture
+	// degrades all of them (a literal "·" did not).
+	for _, want := range []string{"tasks (1/3 done)",
+		GlyphTodoOn + " read the config", GlyphDoing + " fix the auth bug",
+		GlyphTodoOff + " write tests"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("panel missing %q:\n%s", want, view)
 		}

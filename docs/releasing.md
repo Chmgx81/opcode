@@ -9,7 +9,8 @@ defaults to `(devel)` for source builds).
 
 1. Make sure `main` is green in CI (`.github/workflows/ci.yml`: gofmt,
    `go mod tidy` drift, vet, `-race` tests, 5-target cross-build, macOS
-   tests, installer tests, govulncheck).
+   `-race` tests, installer tests, shellcheck on `install.sh`, a
+   markdown link check, govulncheck).
 2. Tag the commit and push the tag:
 
    ```sh
@@ -79,12 +80,32 @@ extracting, and atomically replaces the binary. It runs only when the
 user types it; there is no background download.
 
 How users learn an update exists: at startup tilde compares the running
-version against a cached latest tag (refreshed at most once a day over
-HTTPS, silent when offline) and prints one startup note when a newer
-release is out — `Update available: vX → vY. Run \`tilde update\` to
-install it.` `/doctor` shows the same cached check. `tilde update
---check` reports immediately and refreshes the cache. Opt out with
-`"update_checks": false` in config.json or `TILDE_NO_UPDATE_CHECK=1`.
+version against a cached latest tag (one small HTTPS GET, at most once
+a day, capped at three seconds because it blocks the first frame;
+silent when offline, retried hourly after a failure) and every
+surface names the same release:
+
+- one startup note in the transcript, in full:
+  `Update available: v1.0.0 → v1.1.0. Run \`tilde update\` to install it.`
+- a dim `↑ v1.1.0` badge on the footer mode line, which stays on
+  screen for the whole session and survives the narrow-terminal
+  reflow, so the note scrolling away is not the end of the signal
+- a line in the `?` overlay explaining that badge
+- the `/doctor` row, which also says whether the last check *worked*
+  (and that the check is off, that the build is not a release, or
+  that no prebuilt binary exists for the platform) — the only place
+  that reports a failure
+- `tilde --version`, which reads the cache only and never phones
+  home: it appends `(update available: v1.1.0 — run tilde update)`
+- the exit line, which appends
+  `· update available: v1.1.0 — run tilde update` to
+  `~ tilde — session saved · resume it with /sessions`
+
+`tilde update` is a shell command, not a slash command: it replaces
+the binary the TUI is running from. Typing `/update` in a session says
+so. `tilde update --check` reports immediately and refreshes the
+cache. Opt out with `"update_checks": false` in config.json or
+`TILDE_NO_UPDATE_CHECK=1`.
 
 - Source builds (`(devel)`) and untagged `go install` builds
   (pseudo-versions such as `v0.2.1-0.2025...-abc123def456`) are not
@@ -130,3 +151,18 @@ to the archive.
   library. If `govulncheck` in CI reports standard-library
   vulnerabilities, raise that line to the latest patch release before
   tagging.
+- **The tag is not checked against `main`.** `verify` confirms the tag
+  is semver and that vet and the race suite pass, but nothing confirms
+  the commit is reachable from `main` — a tag on a side branch
+  publishes. `git merge-base --is-ancestor "$TAG" origin/main` in the
+  `verify` job would close it, at the cost of blocking a deliberate
+  release from a release branch. Left as a maintainer decision.
+- **No dependency review on pull requests.** Dependabot proposes
+  version bumps, but a PR that introduces a new transitive dependency
+  is not flagged. `actions/dependency-review-action` on `pull_request`
+  would do it; it is a third-party action, so it lands with the
+  full-SHA pinning above rather than before.
+- **No coverage gate.** The suite is large (552 test functions) and
+  `go test -race -count=1 ./...` must be green, but nothing stops
+  coverage from falling. A threshold needs a measured baseline first —
+  pick a number from real data, not from a guess.

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -46,6 +48,113 @@ func TestReadFileBadArgs(t *testing.T) {
 	}
 	if _, err := run(t, ReadFile{}, `{}`); err == nil {
 		t.Error("expected error for missing path")
+	}
+}
+
+// TestReadFileCapsHugeFiles: read_file is read-tier, so it runs in
+// every mode and is never prompted — which made an uncapped read a way
+// to exhaust the whole process's memory (under a memory limit the Go
+// runtime's OOM is fatal and loses the turn). It must be capped, and it
+// must say so: a silent truncation reads to the model like a complete
+// file.
+func TestReadFileCapsHugeFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "big.bin")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := strings.Repeat("x", 64<<10)
+	for written := 0; written < 4*maxFileReadBytes; written += len(chunk) {
+		if _, err := f.WriteString(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	out, err := run(t, ReadFile{}, `{"path": "`+path+`"}`)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(out) > maxFileReadBytes+200 {
+		t.Errorf("read_file returned %d bytes; it must be capped near %d", len(out), maxFileReadBytes)
+	}
+	if !strings.Contains(out, "truncated") {
+		t.Errorf("the model was not told the file was cut: %q", out[len(out)-120:])
+	}
+	// The cap must not break ordinary reads.
+	small := filepath.Join(dir, "small.txt")
+	if err := os.WriteFile(small, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run(t, ReadFile{}, `{"path": "`+small+`"}`); err != nil || out != "hello" {
+		t.Errorf("ordinary read = (%q, %v)", out, err)
+	}
+}
+
+// edit_file and apply_patch both read the whole file they work on, so
+// the same cap applies to them — but silently truncating would corrupt
+// the operation (the context would appear not to match), so they refuse
+// and say why instead.
+func TestEditFileRefusesFilePastTheReadCap(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := strings.Repeat("y", 64<<10)
+	for written := 0; written < maxFileReadBytes+len(chunk); written += len(chunk) {
+		if _, err := f.WriteString(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	_, err = run(t, EditFile{}, `{"path": "`+path+`", "old": "y", "new": "z"}`)
+	if err == nil {
+		t.Fatal("an edit of an over-cap file must be refused, not silently truncated")
+	}
+	if !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("error should name the cap: %v", err)
+	}
+}
+
+// TestBashCapsFloodingOutput: bash runs without prompting in build
+// mode (sandboxed) and in full-auto, so a command that prints without
+// end used to grow one bytes.Buffer until the process died — under a
+// memory limit the Go runtime's OOM is fatal and loses the turn. The
+// output is capped, the command is stopped, and the model is told
+// which of the two happened.
+//
+// This test lives in files_test.go only because the fix is shared with
+// the read caps there; it is a shell test.
+func TestBashCapsFloodingOutput(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the cap stops the command through the process-group kill (see deathAttr)")
+	}
+	out, err := run(t, Bash{}, `{"command": "yes x", "sandbox": false}`)
+	if err == nil {
+		t.Fatal("a flooding command must be stopped and reported")
+	}
+	if len(out) > bashMaxBytes+200 {
+		t.Errorf("bash returned %d bytes of output; it must be capped near %d", len(out), bashMaxBytes)
+	}
+	if !strings.Contains(err.Error(), "more than 2 MiB") {
+		t.Errorf("error should name the cap: %v", err)
+	}
+	if !strings.Contains(out, "output capped at 2 MiB") {
+		t.Errorf("the model was not told the output was cut: %q", out[len(out)-120:])
+	}
+	// Ordinary output is untouched.
+	if out, err := run(t, Bash{}, `{"command": "echo ok", "sandbox": false}`); err != nil || !strings.Contains(out, "ok") {
+		t.Errorf("ordinary command = (%q, %v)", out, err)
+	}
+	// Output that lands exactly on the cap is not truncation, so it must
+	// not be reported as such.
+	exact := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' 'x'", bashMaxBytes)
+	if out, err := run(t, Bash{}, `{"command": `+strconv.Quote(exact)+`, "sandbox": false}`); err != nil {
+		t.Errorf("output exactly at the cap = (%d bytes, %v)", len(out), err)
 	}
 }
 

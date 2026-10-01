@@ -107,7 +107,7 @@
   - During development, an MCP Inspector-style debug view (raw JSON-RPC in/out) pays for itself the first time a server misbehaves.
 
 ### 3.6 Tool Execution Layer
-- Built-in, always-available tools: read/write/edit file, run shell command, search/grep, git operations.
+- Built-in tools (`internal/tools`, registered in `cmd/tilde/main.go`): `read_file`, `write_file`, `edit_file`, `apply_patch`, `bash`, `grep`, `glob`, `list_dir`, `web_fetch`, `current_time`, `load_skill`, `run_skill_script`, `spawn_subagent`, `todo_write`, `present_plan`, plus whatever the MCP servers expose. Git is reached through `bash`; the one git surface that is *not* the model's is `/diff`, which the user invokes.
 - **Every** tool call — built-in, skill, or MCP — passes through one permission gate here. This is where mode (ask vs auto-accept) is enforced and where every action gets logged.
 - Sandboxing hook lives here too (see Security, below).
 
@@ -121,15 +121,18 @@ Two scopes, one rule: **user-level is trusted, project-level is not until the us
 | `auth.json` — credentials (3.10) | *(never)* |
 | `mcp.json` — MCP servers | `mcp.json` — only after project trust |
 | `AGENTS.md` — instructions for every project | `AGENTS.md` lives at the project root and in subfolders instead |
-| `skills/`, `prompts/` | `skills/`, `prompts/` — only after project trust |
+| `skills/` | `skills/` — only after project trust |
 | `trusted-projects.json` — trust decisions | *(not allowed)* |
 
-- **Precedence:** project → user → built-in defaults, merged key by key, but only for keys a project is allowed to set. Providers, endpoints, credentials, and anything that loosens the permission posture are user-level only. Otherwise a cloned repo could point tilde's API traffic at a server it controls, or ship `full-auto` as its default mode.
+There is no `prompts/` directory: prompt-template folders are a
+deferred idea in 3.4, not a built feature.
+
+- **Precedence:** user-level built-in defaults only. There is no project-level config to merge — providers, endpoints, credentials, and the permission mode are user-level by construction, so a cloned repo cannot point tilde's API traffic at a server it controls or ship a permissive default mode. A project's `.tilde/config.json` is fingerprinted for trust but never read (Section 7).
 - **`models.json` is what makes local and self-hosted models a config change, not a code change.** Each entry is a `base_url`, an optional key reference, and a model list, so any OpenAI-compatible server, such as a local Ollama endpoint, is just another entry. Keep `base_url` configurable from Phase 0 instead of hardcoding OpenRouter's.
   ```json
   { "providers": { "local": { "base_url": "http://localhost:11434/v1", "models": ["<model-name>"] } } }
   ```
-- `/config` changes common preferences in the TUI; `/reload` re-reads config, context files, skills, and MCP servers without a restart. This is cheap because each loader is already a separate component (Section 5).
+- Preferences change by editing `config.json` and restarting; there is no `/config` or `/reload` command today. The loaders are separate components (Section 5), so adding one later is cheap. What does not need a restart: `/theme` persists to `config.json` live, `/login` and `/logout` write a key and take effect on the next turn, and granting project trust re-discovers that project's skills and MCP servers mid-session.
 - **Session storage: tree-structured, not a flat log.** Each message is a node; rewinding to any earlier point and continuing creates a new branch instead of overwriting history — all branches live in one session file. This resolves the earlier open question in favor of something more useful than a flat log, without the added operational weight of a database: it's still just a JSON file, just shaped as a tree instead of a list. Worth exposing directly in the TUI later (a `/tree` command) since "redo this differently from three steps back" is a real, common need, not a nice-to-have. Sessions get exported and shared, so credential values are redacted before anything is written (3.10).
 
 ### 3.8 LLM Provider Client
@@ -140,9 +143,9 @@ Two scopes, one rule: **user-level is trusted, project-level is not until the us
       StreamChat(ctx context.Context, req ChatRequest) (<-chan ChatEvent, error)
   }
   ```
-  `ChatRequest`/`ChatEvent` are tilde's own internal types, not the wire format — swapping OpenRouter for a direct OpenAI endpoint, Anthropic directly, or a local model server (Ollama/vLLM) later is a new `Provider` implementation, not a rewrite of the Orchestrator.
+  `ChatRequest`/`ChatEvent` are tilde's own internal types, not the wire format. There are two wire implementations behind that one interface: `OpenAICompat` (chat/completions, the default path for every OpenAI-compatible server) and `Anthropic` (the native Messages API, used when a provider's `api` is `anthropic`). Adding a third wire format is a new `Provider` implementation, not a rewrite of the Orchestrator.
 - Streaming: consumes SSE `chat.completion.chunk` events. Tool calls arrive as **argument fragments across multiple chunks** — buffer each in-progress call by its index/id until the arguments JSON is complete before dispatching it to the Tool Execution Layer.
-- Model selection is a config string, not a code change — OpenRouter model IDs are namespaced (`anthropic/claude-...`, `openai/gpt-...`, `meta-llama/...`), so trying a different model is a `config.json` edit, and adding a whole new endpoint (direct OpenAI, a local server) is a `models.json` entry (3.7).
+- Model selection is a config string, not a code change — OpenRouter model IDs are namespaced (`anthropic/claude-...`, `openai/gpt-...`, `meta-llama/...`), so trying a different model is a `config.json` edit, and adding a whole new endpoint (direct OpenAI, a local server) is a `models.json` entry (3.7). The built-in catalog in `internal/config/providers.go` covers fifteen providers; an explicit `providers` entry in `models.json` always wins over the catalog.
 
 ### 3.9 Invocation Modes
 Distinct from Permission Mode (Section 7) — this is about how tilde itself is run, not what it's allowed to do:
@@ -154,7 +157,7 @@ Distinct from Permission Mode (Section 7) — this is about how tilde itself is 
 - `~/.tilde/auth.json` — **user-level only, never project-level.** Created with owner-only permissions (0600, in a 0700 directory), with a warning at startup if it's ever looser. If tilde finds a credential in a project-level `.tilde/` file, it refuses to load it and says so, since a project directory is exactly where a key gets committed by accident. Kept separate from `config.json` so config can be freely shared or committed without ever risking a leaked key.
 - Each provider's credential can be a literal string, or a `!<command>` value that shells out to the user's own secret manager (`pass`, `1Password`'s `op`, macOS `security`, etc.). Run once, cache for the process lifetime; empty output, a timeout, or a nonzero exit leaves it unresolved rather than silently falling back to something less secure. **`!command` is honored only from the user-level `auth.json`** — never from anything a project supplies, because that would be arbitrary command execution from a cloned repo.
 - Falls back to the provider's standard environment variable (`OPENROUTER_API_KEY` for the default provider) if `auth.json` has nothing set — the right default for CI and headless invocation (3.9), where you don't want a credential file on disk at all.
-- **`/login` and `/logout` in the TUI**, so a non-technical user never has to hand-edit JSON: `/login` picks a provider, prompts for the key, and writes it to `auth.json`; `/logout` removes the stored credential. `/logout` only touches what tilde stored — it doesn't unset environment variables or revoke the key at the provider, and it should say so.
+- **`/login` and `/logout` in the TUI**, so a non-technical user never has to hand-edit JSON: bare `/login` lists every provider to configure, `/login <provider>` skips the picker, and the key is masked as it is typed and written to `auth.json` (0600) taking effect on the next turn; `/logout <provider>` removes the stored credential. `/logout` only touches what tilde stored — it doesn't unset environment variables or revoke the key at the provider, and it says so.
 - **Credentials never leak out through tilde's own records:** stored key values are redacted from the audit log, the session file, and any export or share.
 - **No OAuth in v1, but the door is open.** v1 is API keys entered via `/login`. OpenRouter also offers a browser login (OAuth PKCE) that needs no client registration and hands back a user-controlled API key, so it's a natural later upgrade for non-technical users who'd rather click "authorize" than create a key in a dashboard. Build it as a `/login` option with a paste-the-code fallback for remote/headless machines, where the browser callback can't reach the local process.
 
@@ -181,9 +184,18 @@ tilde/
     safe/           # terminal-escape sanitizer for untrusted display text
     update/         # `tilde update` + the cached startup update notice
     headless/       # -p one-turn mode, no TUI imports
-  docs/specs/       # architecture doc, TUI/UX spec, per-phase specs (this file lives here)
+  docs/
+    specs/          # this file, tui-spec.md, per-phase specs (see specs/README.md)
+    reference/      # Codex source audits + the tilde-focused adoption synthesis
+    releasing.md    # how a release is cut, and what the pipeline does
+    progress-log.md # the full chronological build log (Phase 0 → 44)
+  scripts/          # test-install.sh — exercises install.sh against a fake release
+  install.sh        # the one-liner installer
   AGENTS.md
 ```
+
+`internal/` has no other packages; `go list ./internal/...` is the
+check.
 
 ---
 
@@ -219,11 +231,12 @@ tilde/
   |---|---|---|
   | Read-Only | Can't change anything (read file, search, list, lint) | Always allowed, no prompt |
   | Draft-Only | Produces a proposal but doesn't apply it (a diff, a plan, a generated file in a scratch area) | Allowed to run; applying/committing the result still requires approval |
-  | Action-Allowed | Actually mutates state (write file, run shell, git push, call a paid API) | Gated by mode — prompted by default, only skippable in full-auto, and even then logged |
+  | Action-Allowed | Actually mutates state (write file, run shell, git push, call a paid API) | Gated by mode — prompted by default; skippable without a prompt in full-auto, and in build mode only where the sandbox already bounds the call. Either way it is logged |
 
    Mode (plan / build / full-auto) sets the *default* posture across tiers, but the tier is what the gate actually checks per action — this is what lets you honestly tell a security-conscious user "plan mode asks before touching your filesystem" instead of just "trust the prompt."
 - MCP server output is untrusted input, same as any external content — never let a tool result silently expand its own permissions or trigger an unreviewed action.
-- Audit log of every executed tool call (what, when, which layer it came from, its tier, whether it was approved) — this is a genuine differentiator for your security-architect users, and cheap to add if it's built into the gate from day one rather than bolted on later.
+- Audit log of every executed tool call (what, when, which layer it came from, its tier, whether it was approved) at `~/.tilde/audit.jsonl` — this is a genuine differentiator for your security-architect users, and cheap to add if it's built into the gate from day one rather than bolted on later. Known key values are redacted before anything is written.
+- The credentials file is refused above the mode matrix, in **every** mode including full-auto: no tool that takes a path may read or write `auth.json`.
 - **Project Trust — a separate, earlier gate.** The per-action permission tier above governs what happens once tilde is already running; this one governs whether tilde should run anything from a project at all. Connecting to a *project-declared* MCP server means spawning a process, and that happens before any tool-call ever occurs — so a project's `.tilde/mcp.json` can't be allowed to execute on first `cd` into an unfamiliar repo. Before connecting a project-level MCP server or running a project-level skill's script for the first time, prompt to trust the project; persist the decision in a user-level file (`~/.tilde/trusted-projects.json`) so it's asked once, not every run. AGENTS.md text is the one exception — it loads regardless of trust because it's inert instructions, not executable code, and it's treated with the same caution as any other external content (advisory, not a command tilde blindly follows). Anything under your own `~/.tilde/` is implicitly trusted — you put it there yourself; this gate is only for what a project brings with it.
      - **Trust is tied to what was actually approved, not just the folder.** Record a fingerprint of the project's executable surface (`mcp.json`, `config.json`, skill scripts, `SKILL.md` bodies and their bundled references/assets) next to the path, the same way direnv's allow-list works. If a `git pull` changes any of it, ask again. Otherwise trust granted to a harmless repo silently carries over to a later malicious commit. The prompt should show exactly what will run (the literal MCP server command lines, the skill scripts), not just "trust this folder?".
    - **A trusted project still can't loosen the rules.** There is no
@@ -260,10 +273,10 @@ Subagents are architecturally simple but compound bugs in every other layer — 
 These aren't blockers, but worth deciding early rather than mid-build:
 
 - ~~LLM provider abstraction~~ — **resolved:** OpenRouter (OpenAI-compatible) behind a thin `Provider` interface from day one. See 3.8.
-- **Permission prompt UX** — inline in the message stream, or a modal overlay that takes over the pane?
+- ~~Permission prompt UX~~ — **resolved:** a modal dialog in the composer layer, with the transcript scrolled to it. See [tui-spec.md](tui-spec.md) §3.4.
 - ~~Session storage format~~ — **resolved:** tree-structured session file (Section 3.7), not a flat log or a database.
-- **Can skills define new modes?** — decide now, since it changes whether Mode is a closed enum or an open registry.
-- **Telemetry stance** — given the open-source, privacy-conscious audience you're building for, default should almost certainly be zero telemetry, opt-in only if ever added.
+- ~~Can skills define new modes?~~ — **resolved: no.** Mode is a closed enum of three (`tools.Modes` in `internal/tools/policy.go`); a skill is data, not a permission grant.
+- ~~Telemetry stance~~ — **resolved: none.** There is no analytics of any kind in the codebase, and the only outbound calls are to the model provider, `web_fetch` on the model's behalf, and the once-a-day release check.
 
 ## 10. Explicitly Out of Scope (for now)
 
