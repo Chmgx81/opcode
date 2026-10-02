@@ -3571,3 +3571,27 @@ Inter Display is not on fontsource (404); Inter Variable carries
 the display treatment instead. Verified: build clean, all internal
 links resolve at served URLs, fonts self-hosted, no third-party
 requests.
+
+# The site, v3 — the shadcn rebuild (2026-10-02)
+
+Full redesign on a real component stack: the site is now a **Vite +
+React 19 + TypeScript** project in shadcn structure — `components.json`
+for the CLI, `src/lib/utils.ts` (cn), and `src/components/ui/`
+(the folder the CLI writes to, so future `npx shadcn add` drops land
+next to the existing primitives instead of a parallel tree). The
+provided shadcn `button` landed verbatim; the provided
+`modern-landing-hero` is the landing's centerpiece, adapted to
+opcode — its mock command palette says "/" not ⌘K, because that is
+opcode's real binding, and its terminal shows the real first-run
+output. Reveal/Section/Chip/Terminal live in `ui/primitives.tsx`
+with motion + react-wrap-balancer driving the stagger.
+
+Routing: BrowserRouter under the /opcode/ basename with the standard
+Pages SPA fallback (index.html copied to 404.html, so deep links
+boot the router). The honest content carried over unchanged:
+metrics, the turn's span table, bento, zigzag, tiles, modes,
+providers, FAQ, and six docs pages.
+
+Verified: `tsc -b && vite build` clean; dist carries the base path
+on every asset; self-hosted Inter + Geist Mono; one 471KB JS bundle
+(gzip 151KB) — the cost of React+motion, paid knowingly.

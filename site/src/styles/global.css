@@ -1,270 +1,68 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
 
 @theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-bg: #000000;
-  --color-panel: #0a0a0a;
-  --color-raise: #1f1f1f;
-  --color-ring: rgba(255, 255, 255, 0.145);
-  --color-fg: #ffffff;
-  --color-body: #e7e7e7;
-  --color-sub: #999999;
-  --color-accent: #52a8ff;
+  /* shadcn tokens on the site's black floor */
+  --color-background: #000000;
+  --color-foreground: #ffffff;
+  --color-primary: #ffffff;
+  --color-primary-foreground: #000000;
+  --color-secondary: #0a0a0a;
+  --color-secondary-foreground: #ffffff;
+  --color-muted: #0a0a0a;
+  --color-muted-foreground: #737373;
+  --color-accent: #0a0a0a;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ededed;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-input: rgba(255, 255, 255, 0.12);
+  --color-ring: rgba(255, 255, 255, 0.2);
+
   --color-ok: #62c073;
-  --color-lite: #ededed;
+  --color-blue: #52a8ff;
 }
 
-html {
-  color-scheme: dark;
-  scroll-behavior: smooth;
-}
+html { color-scheme: dark; scroll-behavior: smooth; }
 
-body {
-  background: var(--color-bg);
-  color: var(--color-body);
-  -webkit-font-smoothing: antialiased;
-}
+::selection { background: #fff; color: #000; }
 
-::selection {
-  background: rgb(82 168 255 / 0.35);
-}
+/* Terminal mockup text colors */
+.t-dim { color: #525252; }
+.t-sub { color: #737373; }
+.t-body { color: #d4d4d4; }
+.t-acc { color: #52a8ff; }
+.t-ok { color: #62c073; }
+.t-bold { color: #fff; font-weight: 600; }
 
-/* Display headlines: Inter with the display treatment — weight 500,
-   fluid 32→60px, tracking -1px → -3.36px. */
-.headline-fluid {
-  font-weight: 500;
-  font-size: clamp(32px, 6vw, 60px);
-  line-height: 1.04;
-  letter-spacing: -0.045em;
-  color: var(--color-fg);
-}
-
-/* Square brutalist CTA — the spec's one hard rule: 0px radius,
-   white on near-black, with the diagonal arrow. */
-.btn-square {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  border-radius: 0;
-  background: #ffffff;
-  color: #121212;
-  font-weight: 500;
-  padding: 12px 18px;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
-}
-.btn-square:hover {
-  background: #ededed;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4), 0 0 32px -6px rgba(82, 168, 255, 0.5);
-}
-.btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  border-radius: 0;
-  background: transparent;
-  color: var(--color-fg);
-  font-weight: 500;
-  padding: 12px 18px;
-  box-shadow: inset 0 0 0 1px var(--color-ring);
-  transition: box-shadow 0.15s ease;
-}
-.btn-ghost:hover {
-  box-shadow: inset 0 0 0 1px rgba(82, 168, 255, 0.7);
-}
-
-/* v-chip: the pill half of the brutalist pair — 100px radius,
-   #1f1f1f, a 6px status dot, uppercase mono 12px. */
-.v-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #1f1f1f;
-  border-radius: 100px;
-  padding: 4px 10px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #999999;
-  white-space: nowrap;
-}
-.v-chip .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 100px;
-  background: #999999;
-}
-.v-chip.pass .dot { background: #62c073; }
-.v-chip.warn .dot { background: #999999; }
-.v-chip.fail .dot { background: #ededed; }
-.v-chip.active .dot { background: #52a8ff; }
-
-/* Ring card: #0a0a0a with the 1px white/14.5% ring. */
-.card {
-  background: #0a0a0a;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.145);
-  transition: box-shadow 0.2s ease;
-}
-.card:hover {
-  box-shadow: inset 0 0 0 1px rgba(82, 168, 255, 0.55), 0 0 48px -20px rgba(82, 168, 255, 0.4);
-}
-
-/* The scrim: hero visuals sit under a bottom-up black gradient. */
-.scrim {
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.76) 0%, rgba(0, 0, 0, 0) 93.785%);
-}
-
-/* Hero backdrop: radial accent glow over the black floor. */
-.hero-glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.hero-glow::before {
-  content: "";
-  position: absolute;
-  top: -18rem;
-  left: 50%;
-  width: 74rem;
-  height: 48rem;
-  transform: translateX(-50%);
-  background:
-    radial-gradient(closest-side, rgb(82 168 255 / 0.13), transparent 70%),
-    radial-gradient(50% 42% at 70% 32%, rgb(98 192 115 / 0.05), transparent 70%);
-  filter: blur(8px);
-}
-.hero-glow::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(75% 55% at 50% 25%, black 25%, transparent 75%);
-}
-
-/* Timeline progress bars: 1.5px-tall relative bars; left and width
-   are percentages set per span. */
-.tl-track {
-  position: relative;
-  width: 100%;
-  height: 6px;
-}
-.tl-bar {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.18);
-}
-.tl-bar.active { background: #52a8ff; }
-
-/* Data tables: mono rows on hairline rules. */
-.dtable { font-family: var(--font-mono); font-size: 13px; }
-.dtable th {
-  color: #666;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 11px;
-}
-.dtable td { color: #999999; border-top: 1px solid rgba(255, 255, 255, 0.07); }
-.dtable td:first-child { color: #e7e7e7; }
-.dtable tr:hover td { background: rgba(255, 255, 255, 0.02); }
-
-/* Metrics: Geist 56px, tracking -3.36px, mono unit label. */
-.metric {
-  font-family: var(--font-mono);
-  font-size: 56px;
-  line-height: 1;
-  letter-spacing: -3.36px;
-  color: #ffffff;
-}
-.metric .unit { font-size: 20px; letter-spacing: -0.5px; color: #999999; }
-
-/* Diff rows in the bento: green side-border for added, blue for the
-   modified line — the shape of opcode's own edit_file diff. */
-.diff-add { border-left: 2px solid #62c073; background: rgb(98 192 115 / 0.06); }
-.diff-mod { border-left: 2px solid #52a8ff; background: rgb(82 168 255 / 0.06); }
-
-/* Terminal mockups */
-.term {
-  background: #0a0a0a;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.145);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.75;
-}
-.t-dim  { color: #666; }
-.t-sub  { color: #999999; }
-.t-body { color: #e7e7e7; }
-.t-acc  { color: #52a8ff; }
-.t-ok   { color: #62c073; }
-.t-lite { color: #ededed; }
-.t-err  { color: #ededed; }
-.t-bold { color: #ffffff; font-weight: 600; }
-
-/* Scroll reveal (JS-gated hidden state, reduced-motion aware) */
-.js [data-reveal] {
-  opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.55s ease, transform 0.55s ease;
-}
-.js [data-reveal].revealed { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) {
-  .js [data-reveal] { opacity: 1; transform: none; transition: none; }
-}
-
-kbd {
-  font: 500 0.82em var(--font-mono);
-  background: #1f1f1f;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.145);
-  border-radius: 4px;
-  padding: 0.1em 0.45em;
-  color: #e7e7e7;
-}
-
-details.faq {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.145);
-  background: #0a0a0a;
-}
-details.faq summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 1rem 1.25rem;
-  font-weight: 500;
-  color: #fff;
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-}
-details.faq summary::-webkit-details-marker { display: none; }
-details.faq summary::after { content: "+"; color: #52a8ff; font-size: 1.25rem; line-height: 1; }
-details.faq[open] summary::after { content: "−"; }
-details.faq .body { padding: 0 1.25rem 1.15rem; color: #999999; max-width: 62ch; }
-
-/* Docs prose on the same tokens */
-.prose-doc :where(p, li) { color: #999999; }
-.prose-doc :where(h1, h2, h3) { color: #fff; letter-spacing: -0.02em; }
-.prose-doc :where(h2) { font-weight: 500; }
+/* Docs prose */
+.prose-doc p, .prose-doc li { color: #737373; }
+.prose-doc h1, .prose-doc h2, .prose-doc h3 { color: #fff; letter-spacing: -0.02em; }
+.prose-doc h2 { font-weight: 500; margin-top: 2.5rem; }
 .prose-doc pre {
-  background: #0a0a0a;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.145);
-  border-radius: 0;
+  background: #050505;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
   padding: 1rem 1.25rem;
   font-family: var(--font-mono);
   font-size: 0.86rem;
   overflow-x: auto;
 }
 .prose-doc code { color: #52a8ff; font-family: var(--font-mono); font-size: 0.9em; }
-.prose-doc pre code { color: #e7e7e7; }
-.prose-doc :where(td, th) { border-color: rgba(255, 255, 255, 0.09); }
-.prose-doc :where(th) { color: #666; font-weight: 400; }
-.prose-doc :where(a) { color: #52a8ff; }
-.prose-doc :where(strong) { color: #fff; }
-.prose-doc :where(ul > li::marker) { color: #52a8ff; }
+.prose-doc pre code { color: #d4d4d4; }
+.prose-doc table { width: 100%; font-size: 0.92rem; border-collapse: collapse; }
+.prose-doc th { color: #525252; font-weight: 400; text-align: left; }
+.prose-doc td, .prose-doc th { padding: 0.5rem 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.prose-doc a { color: #52a8ff; }
+.prose-doc strong { color: #fff; }
+.prose-doc ul li::marker { color: #52a8ff; }
+
+kbd {
+  font: 500 0.82em var(--font-mono);
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.1em 0.45em;
+  color: #d4d4d4;
+}
