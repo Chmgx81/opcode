@@ -233,6 +233,42 @@ func TestReadableProviderError(t *testing.T) {
 	}
 }
 
+// OpenRouter answers rate limits with a generic top-level message and the
+// real text ("which upstream throttled, retry when") in metadata.raw.
+// Showing only the summary told the user nothing actionable — the exact
+// body from a live 429.
+func TestReadableProviderErrorOpenRouterMetadataRaw(t *testing.T) {
+	body := []byte(`{"error":{"message":"Provider returned error","code":429,
+		"metadata":{"raw":"google/gemma-4-31b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations","provider_name":"Google AI Studio","provider_error_code":"429"}}}`)
+	got := readableProviderError(body)
+	if !strings.Contains(got, "temporarily rate-limited upstream") {
+		t.Errorf("metadata.raw not shown: got %q", got)
+	}
+	if strings.Contains(got, `{"error"`) || strings.Contains(got, "metadata") {
+		t.Errorf("raw JSON leaked into the message: %s", got)
+	}
+}
+
+// Gateways that speak a different dialect — Nvidia answers 404s with
+// {"status","title","detail"} and no message field — must render as the
+// detail line, not the whole envelope.
+func TestReadableProviderErrorGatewayDetail(t *testing.T) {
+	body := []byte(`{"status":404,"title":"Not Found","detail":"Function '9b96341b-9791-4db9-a00d-4e43aa192a39': Not found for account 'abc123D'"}`)
+	got := readableProviderError(body)
+	if !strings.Contains(got, "Not found for account") {
+		t.Errorf("detail not shown: got %q", got)
+	}
+	if strings.Contains(got, `{"status"`) {
+		t.Errorf("raw JSON leaked into the message: %s", got)
+	}
+	// A detail-bearing body that ALSO has an error.message keeps the
+	// message: the envelope wins when it actually speaks.
+	dual := []byte(`{"message":"billing","detail":"please pay"}`)
+	if got := readableProviderError(dual); got != "billing" {
+		t.Errorf("error.message should win over detail: got %q", got)
+	}
+}
+
 func TestStreamChatSendsExpectedWireFormat(t *testing.T) {
 	var cap capturedRequest
 	srv := sseServer(t, []string{finish("stop")}, &cap, 0)

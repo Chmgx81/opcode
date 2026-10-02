@@ -3088,3 +3088,42 @@ its port immediately and answers HTTP 200, and the full installer test
 passes 48/48 under that shim while the old code fails with exactly the
 message CI reported. The temporary probe script and its CI step are
 removed.
+
+## Real providers, real keys (2026-10-02)
+
+Every test until now ran against a fake OpenAI-compatible server. This
+pass ran the built binary against three real providers using the
+maintainer's own keys, headless and in the TUI, to close the last gap
+before a release:
+
+- **OpenRouter** (the default provider): plain turn, tool loop, `--json`
+  events, and a reasoning model (`nemotron` free) in the TUI — reasoning
+  streamed and collapsed to "thought for 7s · 727 chars", the tool ran,
+  and when the free pool 502'd mid-turn the transcript carried Nvidia's
+  own words ("ResourceExhausted ... request limit reached") instead of a
+  bare status.
+- **Mistral** (catalog provider, key from the env): plain and tool turns,
+  1-2s each.
+- **Nvidia** (catalog provider): plain and tool turns on
+  `meta/llama-3.2-90b-vision-instruct`. Several other model ids 404 with
+  a per-account catalog error; tilde surfaced it honestly.
+- **Secrets**: after real turns, the raw key appears in **zero** files
+  under `~/.tilde` — session saves and the audit log are redacted with
+  real credentials, not just in tests.
+- **Anthropic native client**: still no key in this file for it, so it
+  remains covered by unit tests only, not a live call. Stated plainly.
+
+Two error-copy gaps the real bodies exposed, both fixed with tests from
+the actual responses:
+
+- OpenRouter answers rate limits with a generic top-level message and
+  the useful text in `{"metadata":{"raw":...}}`. The transcript now
+  shows "temporarily rate-limited upstream, retry shortly" instead of
+  the content-free "Provider returned error".
+- Nvidia-style bodies `{"status","title","detail"}` have no message
+  field; the transcript now shows the `detail` line instead of the whole
+  envelope.
+
+Live check after the fix: the same gemma request that printed
+"Provider returned error" now prints the full upstream message naming
+the remedy. `gofmt`, `vet`, the full race suite, and staticcheck pass.
