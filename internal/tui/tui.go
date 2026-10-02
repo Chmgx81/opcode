@@ -548,10 +548,13 @@ func New(opt Options) *Model {
 		// render an empty slot where the model goes.
 		modelLine = "no model yet"
 	}
-	info = append(info, dimStyle.Render(modelLine+" · "+opt.Mode))
+	// One identity line — this model, in this mode, in this
+	// directory — instead of a form's worth of rows beside the mark.
+	idLine := modelLine + " · " + opt.Mode
 	if opt.Cwd != "" {
-		info = append(info, dimStyle.Render(opt.Cwd))
+		idLine += " · " + opt.Cwd
 	}
+	info = append(info, dimStyle.Render(idLine))
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
 		strings.Join(logo, "\n"), "   ", strings.Join(info, "\n"))
 	m.entries = append(m.entries, entry{kind: entryDim, text: header})

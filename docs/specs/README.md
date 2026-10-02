@@ -54,6 +54,7 @@ and its full chronological log,
 | 42 | [phase42-typed-input.md](phase42-typed-input.md) | One typed decision for composer input (send / steer / queue / command / shell) | shipped |
 | 43 | [phase43-production-audit.md](phase43-production-audit.md) | Whole-codebase audit: security, concurrency, UX, slop — findings triaged | shipped |
 | 44 | [phase44-release-hardening.md](phase44-release-hardening.md) | Release hardening: races, CI/CD, `opcode update`, installer checksums | shipped |
+| 45 | [phase45-ui-restyle.md](phase45-ui-restyle.md) | UI restyle: the composer joins the box language; a one-line greeting lockup | shipped |
 
 Phases 7–12, 14–17, 24, 27–29 and 31 have no spec file of their own;
 their work is recorded in the [build log](../progress-log.md) and

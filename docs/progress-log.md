@@ -9,7 +9,7 @@
 
 # Build log (archived)
 
-This is the full chronological build log, Phase 0 through Phase 44,
+This is the full chronological build log, Phase 0 through Phase 45,
 moved here verbatim from `PROGRESS.md`. It is the record of what each
 phase set out to do, what was verified live, and what was left
 unverified or deliberately deferred.
@@ -3178,3 +3178,45 @@ mouse capture, no alt-screen), so wheel and shift+pgup are the
 terminal's own scrolling; ctrl+o opens the in-app transcript with
 ↑↓/pgup/pgdn; overlays (help, sheets) each own their scroll keys. That
 is the right shape and changing it would be churn.
+
+# Phase 45 — the UI restyle: one box language (status: complete, verified)
+
+Phase 45 ([specs/phase45-ui-restyle.md](specs/phase45-ui-restyle.md)):
+the composer joins the box language every dialog already spoke, and
+the greeting's identity becomes one line.
+
+- **The composer is a box.** Every floating surface — dialogs,
+  pickers, the palette, the help sheet — drew the rounded
+  `dialogBorder` box; the composer alone sat between two full-width
+  `─` rules, the boldest horizontal structure on the screen, with no
+  side edges on the input. It now draws the same box: the boundary
+  token at rest, amber in shell mode (the signal the rules carried),
+  ASCII `+-|` under --plain through the same `dialogBorder()` switch,
+  and nothing below fourteen columns — a clipped border is worse
+  chrome than none. Same two rows of chrome, real edges. `GlyphRule`
+  left the vocabulary (nothing renders it), so `adaptGlyphs` and the
+  a11y glyph table lost the entry.
+- **The row accounting became honest, and that found a bug.** The
+  old composer appended the multi-line textarea as one element, so
+  the frame's room budget undercounted it by a row; the box splits
+  into real rows, the budget is exact, and the honest count exposed
+  `floatingBlock`'s "room == 0 means unset" fallback granting
+  overlays six rows a full composer had already spent — a frame
+  taller than the terminal, the exact corruption the package exists
+  to prevent. Zero room is now a real answer: the block renders
+  nothing, which is the @-mention menu's documented behavior on an
+  eight-row terminal.
+- **The greeting says who, what, where on one line.** Model · mode ·
+  cwd joined beside the mark — the lockup reads as a sentence
+  instead of a form.
+- **tui-spec.md caught up with the rebrand** in the same change, per
+  its own rule: the brand glyph rows said `~` where the code has
+  drawn `◈` since v0.5.0 (header, composer prompt, exit line), and
+  the composer and greeting sections now match what renders.
+
+Verified: `go build`, `go vet`, and the full
+`go test -race -count=1 ./...` suite pass; `TestComposerBoxFrame`
+locks the box, its plain posture, and the narrow bare fallback;
+`TestFrameFitsEveryStateAtEveryWidth` holds the 8–120 column sweep
+with the box in every state, including the two-line-draft case that
+the honest accounting fixed.
