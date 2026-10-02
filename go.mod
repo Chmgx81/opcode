@@ -1,6 +1,12 @@
 module github.com/Chmgx81/tilde
 
-go 1.25.0
+// 1.25.13 is the floor, not a preference: it carries the stdlib fixes
+// for GO-2026-6218 (net/url resolvePath), GO-2026-6090 (post-handshake
+// TLS messages) and GO-2026-6088 (encoding/xml decode depth), all of
+// which tilde reaches through its HTTP and markdown paths. A build on
+// an older patch release is vulnerable and govulncheck says so.
+// See docs/progress-log.md, 2026-10-01.
+go 1.25.13
 
 require (
 	github.com/alecthomas/chroma/v2 v2.20.0

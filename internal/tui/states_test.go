@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -51,6 +53,73 @@ func TestCommandsHelpAndSwitchAgree(t *testing.T) {
 			t.Errorf("%s has no description in the palette", c.Name)
 		}
 	}
+}
+
+// TestSpecCommandListMatchesCode keeps the TUI spec's command list
+// honest. The three copies inside the code are checked above; the prose
+// in docs/specs/tui-spec.md is a fourth copy that nothing read, which is
+// how /update shipped implemented, dispatched, listed in the palette and
+// the help sheet, yet absent from the spec. Walking out to the repo root
+// means this test only runs from the package directory, like any other
+// Go test.
+func TestSpecCommandListMatchesCode(t *testing.T) {
+	const specPath = "../../docs/specs/tui-spec.md"
+	raw, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", specPath, err)
+	}
+	// The list is line-wrapped in the prose, so the whole document is
+	// compared with whitespace collapsed: a backticked name may be split
+	// across lines, and a wrap is not a missing command.
+	listed := specCommands(strings.Join(strings.Fields(string(raw)), " "))
+	// Both directions, against the enumerated list only. Searching the
+	// whole document for a name would pass on any sentence that happens
+	// to mention it, which is how /update was in the spec's prose and
+	// missing from its list at the same time.
+	for _, c := range commands {
+		if !slices.Contains(listed, c.Name) {
+			t.Errorf("the TUI spec's command list omits %s", c.Name)
+		}
+	}
+	for _, name := range listed {
+		found := false
+		for _, c := range commands {
+			if c.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("the TUI spec's command list names %s, which tilde does not implement", name)
+		}
+	}
+}
+
+// specCommands pulls the backticked slash names out of the spec's
+// command-list sentence, which is the only place that enumerates the
+// whole set. The list ends at the sentence's closing backtick-period, so
+// the sentences around it are not read as part of it.
+func specCommands(flat string) []string {
+	start := strings.Index(flat, "Slash commands:")
+	if start < 0 {
+		return nil
+	}
+	rest := flat[start:]
+	end := strings.Index(rest, "`. ")
+	if end < 0 {
+		end = len(rest)
+	}
+	var out []string
+	span := rest[:end]
+	// A wrap inside the span leaves "` /" between two names; the names
+	// themselves are still separate fields, so only the stray backtick
+	// has to go.
+	for _, field := range strings.Fields(span) {
+		if name := strings.Trim(field, "`:,.( "); strings.HasPrefix(name, "/") {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // TestErrorCopyNamesTheNextStep: the raw cause stays (a user pasting

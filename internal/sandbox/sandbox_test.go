@@ -175,11 +175,22 @@ func TestWritableRoots(t *testing.T) {
 			t.Errorf("root %s is not an existing directory", r)
 		}
 	}
-	if !seen[wd] {
-		t.Errorf("cwd %s missing from roots: %v", wd, roots)
+	// Compared the way the gate compares them: through the symlink
+	// resolution. macOS's TMPDIR is /var/folders/... while the real
+	// path is /private/var/folders/... (/var is a link), and the cwd
+	// has the same shape inside the runner's build directory. The roots
+	// list is deliberately stored as the environment spells it, so
+	// resolving the expectation is what proves the list is right.
+	seenResolved := map[string]bool{}
+	for r := range seen {
+		seenResolved[resolveSymlinks(r)] = true
 	}
-	if !seen[os.TempDir()] {
-		t.Errorf("temp dir %s missing from roots: %v", os.TempDir(), roots)
+	for _, want := range []struct{ what, path string }{
+		{"cwd", wd}, {"temp dir", os.TempDir()},
+	} {
+		if !seenResolved[resolveSymlinks(want.path)] {
+			t.Errorf("%s %s missing from roots: %v", want.what, want.path, roots)
+		}
 	}
 	// PATH bin dirs are the executable-drop class: never writable.
 	for _, forbidden := range []string{filepath.Join(os.Getenv("HOME"), "go", "bin"), "/usr/bin"} {
@@ -226,6 +237,33 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// A user who set "sandbox": true on a platform without Landlock must be
+// told the setting is unavailable, not that the sandbox is off — the second
+// reading says they never asked for it, and invites them to look elsewhere.
+func TestStatusSaysUnavailableWhenAskedButUnsupported(t *testing.T) {
+	if Supported() {
+		t.Skip("this platform has landlock, so the sandbox is never unavailable")
+	}
+	on, err := New(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if on.Enabled() {
+		t.Fatal("sandbox reports enabled on an unsupported platform")
+	}
+	if s := on.Status(); !strings.Contains(s, "unavailable") {
+		t.Errorf("status = %q, want it to say unavailable", s)
+	}
+	// Asked-off stays a plain "off", not an alarming unavailability notice.
+	off, err := New(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := off.Status(); !strings.Contains(s, "off") {
+		t.Errorf("status = %q, want it to say off", s)
+	}
 }
 
 func TestStatusNeverOverclaims(t *testing.T) {
@@ -281,4 +319,14 @@ func TestChildArgValidation(t *testing.T) {
 			t.Errorf("Child(%v) must reject malformed args", args)
 		}
 	}
+}
+
+// resolveSymlinks is the comparison the tests need on a platform where a
+// path and its real path differ (macOS /var -> /private/var). A path that
+// cannot be resolved is compared as written.
+func resolveSymlinks(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }

@@ -35,8 +35,8 @@
            │                   │                   │
    ┌───────▼──────┐   ┌────────▼────────┐   ┌──────▼───────┐
    │  Subagent    │   │  Skill Loader   │   │ MCP Manager  │
-   │  Manager     │   │  (folder scan + │   │ (stdio/http  │
-   │  (goroutines)│   │  subprocess run)│   │  client pool)│
+   │  Manager     │   │  (folder scan + │   │  (stdio only)│
+   │  (goroutines)│   │  subprocess run)│   │  process pool)│
    └───────┬──────┘   └────────┬────────┘   └──────┬───────┘
            │                   │                    │
 ┌──────────▼───────────────────▼────────────────────▼─────────────┐
@@ -97,7 +97,7 @@
 
 ### 3.5 MCP Manager
 - Reads the server list from config (e.g. `.tilde/mcp.json`).
-- Spawns/connects each server (stdio or HTTP), performs the handshake, discovers its tools.
+- Spawns each server over stdio, performs the handshake, discovers its tools. HTTP transport is not implemented; an `http://` server entry is rejected at config load with that reason rather than silently ignored.
 - Exposes discovered tools to the Orchestrator as ordinary tool definitions — the model doesn't need to know MCP exists, it just sees more tools available.
 - Owns lifecycle: reconnect on crash, clean shutdown on exit, timeout on a slow/dead server so it never blocks startup.
 - **Consumption practices worth building in from the start:**
