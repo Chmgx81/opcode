@@ -114,21 +114,38 @@ type streamChunk struct {
 // readableProviderError turns an HTTP error body into what a human
 // should read. OpenAI-compatible servers answer with
 // {"error":{"message":...,"code":...}} — show that message, not the
-// JSON envelope; anything unparseable falls back to truncated raw
-// text so the transcript never carries a wall of response body.
+// JSON envelope. Two real shapes need more than that field:
+// OpenRouter sometimes fills the top-level message with a generic
+// "Provider returned error" and carries the useful text (which upstream
+// throttled, retry when) in {"metadata":{"raw":...}}; and bodies like
+// Nvidia's 404s are {"status":...,"title":...,"detail":"..."} with no
+// error/message at all. Anything else unparseable falls back to
+// truncated raw text so the transcript never carries a wall of body.
 func readableProviderError(body []byte) string {
 	var probe struct {
 		Error struct {
-			Message string `json:"message"`
+			Message  string `json:"message"`
+			Metadata struct {
+				Raw string `json:"raw"` // OpenRouter's upstream detail
+			} `json:"metadata"`
 		} `json:"error"`
 		Message string `json:"message"` // some servers put it top-level
+		Detail  string `json:"detail"`  // Nvidia and other gateways
 	}
 	if err := json.Unmarshal(body, &probe); err == nil {
+		if probe.Error.Metadata.Raw != "" && probe.Error.Message != "" {
+			// The provider's own words beat the router's summary;
+			// both present means the raw text is the one worth reading.
+			return probe.Error.Metadata.Raw
+		}
 		if probe.Error.Message != "" {
 			return probe.Error.Message
 		}
 		if probe.Message != "" {
 			return probe.Message
+		}
+		if probe.Detail != "" {
+			return probe.Detail
 		}
 	}
 	s := strings.TrimSpace(string(body))
