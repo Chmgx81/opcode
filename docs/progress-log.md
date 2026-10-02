@@ -3300,3 +3300,15 @@ login → fetch → catalog chain with the session key
 (`TestLoginContinuesToModels`); the switch warning
 (`TestSwitchToUnkeyedProviderWarns`); and the pre-flight refusing
 the turn with zero requests billed (`TestSendPreflightsTheKey`).
+
+Found live on a first run (the report that closed the loop): picking
+a keyless provider in the auto-opened browse picker fired the fetch
+anyway and failed with "no api key for mistral — /login mistral…",
+stranding the user at an empty composer one step into the journey.
+The row named the command; Enter now does it — a keyless row in any
+provider list (`/models`, the first-run picker, the `/model` hub)
+starts that provider's login, and the login's success carries the
+journey to the model list on its own.
+`TestKeylessProviderPickStartsLogin` locks the path, and the
+all-rows-fetch assertion in `TestModelsPickerListsAllProviders`
+became the per-row contract: keyed and local fetch, keyless logs in.

@@ -123,8 +123,17 @@ func (m *Model) openModelsPicker(arg string) tea.Cmd {
 		if !ok {
 			continue
 		}
+		// A keyless row must not pretend to browse: its fetch can
+		// only fail with "no key — /login <name>". Enter starts that
+		// login instead, and the login's own success fetches the
+		// models — pick provider → paste key → pick model, no dead
+		// end and no command to remember.
+		action := "fetch"
+		if m.providerNeedsKey(name, pc) {
+			action = "login"
+		}
 		items = append(items, pickerItem{
-			Label: name, Detail: m.providerDetail(name, pc), Provider: name, Action: "fetch",
+			Label: name, Detail: m.providerDetail(name, pc), Provider: name, Action: action,
 		})
 	}
 	if len(items) == 0 {

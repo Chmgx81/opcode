@@ -47,12 +47,14 @@ func TestModelsPickerListsAllProviders(t *testing.T) {
 	}
 	var labels []string
 	hints := map[string]string{}
+	actions := map[string]string{}
 	for _, it := range m.picker.items {
-		if it.Action != "fetch" {
+		if it.Action != "fetch" && it.Action != "login" {
 			t.Errorf("provider row %q action = %q", it.Label, it.Action)
 		}
 		labels = append(labels, it.Label)
 		hints[it.Label] = it.Detail
+		actions[it.Label] = it.Action
 	}
 	for _, want := range []string{"anthropic", "fixture", "mistral", "ollama", "openrouter"} {
 		if !contains(labels, want) {
@@ -68,6 +70,48 @@ func TestModelsPickerListsAllProviders(t *testing.T) {
 	}
 	if !strings.HasPrefix(hints["openrouter"], "enter") {
 		t.Errorf("openrouter hint = %q, want browse (key resolves)", hints["openrouter"])
+	}
+	// A keyless row starts the login, not a doomed fetch — the row
+	// names /login, and Enter does it.
+	if actions["groq"] != "login" {
+		t.Errorf("groq action = %q, want login", actions["groq"])
+	}
+	if actions["openrouter"] != "fetch" {
+		t.Errorf("openrouter action = %q, want fetch", actions["openrouter"])
+	}
+	if actions["ollama"] != "fetch" {
+		t.Errorf("ollama action = %q, want fetch (local needs no key)", actions["ollama"])
+	}
+}
+
+// TestKeylessProviderPickStartsLogin: the first-run journey is pick
+// provider → paste key → pick model. Picking a keyless provider in
+// the browse picker used to fire a fetch that could only fail with
+// "no api key — /login <name>" and strand the user at an empty
+// composer; Enter now starts that login, and the login's success
+// carries the journey to the model list on its own.
+func TestKeylessProviderPickStartsLogin(t *testing.T) {
+	m, _ := modelPickerTestModel(t)
+	m.openModelsPicker("")
+	if m.picker == nil {
+		t.Fatal("provider picker did not open")
+	}
+	var mistral pickerItem
+	for _, it := range m.picker.items {
+		if it.Label == "mistral" {
+			mistral = it
+		}
+	}
+	if mistral.Action != "login" {
+		t.Fatalf("mistral action = %q, want login", mistral.Action)
+	}
+	m.picker = nil
+	m.pickerSelect(mistral)
+	if m.login == nil || m.login.provider != "mistral" {
+		t.Fatalf("picking a keyless provider started %+v, want the mistral login", m.login)
+	}
+	if tr := m.transcript(); strings.Contains(tr, "no api key for mistral") {
+		t.Errorf("the doomed fetch's error still fired:\n%s", tr)
 	}
 }
 
