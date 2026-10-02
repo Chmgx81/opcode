@@ -21,7 +21,7 @@ feature that does not exist.
    native scrollback, state restored on exit).
 5. Degrade, don't break: truecolor → 256 → 16 → none; unicode → ASCII.
 6. Colors and glyphs come from one place (`internal/tui/style.go`).
-7. opcode's identity is the `~`. No emoji. Every glyph has a fixed
+7. opcode's identity is the `◈` (`*` in the plain posture). No emoji. Every glyph has a fixed
    meaning.
 
 ---
@@ -63,9 +63,9 @@ rather than in a bug report.
 
 | Glyph | Plain | Meaning |
 |---|---|---|
-| `~` | `~` | the brand: header, composer prompt |
+| `◈` | `*` | the brand: header, composer prompt, login mask |
 | `⏸ › ⏵⏵` | `= > >>` | modes: plan, build, full-auto |
-| `❯` | `>` | user message, picker selection, composer prompt |
+| `❯` | `>` | user message, picker selection, palette caret |
 | `!` | `!` | composer shell-mode prompt |
 | `●` | `*` | tool action |
 | `⎿` | `\-` | result under its action |
@@ -78,7 +78,6 @@ rather than in a bug report.
 | `•` | `*` | one masked character of a hidden secret |
 | `⏎` | `\|` | a line break inside a collapsed result |
 | `+` `−` | `+` `-` | diff added / removed |
-| `─` | `-` | the rules that frame the composer |
 | `…` | (kept) | truncation, always with a count |
 
 `TestEveryGlyphDegrades` walks the whole set by name, so a glyph added
@@ -142,17 +141,17 @@ cannot answer is the one failure a permission dialog may not have.
 ### 3.1 Greeting (once, scrolls away)
 
 ```
-   ▄▄▄▄▄▄▄      ~ opcode v0.3.0
- ▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · build
-▀▀         ▀███▄  /home/you/project
-               ▀█▄▄▄▄▄▄▄█▀
-                 ▀▀▀▀▀▀▀
+ ▄▄▄▄    ▄▄▄▄▄    ◈ opcode v0.5.0
+█▀  ▀█  █▀  ▀█    anthropic/claude-sonnet-4.5 · build · /home/you/project
+█▄  ▄█  █▄▄▄▀
+ ▀▄▄▀   █
 sandbox: landlock v10 — reads anywhere, writes confined to this
 directory, /tmp, and dev caches
 ```
 
-Logo left, identity beside it, startup notes below (sandbox status,
-MCP states, warnings).
+Logo left, one identity line beside it — this model, in this
+mode, in this directory — and the startup notes below (sandbox
+status, MCP states, warnings).
 
 ### 3.2 A turn
 
@@ -174,17 +173,21 @@ I'll add a token-bucket limiter on the route.               ← assistant prose 
 ### 3.3 Composer + footer
 
 ```
-──────────────────────────────────────────────────────────  ← rule, border color (amber in shell mode)
-~ ask opcode anything…                                        ← the input, brand ~ prompt
-──────────────────────────────────────────────────────────  ← rule
+╭──────────────────────────────────────────────────────────╮
+│ ◈ ask opcode anything…                                    │
+╰──────────────────────────────────────────────────────────╯
 › build (tab to cycle)   ? for shortcuts · / commands
 ```
 
-Full-width rules frame the input — the findable frame without a
-box. The `~` sits in accent; shell mode flips it to `!` and the
-rules to amber. The mode line carries each mode's own glyph —
-`⏸` plan, `›` build, `⏵⏵` full-auto — so the
-brand `~` belongs to the composer alone.
+The input sits in the same rounded box every dialog draws — one box
+language for every surface the user acts on, and the input's own
+side edges for the same two rows the old full-width rules spent.
+The border is the boundary token at rest; shell mode flips the
+prompt to `!` and the border to amber. Below fourteen columns the
+box is not drawn: border and padding would leave the input under
+its floor, and a clipped border is worse chrome than none. The mode
+line carries each mode's own glyph — `⏸` plan, `›` build, `⏵⏵`
+full-auto — so the brand `◈` belongs to the composer alone.
 
 The footer reflows from a candidate list, fullest to barest, first
 one that fits whole. **The mode is never dropped for anything else**:
@@ -310,7 +313,7 @@ because "no matches" alone reads as a broken picker.
 | Alt+. / Alt+, | reasoning effort up / down (unset → low → medium → high → unset) |
 | Esc | stop the turn, stop a running `!command`, or close exactly one open thing — and with nothing open, do nothing (it never eats a draft) |
 | Ctrl+C / Ctrl+D | press twice to exit — the first press arms a short window and interrupts whatever is running (a turn, or a `!command`); `/exit` quits immediately |
-| Exit line | on a clean exit opcode prints `~ opcode — session saved · resume it with /sessions` |
+| Exit line | on a clean exit opcode prints `◈ opcode — session saved · resume it with /sessions` |
 | `?` | help sheet (empty, idle composer) — scrolls with ↑↓ / pgup / pgdn, any other key closes |
 | `/` | command palette (type to filter, arrows or ctrl+n/p, enter selects) |
 | `@` | file picker (live filter over the project tree, capped at 1000 files / 6 levels deep; `.git`, `node_modules`, `vendor`, `dist` and friends are skipped) |
@@ -354,7 +357,7 @@ doubles, so entries can be appended freely.
 - **Plain posture** (`--plain`, `OPCODE_PLAIN`, or a detected screen
   reader): the glyph vocabulary degrades to ASCII (Section 2's table),
   animations off; no glyph disappears. The dialog boxes follow
-  (`dialogBorder`: `+-|`), the composer's rules follow (`-`), and the
+  (`dialogBorder`: `+-|`), the composer's box follows (`+-|`), and the
   chrome's arrows and em dashes are spelled (`up/dn`, `-`). The
   spinner is static under plain even with an explicit
   `"animations": true`. Two known residuals: the `…` ellipsis stays as

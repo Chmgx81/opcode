@@ -165,8 +165,8 @@ func (m *Model) shellMode() bool {
 // syncComposerPlaceholder drops the hint when it cannot fit. bubbles
 // does not clip a placeholder, so a nineteen-column hint on a
 // sixteen-column pane is a row the frame cannot absorb — and the
-// overflow takes the whole render with it. The two rules still frame
-// the input, so a narrow composer is bare rather than broken.
+// overflow takes the whole render with it. Below the box's floor the
+// composer goes bare rather than broken.
 func (m *Model) syncComposerPlaceholder() {
 	room := m.composer.Width() - lipgloss.Width(m.composer.Prompt)
 	ph := ""
@@ -179,9 +179,9 @@ func (m *Model) syncComposerPlaceholder() {
 }
 
 // syncComposerPrompt swaps the composer prompt glyph with the mode:
-// "!" amber for shell escapes, "~" otherwise. The prompt glyph is the
-// mode signal in a composer that has no box around it, so it is
-// colored to match.
+// "!" amber for shell escapes, the brand mark otherwise. The prompt
+// glyph and the box border are the mode signal, so both are colored
+// to match.
 func (m *Model) syncComposerPrompt() {
 	if m.shellMode() {
 		m.composer.Prompt = GlyphShell + " "

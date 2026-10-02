@@ -180,7 +180,6 @@ func refreshTokens() {
 	queuedStyle = dimStyle
 	toolNameStyle = lipgloss.NewStyle().Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)
-	ruleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexDeep))
 
 	promptBoxStyle = lipgloss.NewStyle().
 		Border(dialogBorder()).
@@ -191,6 +190,14 @@ func refreshTokens() {
 		BorderForeground(lipgloss.Color(HexAccent)).
 		Padding(0, 1)
 	helpStyle = lipgloss.NewStyle().
+		Border(dialogBorder()).
+		BorderForeground(lipgloss.Color(HexDeep)).
+		Padding(0, 1)
+	// The composer draws the same box every overlay draws — one box
+	// language for every surface the user acts on. The border is the
+	// boundary token at rest; shell mode repaints it amber (the state
+	// signal the composer's old full-width rules carried).
+	composerStyle = lipgloss.NewStyle().
 		Border(dialogBorder()).
 		BorderForeground(lipgloss.Color(HexDeep)).
 		Padding(0, 1)
@@ -253,10 +260,8 @@ var (
 
 	// Chrome marks — punctuation rather than vocabulary, but still
 	// marks, so the plain posture degrades them with the rest: the
-	// full-width rules that frame the composer, and the separator that
-	// joins the segments of a line.
-	GlyphRule = "─"
-	GlyphSep  = "·"
+	// separator that joins the segments of a line.
+	GlyphSep = "·"
 )
 
 // adaptGlyphs installs the vocabulary for the posture: Unicode by
@@ -285,7 +290,7 @@ func adaptGlyphs(plain bool) {
 		GlyphModePlan = "⏸"
 		GlyphModeBuild, GlyphModeFullAuto = "›", "⏵⏵"
 		GlyphUpdate, GlyphMask = "↑", "•"
-		GlyphRule, GlyphSep, GlyphJoin = "─", "·", "⏎"
+		GlyphSep, GlyphJoin = "·", "⏎"
 		return
 	}
 	GlyphBrand = "*"
@@ -297,7 +302,7 @@ func adaptGlyphs(plain bool) {
 	GlyphQueued, GlyphThought = ">", "^"
 	GlyphModePlan = "="
 	GlyphModeBuild, GlyphModeFullAuto = ">", ">>"
-	GlyphRule, GlyphSep = "-", "-"
+	GlyphSep = "-"
 	// The update badge is a caret under the version it refers to;
 	// GlyphThought's "^" only ever heads a collapsed thinking block,
 	// so the two do not read as the same mark. The mask is a plain
@@ -328,6 +333,6 @@ func plainOr(unicode, ascii string) string {
 var (
 	accentStyle, accent2Style, dimStyle, subtleStyle, infoStyle, warnStyle,
 	dangerStyle, okStyle, resultStyle, promptStyle,
-	steerStyle, queuedStyle, toolNameStyle, boldStyle, ruleStyle,
-	promptBoxStyle, paletteStyle, helpStyle lipgloss.Style
+	steerStyle, queuedStyle, toolNameStyle, boldStyle,
+	promptBoxStyle, paletteStyle, helpStyle, composerStyle lipgloss.Style
 )

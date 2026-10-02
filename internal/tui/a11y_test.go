@@ -134,7 +134,7 @@ func everyGlyph() map[string]string {
 		"todoOff": GlyphTodoOff, "queued": GlyphQueued, "update": GlyphUpdate,
 		"mask": GlyphMask, "modePlan": GlyphModePlan, "modeBuild": GlyphModeBuild,
 		"modeFullAuto": GlyphModeFullAuto, "thought": GlyphThought,
-		"rule": GlyphRule, "sep": GlyphSep, "join": GlyphJoin,
+		"sep": GlyphSep, "join": GlyphJoin,
 	}
 }
 
@@ -162,7 +162,7 @@ func TestEveryGlyphDegrades(t *testing.T) {
 			t.Errorf("glyph %q disappears under --plain", name)
 		}
 	}
-	if plain["sep"] == "" || plain["rule"] == "" {
+	if plain["sep"] == "" {
 		t.Error("the chrome marks have no ASCII form")
 	}
 }

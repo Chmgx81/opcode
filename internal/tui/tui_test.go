@@ -799,11 +799,12 @@ func TestComposerResizesWithTerminal(t *testing.T) {
 	// so the placeholder wrapped onto two lines on any terminal. The
 	// composer must size itself from WindowSizeMsg.
 	m.Update(tea.WindowSizeMsg{Width: 70, Height: 30})
-	// The composer is a bare prompt line now: SetWidth receives the
-	// terminal minus the prompt (70-2); the textarea reserves its
-	// 2-wide prompt from that, so Width() is 66.
-	if got := m.composer.Width(); got != 70-2-2 {
-		t.Errorf("composer width = %d, want %d", got, 70-8-2)
+	// The composer is a bare prompt line inside the box: SetWidth
+	// receives the terminal minus the box's border+padding (70-4);
+	// the textarea reserves its 2-wide prompt from that, so Width()
+	// is 64.
+	if got := m.composer.Width(); got != 70-4-2 {
+		t.Errorf("composer width = %d, want %d", got, 70-4-2)
 	}
 	// One line when empty: a short placeholder, not a hint crammed
 	// into it — hints live on the footer line below.

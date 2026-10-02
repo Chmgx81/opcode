@@ -16,6 +16,53 @@ import (
 // image, a paste token that outlived its content, and the shell escape
 // whose chrome has to be visible before Enter.
 
+// TestComposerBoxFrame: the input sits in the same rounded box every
+// dialog draws, and the frame follows the posture: the plain posture
+// gets the ASCII box, and a terminal too narrow for the box gets a
+// bare composer rather than a clipped border.
+func TestComposerBoxFrame(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	resize(m, 60, 20)
+	rows := m.composerView()
+	if len(rows) != 5 { // blank, box top, input, box bottom, mode line
+		t.Fatalf("composer frame is %d rows, want the box: %q", len(rows), rows)
+	}
+	if top := stripANSI(rows[1]); !strings.HasPrefix(top, "╭") || !strings.HasSuffix(top, "╮") {
+		t.Errorf("the box top is missing: %q", top)
+	}
+	if bottom := stripANSI(rows[3]); !strings.HasPrefix(bottom, "╰") || !strings.HasSuffix(bottom, "╯") {
+		t.Errorf("the box bottom is missing: %q", bottom)
+	}
+	for i, r := range rows {
+		if n := lipgloss.Width(r); n > 60 {
+			t.Errorf("row %d is %d cols on a 60-col terminal: %q", i, n, stripANSI(r))
+		}
+	}
+
+	// --plain degrades the box to +-|, not to non-ASCII box drawing.
+	adaptGlyphs(true)
+	rows = m.composerView()
+	if top := stripANSI(rows[1]); !strings.HasPrefix(top, "+") || !strings.HasSuffix(top, "+") {
+		t.Errorf("the plain box top is missing: %q", top)
+	}
+	adaptGlyphs(false)
+
+	// Below the box's floor the frame drops the box, not the input:
+	// a clipped border is worse chrome than none.
+	resize(m, 12, 10)
+	rows = m.composerView()
+	if len(rows) != 3 { // blank, input, mode line
+		t.Errorf("a 12-col terminal drew %d composer rows, want the bare 3: %q",
+			len(rows), rows)
+	}
+	for _, r := range rows {
+		if s := stripANSI(r); strings.ContainsAny(s, "╭╮╰╯") {
+			t.Errorf("a clipped border survived the narrow frame: %q", s)
+		}
+	}
+}
+
 // TestLongDraftStaysInTheFrame: a hundred-line draft grows the editor,
 // not the frame. The composer is capped at six rows, so the transcript
 // loses room rather than the render overflowing — a row past the

@@ -744,15 +744,12 @@ func (m *Model) composerView() []string {
 		masked := strings.Repeat(GlyphMask, len(m.composer.Value()))
 		composer = accentStyle.Render(GlyphBrand+" ") + masked
 	}
-	// The composer sits between two full-width rules — the frame that
-	// makes the input findable without a box. The rules take the
-	// mode's color: border at rest, amber in shell mode.
-	rule := ruleStyle
-	if m.shellMode() {
-		rule = warnStyle
-	}
-	ruleLine := rule.Render(strings.Repeat(GlyphRule, m.termWidth()))
-	out = append(out, ruleLine, composer, ruleLine)
+	// The composer sits in the same rounded box every dialog draws —
+	// one box language for every surface the user acts on, and the
+	// input gains side edges for the same two rows the old full-width
+	// rules spent. The border takes the mode's color: the boundary
+	// token at rest, amber in shell mode.
+	out = append(out, m.composerBox(composer)...)
 
 	// Mode line in the reference shape: "~ mode (tab to cycle)" then
 	// the minimal hints. Codex's footer fitting: candidates from
@@ -819,6 +816,35 @@ func (m *Model) composerView() []string {
 	}
 	out = append(out, line)
 	return out
+}
+
+// composerBox frames the input in the shared dialog box, drawn at the
+// terminal's own width. It spends the same chrome budget every
+// floating block spends — four columns of border and padding — and
+// the same two rows the old full-width rules did, so the frame's
+// budget above is unchanged. Below fourteen columns the box is not
+// drawn: border and padding would leave the input under its floor,
+// and a clipped border is worse chrome than none — the bare prompt
+// line carries the input on its own.
+func (m *Model) composerBox(composer string) []string {
+	w := m.termWidth()
+	const chrome = 4
+	if w < 14 {
+		var bare []string
+		for _, l := range strings.Split(composer, "\n") {
+			bare = append(bare, clipCols(l, w))
+		}
+		return bare
+	}
+	st := composerStyle
+	if m.shellMode() {
+		st = st.BorderForeground(lipgloss.Color(HexWarning))
+	}
+	lines := strings.Split(composer, "\n")
+	for i, l := range lines {
+		lines[i] = clipCols(l, w-chrome)
+	}
+	return strings.Split(st.Width(w-2).Render(strings.Join(lines, "\n")), "\n")
 }
 
 // paletteOpen reports whether the command palette should show: the
@@ -1095,20 +1121,11 @@ func (m *Model) blockRoom() int {
 // without a border.
 func (m *Model) floatingBlock(st lipgloss.Style, rows []string, w, keepHead, keepTail, minContent int) []string {
 	room := m.overlayRows
-	// A test that renders one of these directly never went through
-	// View, so the budget was never set: give it the smallest box the
-	// frame would have drawn, so a direct render and a framed one agree
-	// on the anatomy.
-	if room == 0 {
-		room = minOverlay
-	}
-	// A block that cannot be shown whole enough to be useful shows
-	// nothing. This is not the same as trimming: the @-mention menu on
-	// an eight-row terminal used to spend the one row the transcript's
-	// trim marker needed and push the frame a row over, and what it
-	// showed was one clipped file name. The composer is the frame there,
-	// and the draft already carries the "@" the user typed — so nothing
-	// is lost but a menu nobody could read anyway.
+	// Zero (or less) is a real answer, not an unset budget: a
+	// composer that filled the frame leaves nothing for a block, and
+	// inventing room here is a frame taller than the terminal — the
+	// corruption. The @-mention menu on an eight-row terminal is the
+	// documented case: it shows nothing rather than a clipped row.
 	if room < minContent {
 		return nil
 	}
