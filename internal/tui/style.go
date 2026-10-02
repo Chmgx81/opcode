@@ -14,7 +14,7 @@ import (
 //
 // These are the DARK defaults. adaptTheme swaps in the light-legible
 // set when the terminal reports a light background (or
-// TILDE_THEME=light).
+// OPCODE_THEME=light).
 var (
 	HexAccent = "#2dd4bf" // accent: brand, focus, selection, prompt
 	HexInfo   = "#60a5fa" // info: neutral notices, links
@@ -219,10 +219,10 @@ func dialogBorder() lipgloss.Border {
 // Glyph vocabulary — the spec's Section 2.4. A small, fixed set so
 // the timeline reads as a system rather than an assortment. The
 // defaults are the Unicode forms; adaptGlyphs swaps in ASCII for
-// the plain posture (--plain, TILDE_PLAIN, or a detected screen
+// the plain posture (--plain, OPCODE_PLAIN, or a detected screen
 // reader) so every glyph degrades, none disappears.
 var (
-	GlyphBrand   = "~" // the product's own name: header and composer prompt
+	GlyphBrand   = "◈" // the product's mark: header, composer prompt, and toast frames
 	GlyphShell   = "!" // the composer's shell-mode prompt
 	GlyphPrompt  = "❯" // composer prompt, picker filter, selection
 	GlyphUser    = "❯" // user-message block prefix (fg.muted per 2.3)
@@ -275,6 +275,7 @@ func adaptGlyphs(plain bool) {
 	// the theme and the posture are applied in.
 	defer refreshTokens()
 	if !plain {
+		GlyphBrand = "◈"
 		GlyphPrompt, GlyphUser, GlyphCaret = "❯", "❯", "❯"
 		GlyphBullet, GlyphBranch = "●", "⎿"
 		GlyphOK, GlyphError, GlyphWarn, GlyphInfo = "✓", "✗", "⚠", "·"
@@ -287,6 +288,7 @@ func adaptGlyphs(plain bool) {
 		GlyphRule, GlyphSep, GlyphJoin = "─", "·", "⏎"
 		return
 	}
+	GlyphBrand = "*"
 	GlyphPrompt, GlyphUser, GlyphCaret = ">", ">", ">"
 	GlyphBullet, GlyphBranch = "*", "\\-"
 	GlyphOK, GlyphError, GlyphWarn, GlyphInfo = "[ok]", "[x]", "[!]", "-"

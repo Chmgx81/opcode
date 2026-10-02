@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 func fixturePath(mode string) []string {
@@ -223,7 +223,7 @@ func TestManagerConnectParallelWithNotes(t *testing.T) {
 
 	cfg := Config{MCPServers: map[string]ServerConfig{
 		"good": {Command: fixturePath("echo")[0], Args: fixturePath("echo")[1:]},
-		"dead": {Command: "/nonexistent-binary-tilde"},
+		"dead": {Command: "/nonexistent-binary-opcode"},
 	}}
 	toolList, notes := m.Connect(context.Background(), cfg)
 
@@ -502,7 +502,7 @@ func TestServerEnvIsScrubbedButKeepsPathAndHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("OPENROUTER_API_KEY", "sk-parent-secret")
-	t.Setenv("TILDE_TEST_SECRET_TOKEN", "parent-token")
+	t.Setenv("OPCODE_TEST_SECRET_TOKEN", "parent-token")
 
 	c := connectFixtureArgs(t, map[string]string{"GRANTED_BY_CONFIG": "yes"}, "env")
 
@@ -512,7 +512,7 @@ func TestServerEnvIsScrubbedButKeepsPathAndHome(t *testing.T) {
 		{"PATH survives", "PATH", "PATH=" + os.Getenv("PATH")},
 		{"HOME survives", "HOME", "HOME=" + home},
 		{"API key not inherited", "OPENROUTER_API_KEY", "OPENROUTER_API_KEY unset"},
-		{"token not inherited", "TILDE_TEST_SECRET_TOKEN", "TILDE_TEST_SECRET_TOKEN unset"},
+		{"token not inherited", "OPCODE_TEST_SECRET_TOKEN", "OPCODE_TEST_SECRET_TOKEN unset"},
 		{"config env granted", "GRANTED_BY_CONFIG", "GRANTED_BY_CONFIG=yes"},
 	}
 	for _, tc := range tests {

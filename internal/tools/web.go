@@ -45,15 +45,15 @@ const (
 	webFetchMaxRedirs = 5
 )
 
-// WebFetchUA is the fetch user agent; cmd/tilde sets it to the
+// WebFetchUA is the fetch user agent; cmd/opcode sets it to the
 // binary's real version so the UA never disagrees with --version.
-var WebFetchUA = "tilde/0.3 (+https://github.com/Chmgx81/tilde)"
+var WebFetchUA = "opcode/0.3 (+https://github.com/Chmgx81/opcode)"
 
 // localFetchAllowed is the user's explicit opt-in (a developer
 // pointing the model at a local dev server). It disables both the
 // spelling check and the dial-time check, because an allowlist that
 // only one of them honors is not an allowlist.
-func localFetchAllowed() bool { return os.Getenv("TILDE_ALLOW_LOCAL_FETCH") != "" }
+func localFetchAllowed() bool { return os.Getenv("OPCODE_ALLOW_LOCAL_FETCH") != "" }
 
 // checkFetchTarget refuses the host spellings the model uses to name
 // the machine itself: the loopback under any spelling (LOCALHOST,
@@ -92,7 +92,7 @@ func checkFetchTarget(rawURL string) error {
 }
 
 func errBlockedFetch(host string) error {
-	return fmt.Errorf("web_fetch: refusing to fetch %s — loopback, private, and link-local addresses are off-limits (set TILDE_ALLOW_LOCAL_FETCH=1 to allow local fetches)", host)
+	return fmt.Errorf("web_fetch: refusing to fetch %s — loopback, private, and link-local addresses are off-limits (set OPCODE_ALLOW_LOCAL_FETCH=1 to allow local fetches)", host)
 }
 
 // blockedFetchIP reports whether an address is one the model may not

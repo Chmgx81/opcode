@@ -1,8 +1,8 @@
-// Package config loads tilde's user-level configuration.
+// Package config loads opcode's user-level configuration.
 //
-// Phase 0 scope: user-level only (~/.tilde/ or $TILDE_HOME). Project-level
+// Phase 0 scope: user-level only (~/.opcode/ or $OPCODE_HOME). Project-level
 // config is not read at all; in particular, credentials are never loaded
-// from a project-level .tilde/ directory (see auth.go).
+// from a project-level .opcode/ directory (see auth.go).
 package config
 
 import (
@@ -12,14 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // DefaultPermissionMode is used when config.json does not set one;
 // the gate enforces it on every call.
 const DefaultPermissionMode = "build"
 
-// Config holds the preferences from ~/.tilde/config.json.
+// Config holds the preferences from ~/.opcode/config.json.
 type Config struct {
 	Model          string `json:"model"`
 	PermissionMode string `json:"permission_mode"`
@@ -38,7 +38,7 @@ type Config struct {
 	// unsandboxed and say so in the startup notes.
 	Sandbox *bool `json:"sandbox"`
 	// Theme names the TUI palette (the tui package owns the valid
-	// names; cmd/tilde validates at startup). Empty means auto: the
+	// names; cmd/opcode validates at startup). Empty means auto: the
 	// terminal's background is probed and the dark or light posture
 	// follows it.
 	Theme string `json:"theme"`
@@ -46,25 +46,25 @@ type Config struct {
 	// empty for the provider's default. Unknown values fail loudly
 	// below, like permission_mode.
 	ReasoningEffort string `json:"reasoning_effort"`
-	// UpdateChecks controls the startup update notice: tilde compares
+	// UpdateChecks controls the startup update notice: opcode compares
 	// the running version against the latest GitHub release (cached
 	// 24h, a few KB, failures silent) and says so when a newer
 	// release exists. Nil/absent means enabled; false opts out
-	// entirely. TILDE_NO_UPDATE_CHECK=1 opts out for one process.
+	// entirely. OPCODE_NO_UPDATE_CHECK=1 opts out for one process.
 	UpdateChecks *bool `json:"update_checks"`
 }
 
-// UserDir returns the user-level tilde directory: $TILDE_HOME if set,
-// otherwise ~/.tilde. It does not create the directory.
+// UserDir returns the user-level opcode directory: $OPCODE_HOME if set,
+// otherwise ~/.opcode. It does not create the directory.
 func UserDir() (string, error) {
-	if dir := os.Getenv("TILDE_HOME"); dir != "" {
+	if dir := os.Getenv("OPCODE_HOME"); dir != "" {
 		return dir, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
 	}
-	return filepath.Join(home, ".tilde"), nil
+	return filepath.Join(home, ".opcode"), nil
 }
 
 // LoadConfig reads config.json from dir. A missing file yields defaults,
@@ -108,7 +108,7 @@ func LoadConfig(dir string) (Config, error) {
 
 // SaveTheme writes the "theme" key into dir/config.json. The file is
 // edited as a raw JSON object, not rewritten from the Config struct,
-// so keys tilde does not know about survive; a missing file is
+// so keys opcode does not know about survive; a missing file is
 // created. The theme name itself is validated by the caller (the tui
 // package owns the list) — this function persists, it does not judge.
 func SaveTheme(dir, theme string) error {
@@ -136,7 +136,7 @@ func SaveDefaultProvider(dir, provider string) error {
 }
 
 // saveJSONKey sets one top-level key in a JSON object file, creating a
-// missing file and preserving every other key, including ones tilde
+// missing file and preserving every other key, including ones opcode
 // does not model. An existing file keeps its permissions; a new one
 // starts private.
 func saveJSONKey(path, key, value string) error {
@@ -170,7 +170,7 @@ func saveJSONKey(path, key, value string) error {
 // atk-bridge in GTK_MODULES, the Flatpak accessibility flag) — because
 // a false positive removes animation the user may want, while a false
 // negative leaves a usable (if busier) UI. Codex probes and persists
-// the preference; tilde seeds the session default and lets the
+// the preference; opcode seeds the session default and lets the
 // config key win.
 func ScreenReaderActive() bool {
 	if v := os.Getenv("SCREEN_READER"); v != "" && v != "0" && v != "false" {

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // scriptedProvider: round 1 calls write_file, round 2 answers.

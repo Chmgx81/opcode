@@ -170,7 +170,7 @@ func TestAnthropicWireFormat(t *testing.T) {
 	p := NewAnthropic(srv.URL, "k")
 	_, err := p.StreamChat(context.Background(), ChatRequest{
 		Model:     "claude-sonnet-4.5",
-		System:    "you are tilde",
+		System:    "you are opcode",
 		MaxTokens: 0, // provider default applies
 		Messages: []Message{
 			{Role: "user", Content: "look", Images: []Image{{MimeType: "image/png", Data: []byte("png")}}},
@@ -186,7 +186,7 @@ func TestAnthropicWireFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if req["system"] != "you are tilde" {
+	if req["system"] != "you are opcode" {
 		t.Errorf("system = %v", req["system"])
 	}
 	// max_tokens is required; the default applies when unset.

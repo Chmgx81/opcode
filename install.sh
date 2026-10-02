@@ -1,28 +1,28 @@
 #!/bin/sh
-# tilde installer — downloads the prebuilt release binary for the
+# opcode installer — downloads the prebuilt release binary for the
 # current platform, verifies its sha256, and puts it on PATH, or points
 # at go install when there is no prebuilt match. Safe to re-run.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash
 #
 # Environment overrides:
-#   TILDE_INSTALL_DIR       where the binary lands (default ~/.local/bin)
-#   TILDE_VERSION           release tag to install (default: latest)
-#   TILDE_SKIP_CHECKSUM=1   do not verify the download's sha256
+#   OPCODE_INSTALL_DIR       where the binary lands (default ~/.local/bin)
+#   OPCODE_VERSION           release tag to install (default: latest)
+#   OPCODE_SKIP_CHECKSUM=1   do not verify the download's sha256
 #                           (only if your system has no checksum tool)
-#   TILDE_RELEASE_BASE_URL  releases root to download from, laid out like
+#   OPCODE_RELEASE_BASE_URL  releases root to download from, laid out like
 #                           GitHub's: <base>/latest redirects to
 #                           <base>/tag/<tag>, assets live at
 #                           <base>/download/<tag>/<asset>. For mirrors
 #                           and for testing (scripts/test-install.sh).
-#                           Default: https://github.com/Chmgx81/tilde/releases
+#                           Default: https://github.com/Chmgx81/opcode/releases
 
 set -eu
 
-REPO="Chmgx81/tilde"
-INSTALL_DIR="${TILDE_INSTALL_DIR:-$HOME/.local/bin}"
-WANT_VERSION="${TILDE_VERSION:-latest}"
-RELEASES_URL="${TILDE_RELEASE_BASE_URL:-https://github.com/$REPO/releases}"
+REPO="Chmgx81/opcode"
+INSTALL_DIR="${OPCODE_INSTALL_DIR:-$HOME/.local/bin}"
+WANT_VERSION="${OPCODE_VERSION:-latest}"
+RELEASES_URL="${OPCODE_RELEASE_BASE_URL:-https://github.com/$REPO/releases}"
 RELEASES_URL="${RELEASES_URL%/}"
 
 say() { printf '%s\n' "$*"; }
@@ -39,18 +39,18 @@ have() { command -v "$1" >/dev/null 2>&1; }
 if [ "$#" -gt 0 ]; then
   case "${1:-}" in
     -h|--help)
-      echo "tilde installer — downloads the prebuilt release binary, verifies"
+      echo "opcode installer — downloads the prebuilt release binary, verifies"
       echo "its sha256, and puts it on PATH (or points at go install)."
       echo ""
       echo "Usage: install.sh (no arguments; configure with environment)"
       echo ""
-      echo "  TILDE_INSTALL_DIR       where the binary lands (default ~/.local/bin)"
-      echo "  TILDE_VERSION           release tag to install (default: latest)"
-      echo "  TILDE_SKIP_CHECKSUM=1   do not verify the download's sha256"
+      echo "  OPCODE_INSTALL_DIR       where the binary lands (default ~/.local/bin)"
+      echo "  OPCODE_VERSION           release tag to install (default: latest)"
+      echo "  OPCODE_SKIP_CHECKSUM=1   do not verify the download's sha256"
       exit 0
       ;;
     *)
-      die "this installer takes no arguments (got \"$1\") — configure it with TILDE_INSTALL_DIR or TILDE_VERSION"
+      die "this installer takes no arguments (got \"$1\") — configure it with OPCODE_INSTALL_DIR or OPCODE_VERSION"
       ;;
   esac
 fi
@@ -94,15 +94,15 @@ case "$(uname -s)" in
   Linux)  os=linux ;;
   Darwin) os=darwin ;;
   MINGW*|MSYS*|CYGWIN*)
-    die "this installer does not support Windows — download the .zip from https://github.com/$REPO/releases/latest, or: go install github.com/$REPO/cmd/tilde@latest" ;;
-  *) die "no prebuilt tilde for $(uname -s) — install with: go install github.com/$REPO/cmd/tilde@latest" ;;
+    die "this installer does not support Windows — download the .zip from https://github.com/$REPO/releases/latest, or: go install github.com/$REPO/cmd/opcode@latest" ;;
+  *) die "no prebuilt opcode for $(uname -s) — install with: go install github.com/$REPO/cmd/opcode@latest" ;;
 esac
 
 arch=
 case "$(uname -m)" in
   x86_64|amd64) arch=amd64 ;;
   aarch64|arm64) arch=arm64 ;;
-  *) die "no prebuilt tilde for $(uname -m) — install with: go install github.com/$REPO/cmd/tilde@latest" ;;
+  *) die "no prebuilt opcode for $(uname -m) — install with: go install github.com/$REPO/cmd/opcode@latest" ;;
 esac
 
 VERSION="$WANT_VERSION"
@@ -116,7 +116,7 @@ if [ "$VERSION" = "latest" ]; then
       sed -n 's/^ *[Ll]ocation:.*tag\/\([A-Za-z0-9._-]*\).*/\1/p' | tr -d '\r' | sed -n '1p')
   fi
   [ -n "$VERSION" ] ||
-    die "could not resolve the latest release — set TILDE_VERSION=vX.Y.Z (see https://github.com/$REPO/releases)"
+    die "could not resolve the latest release — set OPCODE_VERSION=vX.Y.Z (see https://github.com/$REPO/releases)"
 fi
 # The tag ends up in a URL path: allow only what a release tag contains.
 case "$VERSION" in
@@ -127,13 +127,13 @@ case "$VERSION" in
   *[!A-Za-z0-9._-]*) die "unexpected characters in release tag \"$VERSION\"" ;;
 esac
 
-asset="tilde-$os-$arch.tar.gz"
+asset="opcode-$os-$arch.tar.gz"
 base="$RELEASES_URL/download/$VERSION"
 
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/tilde-install.XXXXXX") || die "mktemp failed"
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/opcode-install.XXXXXX") || die "mktemp failed"
 
 say ""
-say "Setting up tilde $VERSION ($os/$arch)..."
+say "Setting up opcode $VERSION ($os/$arch)..."
 [ "$RELEASES_URL" = "https://github.com/$REPO/releases" ] || say "  (release mirror: $RELEASES_URL)"
 fetch "$base/$asset" "$tmp/$asset" ||
   die "download failed — check the assets at https://github.com/$REPO/releases"
@@ -142,11 +142,11 @@ fetch "$base/$asset" "$tmp/$asset" ||
 # anything from it runs (a compromised CDN or a tampered proxy must not
 # turn curl|bash into code execution). A missing checksum or a mismatch
 # is fatal; the opt-out is explicit.
-if [ "${TILDE_SKIP_CHECKSUM:-}" = "1" ]; then
-  say "  warning: TILDE_SKIP_CHECKSUM=1 — the download is NOT being verified"
+if [ "${OPCODE_SKIP_CHECKSUM:-}" = "1" ]; then
+  say "  warning: OPCODE_SKIP_CHECKSUM=1 — the download is NOT being verified"
 else
   fetch "$base/checksums.txt" "$tmp/checksums.txt" ||
-    die "could not fetch checksums.txt for $VERSION — verify manually, or set TILDE_SKIP_CHECKSUM=1 to install without verification"
+    die "could not fetch checksums.txt for $VERSION — verify manually, or set OPCODE_SKIP_CHECKSUM=1 to install without verification"
   # Exact name match (awk ==, not a regex), tolerating the "*name"
   # binary-mode marker and CRLF; both sha256sum and shasum print
   # "<hex>  <name>".
@@ -167,7 +167,7 @@ else
   [ "${#want}" -eq 64 ] || die "malformed checksum for $asset in checksums.txt"
   got=$(sha256_of "$tmp/$asset")
   if [ -z "$got" ]; then
-    die "no sha256 tool on this system (sha256sum or shasum) — install one, or set TILDE_SKIP_CHECKSUM=1 to install without verification"
+    die "no sha256 tool on this system (sha256sum or shasum) — install one, or set OPCODE_SKIP_CHECKSUM=1 to install without verification"
   fi
   [ "$got" = "$want" ] ||
     die "checksum mismatch for $asset — expected $want, got $got. The download is corrupted or tampered with; refusing to install."
@@ -176,7 +176,7 @@ fi
 # Extract only the binary, by name, into its own directory.
 mkdir "$tmp/x"
 bin=
-for name in "tilde-$os-$arch" tilde; do
+for name in "opcode-$os-$arch" opcode; do
   if tar -xzf "$tmp/$asset" -C "$tmp/x" "$name" 2>/dev/null &&
     [ -f "$tmp/x/$name" ] && [ ! -L "$tmp/x/$name" ]; then
     bin="$tmp/x/$name"
@@ -186,19 +186,19 @@ done
 [ -n "$bin" ] || die "binary missing from the archive"
 
 # Stage next to the destination, then rename: the rename is atomic (same
-# filesystem), so PATH never sees a partial binary and a running tilde
+# filesystem), so PATH never sees a partial binary and a running opcode
 # is replaced, not overwritten. Re-running just replaces it again.
-mkdir -p "$INSTALL_DIR" || die "cannot create $INSTALL_DIR (set TILDE_INSTALL_DIR to a directory you can write)"
-dest="$INSTALL_DIR/tilde"
+mkdir -p "$INSTALL_DIR" || die "cannot create $INSTALL_DIR (set OPCODE_INSTALL_DIR to a directory you can write)"
+dest="$INSTALL_DIR/opcode"
 [ ! -d "$dest" ] || die "$dest is a directory — move it away and re-run"
-stage="$INSTALL_DIR/.tilde.install.$$"
-cp "$bin" "$stage" || die "cannot write to $INSTALL_DIR (set TILDE_INSTALL_DIR to a directory you can write)"
+stage="$INSTALL_DIR/.opcode.install.$$"
+cp "$bin" "$stage" || die "cannot write to $INSTALL_DIR (set OPCODE_INSTALL_DIR to a directory you can write)"
 chmod 755 "$stage"
 mv -f "$stage" "$dest" || die "could not replace $dest"
 stage=
 
 say ""
-say "✓ tilde successfully installed!"
+say "✓ opcode successfully installed!"
 say ""
 say "  Version:  $VERSION"
 say "  Location: $dest"
@@ -211,5 +211,5 @@ case ":$PATH:" in
     ;;
 esac
 say ""
-say "Next: Run tilde --help to get started"
-say "Updates: tilde tells you when a newer release exists — install it with: tilde update"
+say "Next: Run opcode --help to get started"
+say "Updates: opcode tells you when a newer release exists — install it with: opcode update"

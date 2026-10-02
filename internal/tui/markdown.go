@@ -24,7 +24,7 @@ var (
 	mdRenderers = map[int]*glamour.TermRenderer{}
 )
 
-// brandMarkdown is tilde's glamour style. Colors mirror style.go's
+// brandMarkdown is opcode's glamour style. Colors mirror style.go's
 // tokens so markdown and the rest of the UI agree.
 func brandMarkdown() ansi.StyleConfig {
 	return ansi.StyleConfig{

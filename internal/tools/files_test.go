@@ -20,14 +20,14 @@ func run(t *testing.T, tool Tool, args string) (string, error) {
 func TestReadFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hello.txt")
-	if err := os.WriteFile(path, []byte("hello tilde"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("hello opcode"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, err := run(t, ReadFile{}, `{"path": "`+path+`"}`)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if out != "hello tilde" {
+	if out != "hello opcode" {
 		t.Errorf("out = %q", out)
 	}
 }

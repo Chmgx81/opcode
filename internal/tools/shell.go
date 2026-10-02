@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/sandbox"
+	"github.com/Chmgx81/opcode/internal/sandbox"
 )
 
 // Bash executes a command with bash and returns the combined output.

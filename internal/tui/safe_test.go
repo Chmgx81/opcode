@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
 )
 
 // poisoned is what a hostile file, shell output, or web page can carry:

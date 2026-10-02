@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 func upKey() tea.KeyMsg   { return tea.KeyMsg{Type: tea.KeyUp} }

@@ -22,11 +22,11 @@ clean shutdown, bounded reconnection.
 
 - Config: `mcpServers` map matching the Claude Code/Cursor convention —
   `{"mcpServers": {"name": {"command": ..., "args": [...], "env": {...}}}}`.
-  User-level `~/.tilde/mcp.json` always; project `.tilde/mcp.json` only
+  User-level `~/.opcode/mcp.json` always; project `.opcode/mcp.json` only
   when trusted (its fingerprint already covers the file, so a changed
   server list re-prompts).
 - Protocol: MCP over stdio — JSON-RPC 2.0, newline-delimited.
-  Handshake: `initialize` (protocol 2024-11-05, clientInfo tilde) →
+  Handshake: `initialize` (protocol 2024-11-05, clientInfo opcode) →
   `notifications/initialized` → `tools/list`. Calls: `tools/call` with
   `{name, arguments}`; result is the content array, text parts joined.
   `isError` results surface as tool errors.

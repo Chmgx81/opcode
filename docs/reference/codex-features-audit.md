@@ -2,7 +2,7 @@
 
 > Extracted by a subagent audit of the Codex source tree. Companion
 > reports: [codex-tui-audit.md](codex-tui-audit.md),
-> [codex-core-audit.md](codex-core-audit.md), and the tilde-focused
+> [codex-core-audit.md](codex-core-audit.md), and the opcode-focused
 > synthesis in [codex-adoption.md](codex-adoption.md).
 
 Scope: all crates in `codex-rs/` except `tui/` and `core/` (which were only skimmed for shared types they consume, e.g. `protocol/`). All file paths are relative to `codex-rs/`. Everything below was read directly from source; where a detail could not be verified, it says so explicitly.

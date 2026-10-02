@@ -143,7 +143,7 @@ func Exec(argv []string) error {
 }
 
 // deathAttr makes a spawned child die with its parent — a sandboxed
-// command must not outlive tilde — and makes it a process-group
+// command must not outlive opcode — and makes it a process-group
 // leader. exec's context watchdog kills only the direct child, so
 // without the group, a bash that backgrounded work (`make watch &`)
 // would leave its grandchildren running past the timeout or the esc

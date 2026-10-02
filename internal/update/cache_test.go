@@ -18,15 +18,15 @@ func TestNotice(t *testing.T) {
 		cached  string
 		want    string // "" means no notice
 	}{
-		{"newer available", "v1.0.0", "v1.1.0", "Update available: v1.0.0 → v1.1.0. Run `tilde update` to install it."},
+		{"newer available", "v1.0.0", "v1.1.0", "Update available: v1.0.0 → v1.1.0. Run `opcode update` to install it."},
 		{"up to date", "v1.1.0", "v1.1.0", ""},
 		{"running newer", "v1.2.0", "v1.1.0", ""},
 		{"no cache", "v1.0.0", "", ""},
 		{"dev build", "(devel)", "v1.1.0", ""},
 		{"pseudo-version", "v1.1.0-0.20250101000000-abcdef123456", "v1.2.0", ""},
 		{"bad cached tag", "v1.0.0", "latest", ""},
-		{"prerelease to release", "v1.1.0-rc.1", "v1.1.0", "Update available: v1.1.0-rc.1 → v1.1.0. Run `tilde update` to install it."},
-		{"prerelease to prerelease", "v1.1.0-rc.1", "v1.1.0-rc.2", "Update available: v1.1.0-rc.1 → v1.1.0-rc.2. Run `tilde update` to install it."},
+		{"prerelease to release", "v1.1.0-rc.1", "v1.1.0", "Update available: v1.1.0-rc.1 → v1.1.0. Run `opcode update` to install it."},
+		{"prerelease to prerelease", "v1.1.0-rc.1", "v1.1.0-rc.2", "Update available: v1.1.0-rc.1 → v1.1.0-rc.2. Run `opcode update` to install it."},
 	}
 	for _, c := range cases {
 		if got := Notice(c.current, c.cached); got != c.want {
@@ -147,16 +147,16 @@ func TestStale(t *testing.T) {
 func TestChecksEnabled(t *testing.T) {
 	off := false
 	on := true
-	t.Setenv("TILDE_NO_UPDATE_CHECK", "")
+	t.Setenv("OPCODE_NO_UPDATE_CHECK", "")
 	if !ChecksEnabled(nil) || !ChecksEnabled(&on) {
 		t.Error("checks are enabled by default")
 	}
 	if ChecksEnabled(&off) {
 		t.Error("config false opts out")
 	}
-	t.Setenv("TILDE_NO_UPDATE_CHECK", "1")
+	t.Setenv("OPCODE_NO_UPDATE_CHECK", "1")
 	if ChecksEnabled(nil) || ChecksEnabled(&on) {
-		t.Error("TILDE_NO_UPDATE_CHECK=1 opts out even when config is true")
+		t.Error("OPCODE_NO_UPDATE_CHECK=1 opts out even when config is true")
 	}
 }
 
@@ -193,7 +193,7 @@ func TestLatestKnownFetchesWhenStale(t *testing.T) {
 	defer srv.Close()
 	home := t.TempDir()
 	now := time.Now()
-	want := "Update available: v1.0.0 → v9.9.9. Run `tilde update` to install it."
+	want := "Update available: v1.0.0 → v9.9.9. Run `opcode update` to install it."
 	got := LatestKnown(context.Background(), "v1.0.0", home, srv.URL, now)
 	if got.Notice != want {
 		t.Errorf("LatestKnown = %q, want %q", got.Notice, want)
@@ -248,7 +248,7 @@ func TestLatestKnownSilentOnFailure(t *testing.T) {
 	// A stale cache survives a failed refresh: the old tag still warns.
 	now := time.Now()
 	WriteCache(CachePath(home), Cache{Tag: "v2.0.0", CheckedAt: now.Add(-48 * time.Hour)})
-	want := "Update available: v1.0.0 → v2.0.0. Run `tilde update` to install it."
+	want := "Update available: v1.0.0 → v2.0.0. Run `opcode update` to install it."
 	got := LatestKnown(context.Background(), "v1.0.0", home, "http://127.0.0.1:1", now)
 	if got.Notice != want || got.Tag != "v2.0.0" {
 		t.Errorf("stale cache on failed refresh = %+v, want the %q notice", got, want)
@@ -311,7 +311,7 @@ func TestLatestKnownSkipsDevBuilds(t *testing.T) {
 	}
 }
 
-// TestLatestKnownRejectsJunkTag: an upstream tag tilde cannot read is
+// TestLatestKnownRejectsJunkTag: an upstream tag opcode cannot read is
 // a failed attempt, not a version — and it must not buy a day of
 // silence under a tag no surface would ever show.
 func TestLatestKnownRejectsJunkTag(t *testing.T) {

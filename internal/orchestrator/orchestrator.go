@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // Event kinds emitted during a turn.
@@ -437,7 +437,7 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 			// empty assistant message would poison the session (the
 			// Anthropic wire rejects an empty text block on every
 			// later request), and ending the turn quietly would
-			// look like tilde hung. Say so; the user can resend.
+			// look like opcode hung. Say so; the user can resend.
 			return ErrEmptyResponse
 		}
 		o.appendHistory(llm.Message{

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 func TestFromHistoryAndBack(t *testing.T) {

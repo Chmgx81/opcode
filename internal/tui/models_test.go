@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // modelPickerTestModel builds a Model with the catalog-picker seams
@@ -198,11 +198,11 @@ func swapFetch(fake func(ctx context.Context, api, baseURL, key string) ([]llm.M
 func TestSwitchModelPersistsProviderAndModel(t *testing.T) {
 	m, switched := modelPickerTestModel(t)
 	// Pre-existing files with values a persistence rewrite must keep.
-	if err := os.WriteFile(filepath.Join(m.opt.TildeHome, "config.json"),
+	if err := os.WriteFile(filepath.Join(m.opt.OpcodeHome, "config.json"),
 		[]byte(`{"model":"old-model","theme":"green","future_key":[1,2]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(m.opt.TildeHome, "models.json"),
+	if err := os.WriteFile(filepath.Join(m.opt.OpcodeHome, "models.json"),
 		[]byte(`{"providers":{"fixture":{"base_url":"http://127.0.0.1:9/v1"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestSwitchModelPersistsProviderAndModel(t *testing.T) {
 	if got := *switched; len(got) != 1 || got[0] != "mistral/mistral-small-latest" {
 		t.Fatalf("switch callback saw %v", got)
 	}
-	raw, err := os.ReadFile(filepath.Join(m.opt.TildeHome, "config.json"))
+	raw, err := os.ReadFile(filepath.Join(m.opt.OpcodeHome, "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestSwitchModelPersistsProviderAndModel(t *testing.T) {
 	if cfg["theme"] != "green" || cfg["future_key"] == nil {
 		t.Errorf("unrelated config keys lost: %v", cfg)
 	}
-	raw, err = os.ReadFile(filepath.Join(m.opt.TildeHome, "models.json"))
+	raw, err = os.ReadFile(filepath.Join(m.opt.OpcodeHome, "models.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestFirstRunOpensOnboardingPicker(t *testing.T) {
 	orch := orchestrator.New(fp, "", "sys", &reg, &tools.Gate{})
 	orch.SetMode(tools.ModeBuild)
 	m := New(Options{
-		Orch: orch, Model: "", Mode: tools.ModeBuild, Cwd: dir, TildeHome: dir,
+		Orch: orch, Model: "", Mode: tools.ModeBuild, Cwd: dir, OpcodeHome: dir,
 		ProviderName: "openrouter", BaseURL: "http://example.test/v1",
 		AuditPath: filepath.Join(dir, "audit.jsonl"), Animations: true,
 		Models: config.ModelsConfig{DefaultProvider: "openrouter"},

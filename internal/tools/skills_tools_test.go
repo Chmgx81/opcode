@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/skills"
+	"github.com/Chmgx81/opcode/internal/skills"
 )
 
 func skillFixture(t *testing.T) (*skills.Manager, string) {

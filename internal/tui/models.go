@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/safe"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/safe"
 )
 
 // fetchModels is the seam tests swap; production points at the llm
@@ -175,7 +175,7 @@ func (m *Model) handleModelsFetched(msg modelsFetchedMsg) {
 	}
 	if len(msg.models) == 0 {
 		// A live list that came back empty is a fact about the
-		// provider, not a failure of tilde, and the way out is the
+		// provider, not a failure of opcode, and the way out is the
 		// same picker over a different provider.
 		m.add(entry{kind: entryDim, text: msg.provider +
 			" listed no models — /models picks another provider, or set one by name with /model <model>"})

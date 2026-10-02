@@ -13,7 +13,7 @@ import (
 
 func TestAuthWritersEnforcePrivateModeOnExistingFile(t *testing.T) {
 	// A pre-existing auth.json with loose permissions must not stay
-	// world-readable after tilde rewrites it: os.WriteFile only applies
+	// world-readable after opcode rewrites it: os.WriteFile only applies
 	// its mode when it creates the file.
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX modes")
@@ -126,7 +126,7 @@ func TestAuthReadersNeverSeeATornFile(t *testing.T) {
 }
 
 func TestWriteAuthKeyRefusesToOverwriteCorruptFile(t *testing.T) {
-	// A malformed auth.json holds credentials tilde cannot parse.
+	// A malformed auth.json holds credentials opcode cannot parse.
 	// Overwriting it would destroy them; the write must fail instead.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "auth.json")
@@ -231,15 +231,15 @@ func TestSaveThemeRefusesMalformedConfig(t *testing.T) {
 
 func TestUserDir(t *testing.T) {
 	tests := []struct {
-		name      string
-		tildeHome string
-		home      string
-		want      string
-		wantErr   bool
-		skipOnWin bool
+		name       string
+		opcodeHome string
+		home       string
+		want       string
+		wantErr    bool
+		skipOnWin  bool
 	}{
-		{name: "TILDE_HOME wins", tildeHome: "/custom/tilde", home: "/home/u", want: "/custom/tilde"},
-		{name: "falls back to ~/.tilde", home: "/home/u", want: "/home/u/.tilde", skipOnWin: true},
+		{name: "OPCODE_HOME wins", opcodeHome: "/custom/opcode", home: "/home/u", want: "/custom/opcode"},
+		{name: "falls back to ~/.opcode", home: "/home/u", want: "/home/u/.opcode", skipOnWin: true},
 		{name: "no home at all is an error", home: "", wantErr: true, skipOnWin: true},
 	}
 	for _, tc := range tests {
@@ -247,7 +247,7 @@ func TestUserDir(t *testing.T) {
 			if tc.skipOnWin && runtime.GOOS == "windows" {
 				t.Skip("HOME semantics differ")
 			}
-			t.Setenv("TILDE_HOME", tc.tildeHome)
+			t.Setenv("OPCODE_HOME", tc.opcodeHome)
 			t.Setenv("HOME", tc.home)
 			got, err := UserDir()
 			if tc.wantErr {
@@ -334,7 +334,7 @@ func TestLoadersRejectBadFilesLoudly(t *testing.T) {
 
 // SaveModel and SaveDefaultProvider are the /model picker's memory: the
 // choice made in the UI must be what the next launch loads, with every
-// unrelated key (including ones tilde does not model) surviving.
+// unrelated key (including ones opcode does not model) surviving.
 func TestSaveModelAndDefaultProviderPersistChoice(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "config.json"),

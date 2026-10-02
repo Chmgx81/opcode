@@ -4,11 +4,11 @@
 
 Build the trust gate (Section 7) and the Skill Loader (Section 3.4) —
 together, per the build order's constraint: skills are the first place a
-cloned repo can make tilde run code, so trust must exist first.
+cloned repo can make opcode run code, so trust must exist first.
 
 ## Non-Goals
 
-- MCP (Phase 4) — but `.tilde/mcp.json` is already part of the trust
+- MCP (Phase 4) — but `.opcode/mcp.json` is already part of the trust
   fingerprint so its arrival doesn't need a trust redesign.
 - Project `config.json` keys: the spec defines no allow-list entries yet,
   so Phase 3 allows **zero** project config keys. The file is still
@@ -26,11 +26,11 @@ cloned repo can make tilde run code, so trust must exist first.
 ## Approach
 
 **Trust (internal/trust):**
-- Executable surface = `.tilde/config.json`, `.tilde/mcp.json`, and
-  every file under `.tilde/skills/*/scripts/`. A project with none of
+- Executable surface = `.opcode/config.json`, `.opcode/mcp.json`, and
+  every file under `.opcode/skills/*/scripts/`. A project with none of
   these is trusted by default — there is nothing to run.
 - Fingerprint: SHA-256 over each surface file's relative path, size, and
-  content hash, in sorted order. Stored in `~/.tilde/trusted-projects.json`
+  content hash, in sorted order. Stored in `~/.opcode/trusted-projects.json`
   with the approved file list and timestamp.
 - Status: trusted / untrusted (never seen) / changed (fingerprint
   mismatch → ask again, like direnv).
@@ -43,7 +43,7 @@ cloned repo can make tilde run code, so trust must exist first.
 - A skill is a folder: `SKILL.md` (required; flat YAML frontmatter with
   `name` and `description`, then the body) plus optional `scripts/`,
   `references/`, `assets/`.
-- Discovery: `~/.tilde/skills/` always; `.tilde/skills/` only when
+- Discovery: `~/.opcode/skills/` always; `.opcode/skills/` only when
   trusted. Same name in both → project wins (most specific wins, the
   same rule as config precedence).
 - Progressive disclosure, mechanically: the index (name + description

@@ -19,7 +19,7 @@ func writeCtx(t *testing.T, path, content string) {
 }
 
 func TestAgentsContextHierarchy(t *testing.T) {
-	userDir := filepath.Join(t.TempDir(), "tilde-home")
+	userDir := filepath.Join(t.TempDir(), "opcode-home")
 	root := t.TempDir() // stands in for the filesystem root
 	mid := filepath.Join(root, "work")
 	cwd := filepath.Join(mid, "project")

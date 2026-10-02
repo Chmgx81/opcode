@@ -179,7 +179,7 @@ func statusError(resp *http.Response, body []byte) error {
 	return fmt.Errorf("%s", resp.Status)
 }
 
-// toWire converts tilde's message history into the wire format.
+// toWire converts opcode's message history into the wire format.
 func toWire(req ChatRequest) wireRequest {
 	msgs := make([]wireMessage, 0, len(req.Messages)+1)
 	if req.System != "" {

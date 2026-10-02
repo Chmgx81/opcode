@@ -2,7 +2,7 @@
 
 ## Goal
 
-tilde is about to have real users. Everything built so far was
+opcode is about to have real users. Everything built so far was
 verified phase by phase, but no one has audited the WHOLE with a
 fresh eye against the readiness bar: security (AGENTS.md §9),
 concurrency and failure handling (§5/6/10), UX states and copy

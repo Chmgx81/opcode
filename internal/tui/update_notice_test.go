@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Chmgx81/tilde/internal/update"
+	"github.com/Chmgx81/opcode/internal/update"
 )
 
 func TestUnknownCommandHint(t *testing.T) {
@@ -44,7 +44,7 @@ func TestUnknownSlashCommandStaysLocal(t *testing.T) {
 }
 
 // TestUpdateRedirectNamesTheShell: every update surface says "run
-// `tilde update`", so typing it as a slash command gets the shell
+// `opcode update`", so typing it as a slash command gets the shell
 // pointed at — not "unknown command", and not a real install.
 func TestUpdateRedirectNamesTheShell(t *testing.T) {
 	dir := t.TempDir()
@@ -55,7 +55,7 @@ func TestUpdateRedirectNamesTheShell(t *testing.T) {
 		t.Error("/update must not start a model turn")
 	}
 	last := stripANSI(m.entries[len(m.entries)-1].text)
-	if !strings.Contains(last, "`tilde update` runs in a shell") {
+	if !strings.Contains(last, "`opcode update` runs in a shell") {
 		t.Errorf("last entry = %q, want the shell redirect", last)
 	}
 	if strings.Contains(last, "unknown command") {
@@ -109,7 +109,7 @@ func TestUpdateBadgeInFooter(t *testing.T) {
 func TestUpdateHelpLine(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
-	if help := stripANSI(strings.Join(m.helpRows(80), "\n")); strings.Contains(help, "a newer tilde is available") {
+	if help := stripANSI(strings.Join(m.helpRows(80), "\n")); strings.Contains(help, "a newer opcode is available") {
 		t.Errorf("no update, no line in the help overlay:\n%s", help)
 	}
 
@@ -118,7 +118,7 @@ func TestUpdateHelpLine(t *testing.T) {
 	if !strings.Contains(help, GlyphUpdate+" v9.9.9") {
 		t.Errorf("help must name the pending release:\n%s", help)
 	}
-	if !strings.Contains(help, "run `tilde update` to install it") {
+	if !strings.Contains(help, "run `opcode update` to install it") {
 		t.Errorf("help must name the way to act on it:\n%s", help)
 	}
 }
@@ -156,22 +156,22 @@ func TestDoctorUpdateRow(t *testing.T) {
 	m.opt.KeyFor = func(provider string) (string, bool) { return "k", true }
 
 	// No cache yet: the row names the explicit check.
-	if report := doctorText(t, m); !strings.Contains(report, "update check: never run — `tilde update --check`") {
+	if report := doctorText(t, m); !strings.Contains(report, "update check: never run — `opcode update --check`") {
 		t.Errorf("no-cache row missing:\n%s", report)
 	}
 
 	// A cached newer release warns with the install step.
-	update.WriteCache(update.CachePath(m.opt.TildeHome),
+	update.WriteCache(update.CachePath(m.opt.OpcodeHome),
 		update.Cache{Tag: "v9.9.9", CheckedAt: time.Now()})
 	m.opt.Version = "v1.0.0"
-	if report := doctorText(t, m); !strings.Contains(report, "Update available: v1.0.0 → v9.9.9. Run `tilde update`") {
+	if report := doctorText(t, m); !strings.Contains(report, "Update available: v1.0.0 → v9.9.9. Run `opcode update`") {
 		t.Errorf("stale row missing:\n%s", report)
 	}
 
 	// A cached equal release reads as up to date.
-	update.WriteCache(update.CachePath(m.opt.TildeHome),
+	update.WriteCache(update.CachePath(m.opt.OpcodeHome),
 		update.Cache{Tag: "v1.0.0", CheckedAt: time.Now()})
-	if report := doctorText(t, m); !strings.Contains(report, "is the latest release tilde has seen") {
+	if report := doctorText(t, m); !strings.Contains(report, "is the latest release opcode has seen") {
 		t.Errorf("current row missing:\n%s", report)
 	}
 }
@@ -182,7 +182,7 @@ func TestDoctorUpdateRowFailedCheck(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	m.opt.Version = "v1.0.0"
-	update.WriteCache(update.CachePath(m.opt.TildeHome), update.Cache{
+	update.WriteCache(update.CachePath(m.opt.OpcodeHome), update.Cache{
 		Tag:       "v9.9.9",
 		CheckedAt: time.Now(),
 		Err:       "dial tcp 1.2.3.4:443: i/o timeout",
@@ -196,12 +196,12 @@ func TestDoctorUpdateRowFailedCheck(t *testing.T) {
 	if !strings.Contains(report, "v9.9.9 is still the newest release") {
 		t.Errorf("a failed refresh must not hide the known release:\n%s", report)
 	}
-	if !strings.Contains(report, "`tilde update --check` retries now") {
+	if !strings.Contains(report, "`opcode update --check` retries now") {
 		t.Errorf("the failure names no way out:\n%s", report)
 	}
 
 	// A control character in a recorded error never reaches the frame.
-	update.WriteCache(update.CachePath(m.opt.TildeHome), update.Cache{
+	update.WriteCache(update.CachePath(m.opt.OpcodeHome), update.Cache{
 		CheckedAt: time.Now(),
 		Err:       "line one\x1b[2Jcleared",
 	})
@@ -228,7 +228,7 @@ func TestUpdateStateMatrix(t *testing.T) {
 		contains  string
 	}{
 		{"opted out", "v1.0.0", true, fresh, false, true, updateDisabled, "off"},
-		{"no prebuilt", "v1.0.0", true, fresh, true, false, updateUnsupported, "no prebuilt tilde for"},
+		{"no prebuilt", "v1.0.0", true, fresh, true, false, updateUnsupported, "no prebuilt opcode for"},
 		{"dev build", "(devel)", true, fresh, true, true, updateDevBuild, "development build"},
 		{"never ran", "v1.0.0", false, update.Cache{}, true, true, updateNeverRun, "never run"},
 		{"check failed", "v1.0.0", true, failed, true, true, updateCheckFailed, "update check failed"},
@@ -264,7 +264,7 @@ func TestDoctorUpdateRowOptOut(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	m.opt.Version = "v1.0.0"
-	update.WriteCache(update.CachePath(m.opt.TildeHome),
+	update.WriteCache(update.CachePath(m.opt.OpcodeHome),
 		update.Cache{Tag: "v9.9.9", CheckedAt: time.Now()})
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"update_checks": false}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -280,7 +280,7 @@ func TestDoctorUpdateRowDevBuild(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	m.opt.Version = "(devel)"
-	update.WriteCache(update.CachePath(m.opt.TildeHome),
+	update.WriteCache(update.CachePath(m.opt.OpcodeHome),
 		update.Cache{Tag: "v9.9.9", CheckedAt: time.Now()})
 
 	report := doctorText(t, m)

@@ -70,7 +70,7 @@ type anthropicRequest struct {
 	Thinking  *anthropicThinking `json:"thinking,omitempty"`
 }
 
-// anthropicThinking is Anthropic's extended-thinking budget. tilde's
+// anthropicThinking is Anthropic's extended-thinking budget. opcode's
 // name→budget mapping: low is the documented minimum, medium a
 // moderate default, high a generous cap.
 type anthropicThinking struct {
@@ -129,7 +129,7 @@ func blocksMsg(role string, blocks []map[string]any) anthropicMsg {
 	return anthropicMsg{Role: role, Content: raw}
 }
 
-// toAnthropic converts tilde's history into Messages-API form. The
+// toAnthropic converts opcode's history into Messages-API form. The
 // mapping is the whole compatibility story:
 //
 //	system            → top-level system param

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
-// Tool adapts one discovered MCP tool to tilde's tool interface. Every
+// Tool adapts one discovered MCP tool to opcode's tool interface. Every
 // MCP tool is Action-Allowed: the protocol's readOnlyHint is
 // self-reported by the server, and a server claiming to be read-only is
 // not a permission model. The gate still applies, so ask mode prompts.
@@ -130,7 +130,7 @@ func (m *Manager) Notes() []string {
 	for name, c := range m.clients {
 		note := fmt.Sprintf("%s · %d tools", name, len(c.Tools()))
 		// Dropped lines are reported, not hidden: the user should
-		// know a server is noisier than tilde is willing to buffer.
+		// know a server is noisier than opcode is willing to buffer.
 		if n := c.DroppedLines(); n > 0 {
 			note += fmt.Sprintf(" · %d lines dropped", n)
 		}

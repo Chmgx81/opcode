@@ -13,7 +13,7 @@ rendered.
 ## Non-Goals
 
 - Not a general "clean" pipeline: user-typed text and user file paths
-  in tilde's own UI copy are trusted and untouched.
+  in opcode's own UI copy are trusted and untouched.
 - Model-facing data is untouched: what the LLM sees in its context is
   exactly what the tool returned. Sanitizing there would silently
   corrupt file contents the model is reasoning about. The boundary is

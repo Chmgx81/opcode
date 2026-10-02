@@ -10,11 +10,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/safe"
-	"github.com/Chmgx81/tilde/internal/sandbox"
-	"github.com/Chmgx81/tilde/internal/trust"
-	"github.com/Chmgx81/tilde/internal/update"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/safe"
+	"github.com/Chmgx81/opcode/internal/sandbox"
+	"github.com/Chmgx81/opcode/internal/trust"
+	"github.com/Chmgx81/opcode/internal/update"
 )
 
 // doctor renders a diagnostic report into the transcript: one line per
@@ -29,7 +29,7 @@ func (m *Model) doctor() {
 	fail := func(text string) { rows = append(rows, dangerStyle.Render(GlyphError)+" "+text) }
 	neutral := func(text string) { rows = append(rows, dimStyle.Render(GlyphInfo)+" "+text) }
 
-	ok("tilde " + m.displayVersion())
+	ok("opcode " + m.displayVersion())
 
 	if m.opt.Model != "" {
 		ok("model " + m.opt.Model + dimStyle.Render("  via "+m.opt.ProviderName+" — "+m.opt.BaseURL))
@@ -48,10 +48,10 @@ func (m *Model) doctor() {
 		warn("no api key for " + m.opt.ProviderName + " — /login " + m.opt.ProviderName)
 	}
 
-	if m.opt.TildeHome != "" {
+	if m.opt.OpcodeHome != "" {
 		m.doctorConfig(ok, neutral, fail)
 	} else {
-		neutral("config: tilde home not wired")
+		neutral("config: opcode home not wired")
 	}
 
 	m.doctorSandbox(ok, warn, neutral)
@@ -65,8 +65,8 @@ func (m *Model) doctor() {
 }
 
 func (m *Model) doctorConfig(ok, neutral, fail func(string)) {
-	cfgPath := filepath.Join(m.opt.TildeHome, "config.json")
-	cfg, err := config.LoadConfig(m.opt.TildeHome)
+	cfgPath := filepath.Join(m.opt.OpcodeHome, "config.json")
+	cfg, err := config.LoadConfig(m.opt.OpcodeHome)
 	switch {
 	case err != nil:
 		fail(err.Error())
@@ -76,8 +76,8 @@ func (m *Model) doctorConfig(ok, neutral, fail func(string)) {
 		ok("config.json — mode " + cfg.PermissionMode)
 	}
 
-	modelsPath := filepath.Join(m.opt.TildeHome, "models.json")
-	_, err = config.LoadModels(m.opt.TildeHome)
+	modelsPath := filepath.Join(m.opt.OpcodeHome, "models.json")
+	_, err = config.LoadModels(m.opt.OpcodeHome)
 	switch {
 	case err != nil:
 		fail(err.Error())
@@ -101,11 +101,11 @@ func (m *Model) doctorSandbox(ok, warn, neutral func(string)) {
 }
 
 func (m *Model) doctorTrust(ok, warn, neutral, fail func(string)) {
-	if m.opt.TildeHome == "" || m.opt.Cwd == "" {
+	if m.opt.OpcodeHome == "" || m.opt.Cwd == "" {
 		neutral("project trust: not wired")
 		return
 	}
-	store, err := trust.LoadStore(m.opt.TildeHome)
+	store, err := trust.LoadStore(m.opt.OpcodeHome)
 	if err != nil {
 		fail("trust store: " + err.Error())
 		return
@@ -124,14 +124,14 @@ func (m *Model) doctorTrust(ok, warn, neutral, fail func(string)) {
 
 func (m *Model) doctorSkillsAndMcp(ok, neutral func(string)) {
 	if m.opt.Skills == nil || len(m.opt.Skills.Names()) == 0 {
-		neutral("skills: none loaded — add one under ~/.tilde/skills/ (a folder with SKILL.md)")
+		neutral("skills: none loaded — add one under ~/.opcode/skills/ (a folder with SKILL.md)")
 	} else {
 		ok(fmt.Sprintf("skills: %d loaded — /skills lists them", len(m.opt.Skills.Names())))
 	}
 	if m.opt.MCPNames == nil {
 		neutral("mcp: manager not wired")
 	} else if names := m.opt.MCPNames(); len(names) == 0 {
-		neutral("mcp: no servers connected — add one to ~/.tilde/mcp.json and restart tilde")
+		neutral("mcp: no servers connected — add one to ~/.opcode/mcp.json and restart opcode")
 	} else {
 		ok("mcp: " + strings.Join(names, " · "))
 	}
@@ -156,7 +156,7 @@ func (m *Model) doctorAudit(ok, neutral func(string)) {
 type updateState int
 
 const (
-	updateUnwired     updateState = iota // no tilde home: nothing to read
+	updateUnwired     updateState = iota // no opcode home: nothing to read
 	updateDisabled                       // the user opted out
 	updateUnsupported                    // no prebuilt release for this platform
 	updateDevBuild                       // a build with no release version
@@ -196,51 +196,51 @@ func updateStateOf(current string, have bool, c update.Cache, enabled, supported
 func updateRowText(state updateState, current string, c update.Cache) string {
 	switch state {
 	case updateUnwired:
-		return "update check: tilde home not wired"
+		return "update check: opcode home not wired"
 	case updateDisabled:
-		return `update check: off — set "update_checks": true, or unset TILDE_NO_UPDATE_CHECK`
+		return `update check: off — set "update_checks": true, or unset OPCODE_NO_UPDATE_CHECK`
 	case updateUnsupported:
-		return "update check: no prebuilt tilde for " + runtime.GOOS + "/" + runtime.GOARCH +
-			" — `tilde update` says how to install one"
+		return "update check: no prebuilt opcode for " + runtime.GOOS + "/" + runtime.GOARCH +
+			" — `opcode update` says how to install one"
 	case updateDevBuild:
 		return "update check: " + current + " is a development build — update checks need a tagged release"
 	case updateNeverRun:
-		return "update check: never run — `tilde update --check` reports the latest release"
+		return "update check: never run — `opcode update --check` reports the latest release"
 	case updateCheckFailed:
 		// The text came out of a network library, so it is sanitized
 		// like any other untrusted display string. A failed refresh
-		// does not un-publish the release tilde last saw, so that tag
+		// does not un-publish the release opcode last saw, so that tag
 		// still rides along — the note, the badge, and this row would
 		// otherwise contradict each other.
-		row := fmt.Sprintf("update check failed %s: %s — `tilde update --check` retries now",
+		row := fmt.Sprintf("update check failed %s: %s — `opcode update --check` retries now",
 			c.CheckedAt.Local().Format("2006-01-02 15:04"), safe.Text(c.Err))
 		if tag := update.Pending(current, c.Tag); tag != "" {
-			row += fmt.Sprintf("; %s is still the newest release tilde has seen", tag)
+			row += fmt.Sprintf("; %s is still the newest release opcode has seen", tag)
 		}
 		return row
 	case updatePending:
 		return update.Notice(current, c.Tag)
 	default: // updateUpToDate
-		return "tilde " + current + " is the latest release tilde has seen"
+		return "opcode " + current + " is the latest release opcode has seen"
 	}
 }
 
 // doctorUpdate reports the running version against the latest release
-// tilde has seen. It reads the update-check cache only — the cache is
+// opcode has seen. It reads the update-check cache only — the cache is
 // the whole point of the check, and a diagnostic must not turn into a
 // phone-home.
 func (m *Model) doctorUpdate(ok, warn, neutral func(string)) {
-	if m.opt.TildeHome == "" {
+	if m.opt.OpcodeHome == "" {
 		neutral(updateRowText(updateUnwired, m.displayVersion(), update.Cache{}))
 		return
 	}
 	current := m.displayVersion()
-	c, have := update.ReadCache(update.CachePath(m.opt.TildeHome))
+	c, have := update.ReadCache(update.CachePath(m.opt.OpcodeHome))
 	// The config's own opt-out, not just the environment's: a user
 	// who set "update_checks": false must not be nagged by a
 	// diagnostic. A malformed config.json is reported by its own row
 	// above, so here it falls back to the default.
-	cfg, _ := config.LoadConfig(m.opt.TildeHome)
+	cfg, _ := config.LoadConfig(m.opt.OpcodeHome)
 	state := updateStateOf(current, have, c,
 		update.ChecksEnabled(cfg.UpdateChecks), update.SupportedPlatform(runtime.GOOS, runtime.GOARCH))
 

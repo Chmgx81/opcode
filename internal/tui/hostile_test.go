@@ -8,11 +8,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/safe"
-	"github.com/Chmgx81/tilde/internal/session"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/safe"
+	"github.com/Chmgx81/opcode/internal/session"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // Every path where text the TUI did not author reaches the frame. The
@@ -151,7 +151,7 @@ func TestEveryUntrustedPathIsInert(t *testing.T) {
 	// injection surface there too. The ESC byte is what drives the
 	// terminal; what is left after it is gone is inert text that happens
 	// to read like a sequence, so the byte check is the whole claim.
-	assertInert(t, "window title", sanitizeTitle("tilde — "+hostile))
+	assertInert(t, "window title", sanitizeTitle("opcode — "+hostile))
 }
 
 // errWithEscape is a wrapped error carrying a control byte — the shape

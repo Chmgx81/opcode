@@ -44,7 +44,7 @@ func TestFrameFitsTerminalWidth(t *testing.T) {
 	for _, w := range []int{14, 20, 30, 40, 60, 80, 200} {
 		m, _ := newText(t, dir, nil)
 		m.entries = nil
-		m.add(entry{kind: entryUser, text: "a question long enough to want wrapping at every width tilde is run in"})
+		m.add(entry{kind: entryUser, text: "a question long enough to want wrapping at every width opcode is run in"})
 		m.add(entry{kind: entryTool, tool: "read_file",
 			text: `{"path":"internal/tui/view.go","some":"argument padding to make this long"}`})
 		m.add(entry{kind: entryResult, tool: "read_file",

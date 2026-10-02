@@ -170,18 +170,18 @@ func TestAssembleRejectsBadPrograms(t *testing.T) {
 
 // init makes the test binary double as the probe child: it optionally
 // applies the full sandbox, performs one syscall named by
-// TILDE_SANDBOX_PROBE, and prints the errno. Running before flag
+// OPCODE_SANDBOX_PROBE, and prints the errno. Running before flag
 // parsing and TestMain, it never starts the test framework.
 func init() {
-	spec := os.Getenv("TILDE_SANDBOX_PROBE")
+	spec := os.Getenv("OPCODE_SANDBOX_PROBE")
 	if spec == "" {
 		return
 	}
 	// Both Landlock and seccomp bind to this thread; keep the probe
 	// on it.
 	runtime.LockOSThread()
-	if os.Getenv("TILDE_SANDBOX_APPLY") == "1" {
-		if err := Apply([]string{os.Getenv("TILDE_SANDBOX_WRITABLE")}); err != nil {
+	if os.Getenv("OPCODE_SANDBOX_APPLY") == "1" {
+		if err := Apply([]string{os.Getenv("OPCODE_SANDBOX_WRITABLE")}); err != nil {
 			fmt.Print("apply-err: ", err)
 			os.Exit(2)
 		}
@@ -290,14 +290,14 @@ func runProbe(f []string) syscall.Errno {
 // signal that ended it.
 func runChild(t *testing.T, apply bool, spec string) (errno syscall.Errno, sig syscall.Signal) {
 	t.Helper()
-	applyEnv := "TILDE_SANDBOX_APPLY=0"
+	applyEnv := "OPCODE_SANDBOX_APPLY=0"
 	if apply {
-		applyEnv = "TILDE_SANDBOX_APPLY=1"
+		applyEnv = "OPCODE_SANDBOX_APPLY=1"
 	}
 	cmd := exec.Command(os.Args[0])
 	cmd.Env = append(os.Environ(),
-		"TILDE_SANDBOX_PROBE="+spec,
-		"TILDE_SANDBOX_WRITABLE="+t.TempDir(),
+		"OPCODE_SANDBOX_PROBE="+spec,
+		"OPCODE_SANDBOX_WRITABLE="+t.TempDir(),
 		applyEnv)
 	out, err := cmd.CombinedOutput()
 	var ee *exec.ExitError

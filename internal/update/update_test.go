@@ -27,8 +27,8 @@ const (
 	newBinary = "#!/bin/sh\necho new\n"
 	curTag    = "v1.0.0"
 	newTag    = "v1.1.0"
-	linuxAsst = "tilde-linux-amd64.tar.gz"
-	linuxBin  = "tilde-linux-amd64"
+	linuxAsst = "opcode-linux-amd64.tar.gz"
+	linuxBin  = "opcode-linux-amd64"
 )
 
 type tarEntry struct {
@@ -139,7 +139,7 @@ func goodArchive(t *testing.T) []byte {
 func target(t *testing.T) (dir, path string) {
 	t.Helper()
 	dir = t.TempDir()
-	path = filepath.Join(dir, "tilde")
+	path = filepath.Join(dir, "opcode")
 	if err := os.WriteFile(path, []byte(oldBinary), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestUpdateReplacesBinary(t *testing.T) {
 }
 
 func TestUpdateAcceptsPlainBinaryName(t *testing.T) {
-	archive := tarGz(t, tarEntry{name: "./tilde", body: newBinary})
+	archive := tarGz(t, tarEntry{name: "./opcode", body: newBinary})
 	srv := serve(t, newTag, linuxRelease(t, archive))
 	_, path := target(t)
 	if err := Run(context.Background(), opts(srv.Server, path, nil)); err != nil {
@@ -219,8 +219,8 @@ func TestUpdateAcceptsPlainBinaryName(t *testing.T) {
 }
 
 func TestUpdateWindowsZip(t *testing.T) {
-	const asset = "tilde-windows-amd64.zip"
-	archive := zipOf(t, map[string]string{"tilde-windows-amd64.exe": newBinary})
+	const asset = "opcode-windows-amd64.zip"
+	archive := zipOf(t, map[string]string{"opcode-windows-amd64.exe": newBinary})
 	srv := serve(t, newTag, map[string][]byte{
 		asset:           archive,
 		"checksums.txt": []byte(sumLine(archive, asset)),
@@ -426,7 +426,7 @@ func TestMissingChecksums(t *testing.T) {
 		wantMsg string
 	}{
 		"file absent":   {sums: nil, wantMsg: "HTTP 404"},
-		"entry missing": {sums: ptr(sumLine(archive, "tilde-linux-arm64.tar.gz")), wantErr: ErrNoChecksum},
+		"entry missing": {sums: ptr(sumLine(archive, "opcode-linux-arm64.tar.gz")), wantErr: ErrNoChecksum},
 		"empty file":    {sums: ptr(""), wantErr: ErrNoChecksum},
 		"bad digest":    {sums: ptr("nothex  " + linuxAsst + "\n"), wantErr: ErrNoChecksum},
 		"short digest":  {sums: ptr("abcd  " + linuxAsst + "\n"), wantErr: ErrNoChecksum},
@@ -534,8 +534,8 @@ func TestOversizedBinaryIsRefused(t *testing.T) {
 }
 
 func TestOversizedZipEntryIsRefused(t *testing.T) {
-	const asset = "tilde-windows-amd64.zip"
-	archive := zipOf(t, map[string]string{"tilde-windows-amd64.exe": strings.Repeat("A", 4096)})
+	const asset = "opcode-windows-amd64.zip"
+	archive := zipOf(t, map[string]string{"opcode-windows-amd64.exe": strings.Repeat("A", 4096)})
 	srv := serve(t, newTag, map[string][]byte{
 		asset:           archive,
 		"checksums.txt": []byte(sumLine(archive, asset)),
@@ -551,12 +551,12 @@ func TestOversizedZipEntryIsRefused(t *testing.T) {
 }
 
 func TestBadZipIsRefused(t *testing.T) {
-	const asset = "tilde-windows-amd64.zip"
+	const asset = "opcode-windows-amd64.zip"
 	for name, archive := range map[string][]byte{
 		"not a zip":  []byte("nope"),
 		"no binary":  zipOf(t, map[string]string{"README": "hi"}),
-		"traversal":  zipOf(t, map[string]string{"../tilde-windows-amd64.exe": "x"}),
-		"other name": zipOf(t, map[string]string{"tilde-linux-amd64": "x"}),
+		"traversal":  zipOf(t, map[string]string{"../opcode-windows-amd64.exe": "x"}),
+		"other name": zipOf(t, map[string]string{"opcode-linux-amd64": "x"}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := serve(t, newTag, map[string][]byte{
@@ -720,7 +720,7 @@ func TestRenameFailureFallback(t *testing.T) {
 	dir := t.TempDir()
 	// A non-empty directory cannot be replaced by a file, so the rename
 	// fails after the temp file was written and must be cleaned up.
-	blocker := filepath.Join(dir, "tilde")
+	blocker := filepath.Join(dir, "opcode")
 	if err := os.MkdirAll(filepath.Join(blocker, "child"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -730,13 +730,13 @@ func TestRenameFailureFallback(t *testing.T) {
 		t.Fatalf("err = %v, want ErrReplace with the installer fallback", err)
 	}
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 1 || entries[0].Name() != "tilde" {
+	if len(entries) != 1 || entries[0].Name() != "opcode" {
 		t.Errorf("temp file not cleaned up: %v", entries)
 	}
 }
 
 func TestWindowsFallbackDoesNotSuggestBash(t *testing.T) {
-	err := replaceError(`C:\tilde.exe`, errors.New("access denied"), "windows")
+	err := replaceError(`C:\opcode.exe`, errors.New("access denied"), "windows")
 	if strings.Contains(err.Error(), "curl") || !strings.Contains(err.Error(), "releases") {
 		t.Errorf("windows fallback = %v", err)
 	}
@@ -770,7 +770,7 @@ func TestRefuseHTTPSDowngrade(t *testing.T) {
 
 func TestDefaultsPointAtTheRealRepoOverHTTPS(t *testing.T) {
 	for _, u := range []string{DefaultAPIURL, DefaultDownloadBase, InstallOneLiner} {
-		if !strings.Contains(u, "https://") || !strings.Contains(u, "Chmgx81/tilde") {
+		if !strings.Contains(u, "https://") || !strings.Contains(u, "Chmgx81/opcode") {
 			t.Errorf("unexpected default %q", u)
 		}
 	}

@@ -14,13 +14,13 @@ is either a correct in-scope write or a deliberate
 ## Non-Goals
 
 - No errno interception or seccomp parsing (Codex's violation.rs
-  reads structured child errors). tilde classifies by the failure
+  reads structured child errors). opcode classifies by the failure
   signature in the combined output, and the note says "probably"
   — a sandboxed EACCES is usually the boundary, but a genuine
   permission error inside the writable roots is possible, and the
   note must not lie about which one happened.
 - No automatic unsandboxed retry (Codex reuses a cached approval
-  when policy allows). tilde's escape stays explicit: the model
+  when policy allows). opcode's escape stays explicit: the model
   re-issues the call with `sandbox: false`, which prompts in build
   mode — the human stays in the loop.
 - No change to non-sandboxed commands or to the gate.

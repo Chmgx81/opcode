@@ -5,7 +5,7 @@
 The adoption doc's small-gems list: Codex rejects pathological
 highlight inputs (> 512 KB / 10k lines / 4 KiB lines) and falls
 back to plain text so display never stalls (tui-audit §2.7).
-tilde's `highlightLine` feeds whatever the model wrote to chroma
+opcode's `highlightLine` feeds whatever the model wrote to chroma
 with no bound — and the lexer is chosen from a model-provided
 file path, so a hostile or accidental monster line is an untrusted
 input to a parser. Rendering must never be hostage to a highlight
@@ -16,15 +16,15 @@ input.
 - No change to the lexer choice (chroma's `Match` is a registry
   lookup, already cheap) or the lexer cache.
 - No cap on glamour's own code-block highlighting — that is
-  glamour's seam; tilde's seam is the line-level highlighter.
+  glamour's seam; opcode's seam is the line-level highlighter.
 - The other small gems, with their dispositions:
   - **Sanitized terminal title** — already adopted (Phase 24-era
     `sanitizeTitle`: controls and bidi stripped, 240-rune cap).
-  - **Turn diff budget** — no-op for tilde: edit results render
+  - **Turn diff budget** — no-op for opcode: edit results render
     the tool's before/after strings directly, no diff computation
     to cap.
   - **One-shot screen-reader probe with a persisted marker** —
-    skipped: tilde's detection is environment-variable reads with
+    skipped: opcode's detection is environment-variable reads with
     no terminal query; there is nothing expensive to remember.
   - **Session-log recording behind an env var** — deferred: a
     development harness, not a product surface; revisit when a

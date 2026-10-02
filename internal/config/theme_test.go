@@ -9,7 +9,7 @@ import (
 )
 
 // TestSaveTheme: the theme key lands in config.json, a missing file is
-// created, a previous theme is overwritten, and keys tilde does not
+// created, a previous theme is overwritten, and keys opcode does not
 // know about survive the write (the file is edited as a raw object,
 // not rewritten from the struct).
 func TestSaveTheme(t *testing.T) {

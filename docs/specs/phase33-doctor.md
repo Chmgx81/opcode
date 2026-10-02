@@ -27,13 +27,13 @@ A `/doctor` slash command (palette-listed like /skills and /mcp)
 that builds rows from live state and adds one dim transcript entry.
 Checks, in report order:
 
-1. **Identity** — tilde's version string.
+1. **Identity** — opcode's version string.
 2. **Model** — provider, model, base URL from Options (what the
    session actually runs right now, not what config says).
 3. **API key** — `Options.KeyFor(provider)`; present or missing
    with the `/login <provider>` next step. Nil KeyFor is an honest
    "key resolution not wired", not an error.
-4. **config.json** — re-loaded from TildeHome; parse/permission-mode
+4. **config.json** — re-loaded from OpcodeHome; parse/permission-mode
    errors reported verbatim; the mode shown when healthy. A missing
    file is the normal first-run case and reads as such.
 5. **models.json** — same loader verdict; missing file is dim, not
@@ -44,7 +44,7 @@ Checks, in report order:
    `sandbox.Active()` is the truth the gate itself consults; doctor
    never claims enforcement that isn't real.
 7. **Trust** — the project's live status (trusted / untrusted /
-   changed) via `trust.LoadStore(TildeHome)`, with the changed-file
+   changed) via `trust.LoadStore(OpcodeHome)`, with the changed-file
    count when the surface drifted.
 8. **Skills and MCP** — counts and server names from the wired
    managers; "none" is a dim fact, not a failure.
@@ -55,7 +55,7 @@ Checks, in report order:
 
 ## Edge Cases
 
-- TildeHome unset in Options (headless wiring) — file checks report
+- OpcodeHome unset in Options (headless wiring) — file checks report
   "not wired" dim instead of probing the filesystem blindly.
 - A project directory that no longer exists — trust status reports
   the error verbatim rather than crashing the command.
@@ -73,7 +73,7 @@ Checks, in report order:
   the key bytes.
 - Unit: a missing key renders the warn glyph and the
   `/login <provider>` next step.
-- Unit: a malformed config.json in TildeHome renders the error row,
+- Unit: a malformed config.json in OpcodeHome renders the error row,
   not a crash.
 - Unit: sandbox-off posture names the config key that enables it.
 - PTY live: /doctor through the palette in a real session renders

@@ -11,7 +11,7 @@ import (
 )
 
 // sseServer serves a canned sequence of SSE chunks from a handler that can
-// also inspect the request body, so tests can assert what tilde put on the
+// also inspect the request body, so tests can assert what opcode put on the
 // wire without a real provider.
 type capturedRequest struct {
 	Model    string

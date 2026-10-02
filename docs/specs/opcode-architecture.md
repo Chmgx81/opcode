@@ -1,4 +1,4 @@
-# tilde — Architecture & Implementation Plan (v0.1)
+# opcode — Architecture & Implementation Plan (v0.1)
 
 ## 1. Recap: Goals & Constraints
 
@@ -15,7 +15,7 @@
   - MCP → out-of-process (this is inherent to the protocol, not a choice)
   - Modes → in-process config/system-prompt switches, no extension mechanism needed
 
-  Two unrelated things both get called "modes" below — kept distinct on purpose: **Permission Mode** (plan / build / full-auto, Section 7) governs what the agent's allowed to *do*; **Invocation Mode** (interactive / headless, Section 3.9) governs *how tilde itself is launched and driven*.
+  Two unrelated things both get called "modes" below — kept distinct on purpose: **Permission Mode** (plan / build / full-auto, Section 7) governs what the agent's allowed to *do*; **Invocation Mode** (interactive / headless, Section 3.9) governs *how opcode itself is launched and driven*.
 
 ---
 
@@ -77,7 +77,7 @@
 - Parent aggregates subagent activity into the TUI as labeled panes or a collapsible log — the user should always be able to see what each subagent is doing, not just the final result.
 
 ### 3.4 Skill Loader
-- Scans `.tilde/skills/` (project-level) then `~/.tilde/skills/` (user-level) at startup.
+- Scans `.opcode/skills/` (project-level) then `~/.opcode/skills/` (user-level) at startup.
 - A skill is a folder, following the same open `SKILL.md` convention as Claude's own Skills and the `agentskills.io` standard:
   ```
   <skill-name>/
@@ -93,10 +93,10 @@
 - **Keep skill bodies lean** — target roughly 1,000–3,000 tokens; move large tables or domain data into `references/` rather than bloating the body. A skill whose main file balloons is a sign it should be split or should offload data to `references/`.
 - Invocation of `scripts/` runs as a subprocess with a fixed I/O contract (stdin: JSON context, stdout: JSON result) — same subprocess boundary as MCP, just a far simpler protocol, which is what makes skills genuinely language-agnostic without designing or versioning a plugin API.
 - Each skill is assigned a **permission tier** (see Section 7) rather than being implicitly trusted just because it loaded.
-- **Prompt templates (optional, low-priority)** — a sibling, much simpler mechanism worth keeping distinct: a folder of plain markdown files (`.tilde/prompts/`) where each file becomes a `/name` slash command that expands verbatim into the input box. No model reasoning, no triggering logic, no execution — pure text substitution, explicitly invoked by the user. Cheap to add whenever there's spare time; doesn't need to be in the initial build order.
+- **Prompt templates (optional, low-priority)** — a sibling, much simpler mechanism worth keeping distinct: a folder of plain markdown files (`.opcode/prompts/`) where each file becomes a `/name` slash command that expands verbatim into the input box. No model reasoning, no triggering logic, no execution — pure text substitution, explicitly invoked by the user. Cheap to add whenever there's spare time; doesn't need to be in the initial build order.
 
 ### 3.5 MCP Manager
-- Reads the server list from config (e.g. `.tilde/mcp.json`).
+- Reads the server list from config (e.g. `.opcode/mcp.json`).
 - Spawns each server over stdio, performs the handshake, discovers its tools. HTTP transport is not implemented; an `http://` server entry is rejected at config load with that reason rather than silently ignored.
 - Exposes discovered tools to the Orchestrator as ordinary tool definitions — the model doesn't need to know MCP exists, it just sees more tools available.
 - Owns lifecycle: reconnect on crash, clean shutdown on exit, timeout on a slow/dead server so it never blocks startup.
@@ -107,14 +107,14 @@
   - During development, an MCP Inspector-style debug view (raw JSON-RPC in/out) pays for itself the first time a server misbehaves.
 
 ### 3.6 Tool Execution Layer
-- Built-in tools (`internal/tools`, registered in `cmd/tilde/main.go`): `read_file`, `write_file`, `edit_file`, `apply_patch`, `bash`, `grep`, `glob`, `list_dir`, `web_fetch`, `current_time`, `load_skill`, `run_skill_script`, `spawn_subagent`, `todo_write`, `present_plan`, plus whatever the MCP servers expose. Git is reached through `bash`; the one git surface that is *not* the model's is `/diff`, which the user invokes.
+- Built-in tools (`internal/tools`, registered in `cmd/opcode/main.go`): `read_file`, `write_file`, `edit_file`, `apply_patch`, `bash`, `grep`, `glob`, `list_dir`, `web_fetch`, `current_time`, `load_skill`, `run_skill_script`, `spawn_subagent`, `todo_write`, `present_plan`, plus whatever the MCP servers expose. Git is reached through `bash`; the one git surface that is *not* the model's is `/diff`, which the user invokes.
 - **Every** tool call — built-in, skill, or MCP — passes through one permission gate here. This is where mode (ask vs auto-accept) is enforced and where every action gets logged.
 - Sandboxing hook lives here too (see Security, below).
 
 ### 3.7 Config & Session
 Two scopes, one rule: **user-level is trusted, project-level is not until the user says so** (Section 7).
 
-| User-level (`~/.tilde/`, relocatable with `TILDE_HOME`) | Project-level (`./.tilde/`) |
+| User-level (`~/.opcode/`, relocatable with `OPCODE_HOME`) | Project-level (`./.opcode/`) |
 |---|---|
 | `config.json` — preferences (model, default permission mode, skill paths) | *(never loaded — fingerprinted for trust so adding one later re-asks)* |
 | `models.json` — providers, endpoints, model lists | *(not allowed)* |
@@ -127,7 +127,7 @@ Two scopes, one rule: **user-level is trusted, project-level is not until the us
 There is no `prompts/` directory: prompt-template folders are a
 deferred idea in 3.4, not a built feature.
 
-- **Precedence:** user-level built-in defaults only. There is no project-level config to merge — providers, endpoints, credentials, and the permission mode are user-level by construction, so a cloned repo cannot point tilde's API traffic at a server it controls or ship a permissive default mode. A project's `.tilde/config.json` is fingerprinted for trust but never read (Section 7).
+- **Precedence:** user-level built-in defaults only. There is no project-level config to merge — providers, endpoints, credentials, and the permission mode are user-level by construction, so a cloned repo cannot point opcode's API traffic at a server it controls or ship a permissive default mode. A project's `.opcode/config.json` is fingerprinted for trust but never read (Section 7).
 - **`models.json` is what makes local and self-hosted models a config change, not a code change.** Each entry is a `base_url`, an optional key reference, and a model list, so any OpenAI-compatible server, such as a local Ollama endpoint, is just another entry. Keep `base_url` configurable from Phase 0 instead of hardcoding OpenRouter's.
   ```json
   { "providers": { "local": { "base_url": "http://localhost:11434/v1", "models": ["<model-name>"] } } }
@@ -143,31 +143,31 @@ deferred idea in 3.4, not a built feature.
       StreamChat(ctx context.Context, req ChatRequest) (<-chan ChatEvent, error)
   }
   ```
-  `ChatRequest`/`ChatEvent` are tilde's own internal types, not the wire format. There are two wire implementations behind that one interface: `OpenAICompat` (chat/completions, the default path for every OpenAI-compatible server) and `Anthropic` (the native Messages API, used when a provider's `api` is `anthropic`). Adding a third wire format is a new `Provider` implementation, not a rewrite of the Orchestrator.
+  `ChatRequest`/`ChatEvent` are opcode's own internal types, not the wire format. There are two wire implementations behind that one interface: `OpenAICompat` (chat/completions, the default path for every OpenAI-compatible server) and `Anthropic` (the native Messages API, used when a provider's `api` is `anthropic`). Adding a third wire format is a new `Provider` implementation, not a rewrite of the Orchestrator.
 - Streaming: consumes SSE `chat.completion.chunk` events. Tool calls arrive as **argument fragments across multiple chunks** — buffer each in-progress call by its index/id until the arguments JSON is complete before dispatching it to the Tool Execution Layer.
 - Model selection is a config string, not a code change — OpenRouter model IDs are namespaced (`anthropic/claude-...`, `openai/gpt-...`, `meta-llama/...`), so trying a different model is a `config.json` edit, and adding a whole new endpoint (direct OpenAI, a local server) is a `models.json` entry (3.7). The built-in catalog in `internal/config/providers.go` covers fifteen providers; an explicit `providers` entry in `models.json` always wins over the catalog.
 
 ### 3.9 Invocation Modes
-Distinct from Permission Mode (Section 7) — this is about how tilde itself is run, not what it's allowed to do:
+Distinct from Permission Mode (Section 7) — this is about how opcode itself is run, not what it's allowed to do:
 - **Interactive** — the full TUI, the default and primary mode.
-- **Headless / print** — `tilde -p "prompt"` runs one turn non-interactively and prints the result (plain text or `--json` for structured event output), for scripting and CI use by the engineer/security-architect end of the audience.
+- **Headless / print** — `opcode -p "prompt"` runs one turn non-interactively and prints the result (plain text or `--json` for structured event output), for scripting and CI use by the engineer/security-architect end of the audience.
 - This costs almost nothing extra *if* the layering in Section 2 is respected: the Orchestrator already doesn't know the TUI exists, so headless mode is just "skip Bubble Tea, drive the same Orchestrator from a CLI flag, print instead of render." Phase 0's bare input/output loop (Section 8) is effectively a first draft of this — a sign the architecture's decoupling is doing its job rather than a coincidence.
 
 ### 3.10 Auth & Secrets
-- `~/.tilde/auth.json` — **user-level only, never project-level.** Created with owner-only permissions (0600, in a 0700 directory), with a warning at startup if it's ever looser. If tilde finds a credential in a project-level `.tilde/` file, it refuses to load it and says so, since a project directory is exactly where a key gets committed by accident. Kept separate from `config.json` so config can be freely shared or committed without ever risking a leaked key.
+- `~/.opcode/auth.json` — **user-level only, never project-level.** Created with owner-only permissions (0600, in a 0700 directory), with a warning at startup if it's ever looser. If opcode finds a credential in a project-level `.opcode/` file, it refuses to load it and says so, since a project directory is exactly where a key gets committed by accident. Kept separate from `config.json` so config can be freely shared or committed without ever risking a leaked key.
 - Each provider's credential can be a literal string, or a `!<command>` value that shells out to the user's own secret manager (`pass`, `1Password`'s `op`, macOS `security`, etc.). Run once, cache for the process lifetime; empty output, a timeout, or a nonzero exit leaves it unresolved rather than silently falling back to something less secure. **`!command` is honored only from the user-level `auth.json`** — never from anything a project supplies, because that would be arbitrary command execution from a cloned repo.
 - Falls back to the provider's standard environment variable (`OPENROUTER_API_KEY` for the default provider) if `auth.json` has nothing set — the right default for CI and headless invocation (3.9), where you don't want a credential file on disk at all.
-- **`/login` and `/logout` in the TUI**, so a non-technical user never has to hand-edit JSON: bare `/login` lists every provider to configure, `/login <provider>` skips the picker, and the key is masked as it is typed and written to `auth.json` (0600) taking effect on the next turn; `/logout <provider>` removes the stored credential. `/logout` only touches what tilde stored — it doesn't unset environment variables or revoke the key at the provider, and it says so.
-- **Credentials never leak out through tilde's own records:** stored key values are redacted from the audit log, the session file, and any export or share.
+- **`/login` and `/logout` in the TUI**, so a non-technical user never has to hand-edit JSON: bare `/login` lists every provider to configure, `/login <provider>` skips the picker, and the key is masked as it is typed and written to `auth.json` (0600) taking effect on the next turn; `/logout <provider>` removes the stored credential. `/logout` only touches what opcode stored — it doesn't unset environment variables or revoke the key at the provider, and it says so.
+- **Credentials never leak out through opcode's own records:** stored key values are redacted from the audit log, the session file, and any export or share.
 - **No OAuth in v1, but the door is open.** v1 is API keys entered via `/login`. OpenRouter also offers a browser login (OAuth PKCE) that needs no client registration and hands back a user-controlled API key, so it's a natural later upgrade for non-technical users who'd rather click "authorize" than create a key in a dashboard. Build it as a `/login` option with a paste-the-code fallback for remote/headless machines, where the browser callback can't reach the local process.
 
 ---
 
-## 4. Directory Layout (the tilde codebase itself)
+## 4. Directory Layout (the opcode codebase itself)
 
 ```
-tilde/
-  cmd/tilde/main.go           # wiring only (+ `tilde update`)
+opcode/
+  cmd/opcode/main.go           # wiring only (+ `opcode update`)
   internal/
     tui/            # Bubble Tea front end (model, views, dialogs, pickers)
     orchestrator/   # agent loop, mode logic
@@ -182,11 +182,11 @@ tilde/
     trust/          # project trust fingerprints (skills/MCP gate)
     sandbox/        # Landlock confinement + seccomp network block for shell commands
     safe/           # terminal-escape sanitizer for untrusted display text
-    update/         # `tilde update` + the cached startup update notice
+    update/         # `opcode update` + the cached startup update notice
     headless/       # -p one-turn mode, no TUI imports
   docs/
     specs/          # this file, tui-spec.md, per-phase specs (see specs/README.md)
-    reference/      # Codex source audits + the tilde-focused adoption synthesis
+    reference/      # Codex source audits + the opcode-focused adoption synthesis
     releasing.md    # how a release is cut, and what the pipeline does
     progress-log.md # the full chronological build log (Phase 0 → 44)
   scripts/          # test-install.sh — exercises install.sh against a fake release
@@ -201,9 +201,9 @@ check.
 
 ## 5. Startup Sequence
 
-1. Resolve the user directory (`~/.tilde/`, or `TILDE_HOME`) and load user-level `config.json`, `models.json`, and credentials (3.10).
-2. **Check project trust** for the working directory (Section 7). Interactive: prompt if it's new or its fingerprint changed. Headless: untrusted unless explicitly opted in (`--trust` or an env var), because there's no one to ask. The project's `.tilde/config.json` is fingerprinted for trust but never loaded — there is no project-level config; user-level is the only config.
-3. Load context files hierarchically — user-level (`~/.tilde/AGENTS.md`) → each parent directory → working directory. Per directory, `AGENTS.override.md` (a personal, gitignore-able replacement for that directory only) beats `AGENTS.md`, which beats `CLAUDE.md` as a fallback so repos already set up for other agents work unchanged. Most-specific wins on conflict. This step doesn't need trust: it's inert text (Section 7).
+1. Resolve the user directory (`~/.opcode/`, or `OPCODE_HOME`) and load user-level `config.json`, `models.json`, and credentials (3.10).
+2. **Check project trust** for the working directory (Section 7). Interactive: prompt if it's new or its fingerprint changed. Headless: untrusted unless explicitly opted in (`--trust` or an env var), because there's no one to ask. The project's `.opcode/config.json` is fingerprinted for trust but never loaded — there is no project-level config; user-level is the only config.
+3. Load context files hierarchically — user-level (`~/.opcode/AGENTS.md`) → each parent directory → working directory. Per directory, `AGENTS.override.md` (a personal, gitignore-able replacement for that directory only) beats `AGENTS.md`, which beats `CLAUDE.md` as a fallback so repos already set up for other agents work unchanged. Most-specific wins on conflict. This step doesn't need trust: it's inert text (Section 7).
 4. Discover skills (user-level always; project-level only if trusted), build the name+description index.
 5. Connect MCP servers in parallel, with a timeout — a slow or dead server must never block startup (user-level always; project-level only if trusted).
 6. Initialize the LLM client.
@@ -235,14 +235,14 @@ check.
 
    Mode (plan / build / full-auto) sets the *default* posture across tiers, but the tier is what the gate actually checks per action — this is what lets you honestly tell a security-conscious user "plan mode asks before touching your filesystem" instead of just "trust the prompt."
 - MCP server output is untrusted input, same as any external content — never let a tool result silently expand its own permissions or trigger an unreviewed action.
-- Audit log of every executed tool call (what, when, which layer it came from, its tier, whether it was approved) at `~/.tilde/audit.jsonl` — this is a genuine differentiator for your security-architect users, and cheap to add if it's built into the gate from day one rather than bolted on later. Known key values are redacted before anything is written.
+- Audit log of every executed tool call (what, when, which layer it came from, its tier, whether it was approved) at `~/.opcode/audit.jsonl` — this is a genuine differentiator for your security-architect users, and cheap to add if it's built into the gate from day one rather than bolted on later. Known key values are redacted before anything is written.
 - The credentials file is refused above the mode matrix, in **every** mode including full-auto: no tool that takes a path may read or write `auth.json`.
-- **Project Trust — a separate, earlier gate.** The per-action permission tier above governs what happens once tilde is already running; this one governs whether tilde should run anything from a project at all. Connecting to a *project-declared* MCP server means spawning a process, and that happens before any tool-call ever occurs — so a project's `.tilde/mcp.json` can't be allowed to execute on first `cd` into an unfamiliar repo. Before connecting a project-level MCP server or running a project-level skill's script for the first time, prompt to trust the project; persist the decision in a user-level file (`~/.tilde/trusted-projects.json`) so it's asked once, not every run. AGENTS.md text is the one exception — it loads regardless of trust because it's inert instructions, not executable code, and it's treated with the same caution as any other external content (advisory, not a command tilde blindly follows). Anything under your own `~/.tilde/` is implicitly trusted — you put it there yourself; this gate is only for what a project brings with it.
+- **Project Trust — a separate, earlier gate.** The per-action permission tier above governs what happens once opcode is already running; this one governs whether opcode should run anything from a project at all. Connecting to a *project-declared* MCP server means spawning a process, and that happens before any tool-call ever occurs — so a project's `.opcode/mcp.json` can't be allowed to execute on first `cd` into an unfamiliar repo. Before connecting a project-level MCP server or running a project-level skill's script for the first time, prompt to trust the project; persist the decision in a user-level file (`~/.opcode/trusted-projects.json`) so it's asked once, not every run. AGENTS.md text is the one exception — it loads regardless of trust because it's inert instructions, not executable code, and it's treated with the same caution as any other external content (advisory, not a command opcode blindly follows). Anything under your own `~/.opcode/` is implicitly trusted — you put it there yourself; this gate is only for what a project brings with it.
      - **Trust is tied to what was actually approved, not just the folder.** Record a fingerprint of the project's executable surface (`mcp.json`, `config.json`, skill scripts, `SKILL.md` bodies and their bundled references/assets) next to the path, the same way direnv's allow-list works. If a `git pull` changes any of it, ask again. Otherwise trust granted to a harmless repo silently carries over to a later malicious commit. The prompt should show exactly what will run (the literal MCP server command lines, the skill scripts), not just "trust this folder?".
    - **A trusted project still can't loosen the rules.** There is no
      project-level config to load: providers, endpoints, credentials,
      and the permission mode are user-level only, by construction.
-     A cloned repo cannot point tilde's API traffic at a server it
+     A cloned repo cannot point opcode's API traffic at a server it
      controls or ship a permissive default mode — the loader never
      reads project config at all (the file is fingerprinted for trust
      so adding one later is trust-visible).
@@ -264,7 +264,7 @@ check.
 
 Subagents are architecturally simple but compound bugs in every other layer — build them last, once the core loop, tools, and permission gate are solid.
 
-**One ordering constraint that overrides the table:** project trust (Section 7) and the restricted project `config.json` must exist before, or together with, Phase 3. Skills are the first point where a cloned repo can make tilde run code, and MCP (Phase 4) repeats it. Until trust exists, load only user-level skills and servers.
+**One ordering constraint that overrides the table:** project trust (Section 7) and the restricted project `config.json` must exist before, or together with, Phase 3. Skills are the first point where a cloned repo can make opcode run code, and MCP (Phase 4) repeats it. Until trust exists, load only user-level skills and servers.
 
 ---
 
@@ -282,8 +282,8 @@ These aren't blockers, but worth deciding early rather than mid-build:
 
 Worth naming so it's a decision, not an oversight:
 
-- **A2A (Agent-to-Agent)** — a protocol for delegating to *external, network-hosted* specialist agents (e.g. a vendor's billing agent). Tilde's subagents are in-process and share a trust boundary with the harness, so this doesn't apply yet. Revisit only if tilde ever needs to call out to a third-party agent it doesn't run itself.
-- **A2UI (Agent-to-UI)** — a declarative UI protocol for generative interfaces in web/mobile clients (buttons, cards, sliders rendered by a native app). Tilde is a TUI; Bubble Tea's own Model/View already plays this role locally. No separate protocol needed.
+- **A2A (Agent-to-Agent)** — a protocol for delegating to *external, network-hosted* specialist agents (e.g. a vendor's billing agent). Opcode's subagents are in-process and share a trust boundary with the harness, so this doesn't apply yet. Revisit only if opcode ever needs to call out to a third-party agent it doesn't run itself.
+- **A2UI (Agent-to-UI)** — a declarative UI protocol for generative interfaces in web/mobile clients (buttons, cards, sliders rendered by a native app). Opcode is a TUI; Bubble Tea's own Model/View already plays this role locally. No separate protocol needed.
 - **AP2 / UCP (agentic commerce)** — payment mandates and multi-vendor checkout. Not relevant to a coding harness.
-- **Pi's "extensions instead of built-ins" philosophy** — Pi (a genuinely good reference harness) deliberately ships no built-in MCP, subagents, permission popups, or plan mode, arguing you build those yourself via extensions, tmux, or containers if you want them. That's a defensible design for a harness aimed at people who are comfortable doing that. It's the wrong call for tilde specifically: the explicit multi-audience goal includes non-technical users and security-conscious ones who will neither write an extension to get a permission flow nor hand-roll a container sandbox — they need the tiered permission gate (Section 7) and first-class MCP/subagent support working out of the box. Keep this in mind as a philosophy to *not* drift toward under "simplicity" pressure — dead-simple-to-use and minimal-core-that-does-nothing-by-default are different goals, and tilde is committed to the former.
+- **Pi's "extensions instead of built-ins" philosophy** — Pi (a genuinely good reference harness) deliberately ships no built-in MCP, subagents, permission popups, or plan mode, arguing you build those yourself via extensions, tmux, or containers if you want them. That's a defensible design for a harness aimed at people who are comfortable doing that. It's the wrong call for opcode specifically: the explicit multi-audience goal includes non-technical users and security-conscious ones who will neither write an extension to get a permission flow nor hand-roll a container sandbox — they need the tiered permission gate (Section 7) and first-class MCP/subagent support working out of the box. Keep this in mind as a philosophy to *not* drift toward under "simplicity" pressure — dead-simple-to-use and minimal-core-that-does-nothing-by-default are different goals, and opcode is committed to the former.
 - **A second `SYSTEM.md` file for prompt overrides** (as Pi has, alongside AGENTS.md) — declined. AGENTS.md already covers project conventions, and giving contributors two files with overlapping purpose (which one wins? which one do I edit?) works against the "dead simple" goal for no real gain here.

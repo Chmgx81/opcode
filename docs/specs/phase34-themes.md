@@ -31,8 +31,8 @@ restarts.
   background probe keeps working unchanged.
 - `Options.Theme` (from `config.json "theme"`) names the startup
   theme and wins over the probe; empty means today's auto behavior
-  (probe, with `TILDE_THEME=light|dark` still forcing the posture).
-  Unknown names fail loudly at startup in `cmd/tilde` via
+  (probe, with `OPCODE_THEME=light|dark` still forcing the posture).
+  Unknown names fail loudly at startup in `cmd/opcode` via
   `tui.ValidTheme`, and `applyThemeName` fails closed (probe path)
   if it ever sees one anyway.
 - `/theme` opens the shared picker; `/theme <name>` switches

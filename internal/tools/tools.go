@@ -1,4 +1,4 @@
-// Package tools holds tilde's built-in tools and the single permission
+// Package tools holds opcode's built-in tools and the single permission
 // gate every tool call passes through (Section 3.6/7 of the architecture
 // doc). The gate is the one place that decides "can this action happen"
 // and the one place every executed action gets logged.

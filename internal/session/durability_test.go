@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 func TestSaveReplacesExistingFileWithPrivateMode(t *testing.T) {

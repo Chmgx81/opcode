@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal MCP server over stdio for tilde's tests: JSON-RPC 2.0,
+"""Minimal MCP server over stdio for opcode's tests: JSON-RPC 2.0,
 newline-delimited. Implements initialize, tools/list (one echo tool),
 and tools/call (echoes the arguments back as text). Modes via argv:
 

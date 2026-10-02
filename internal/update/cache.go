@@ -1,17 +1,17 @@
 // The startup update notice: how a user on a stale binary learns a
 // newer release exists without typing anything.
 //
-// `tilde update` is explicit and stays the only thing that downloads.
+// `opcode update` is explicit and stays the only thing that downloads.
 // Separately, at startup, main asks LatestKnown (below) whether the
 // cached latest-release tag is newer than the running binary and, if
-// so, adds one startup note: "Update available: vX → vY. Run `tilde
+// so, adds one startup note: "Update available: vX → vY. Run `opcode
 // update` to install it." The cache refreshes at most once every 24h
 // with a short-timeout HTTPS GET to the releases API (a few KB).
 // Failures are silent — an offline machine starts exactly as before —
 // but they are recorded, so /doctor can say the check failed rather
 // than guess, and a dead network is retried on an hourly schedule
 // instead of on every launch. Opt out with config.json
-// "update_checks": false or TILDE_NO_UPDATE_CHECK=1. Dev builds
+// "update_checks": false or OPCODE_NO_UPDATE_CHECK=1. Dev builds
 // ((devel), pseudo-versions) and platforms with no prebuilt binary
 // never check: "newer" has no meaning for them.
 package update
@@ -29,7 +29,7 @@ import (
 
 const (
 	// cacheTTL bounds a working check's rate: at most one network call
-	// per day, however often tilde starts.
+	// per day, however often opcode starts.
 	cacheTTL = 24 * time.Hour
 	// failureTTL is the retry window after a failed check. Shorter
 	// than cacheTTL, so fixing a network is noticed the same
@@ -43,7 +43,7 @@ const (
 	// link, and a miss costs one failed attempt, not the session.
 	checkTimeout = 3 * time.Second
 
-	// maxCacheBytes bounds the cache read. The file tilde writes is
+	// maxCacheBytes bounds the cache read. The file opcode writes is
 	// ~150 bytes; anything larger is damaged, not informative, and
 	// must not be read into memory at launch.
 	maxCacheBytes = 8 << 10
@@ -52,7 +52,7 @@ const (
 	maxErrRunes = 200
 )
 
-// cacheName is the cache file under the user's tilde home. Dot-prefixed
+// cacheName is the cache file under the user's opcode home. Dot-prefixed
 // so it stays out of the way of config.json, auth.json, sessions/.
 const cacheName = ".update-cache.json"
 
@@ -76,18 +76,18 @@ type Cache struct {
 	Err       string    // why it failed, "" when it worked
 }
 
-// CachePath returns the update-check cache file for a tilde home dir.
+// CachePath returns the update-check cache file for a opcode home dir.
 func CachePath(home string) string {
 	return filepath.Join(home, cacheName)
 }
 
 // ChecksEnabled reports whether the startup notice may run: an
-// explicit config false or TILDE_NO_UPDATE_CHECK=1 opts out.
+// explicit config false or OPCODE_NO_UPDATE_CHECK=1 opts out.
 func ChecksEnabled(updateChecks *bool) bool {
 	if updateChecks != nil && !*updateChecks {
 		return false
 	}
-	switch os.Getenv("TILDE_NO_UPDATE_CHECK") {
+	switch os.Getenv("OPCODE_NO_UPDATE_CHECK") {
 	case "", "0", "false":
 		return true
 	}
@@ -124,7 +124,7 @@ func Notice(current, cachedTag string) string {
 	if tag == "" {
 		return ""
 	}
-	return fmt.Sprintf("Update available: %s → %s. Run `tilde update` to install it.", current, tag)
+	return fmt.Sprintf("Update available: %s → %s. Run `opcode update` to install it.", current, tag)
 }
 
 // ReadCache returns the last attempt's outcome. A missing, oversized,
@@ -207,7 +207,7 @@ type Status struct {
 
 // LatestKnown is the whole startup path in one call: read the cache,
 // refresh it when stale (silent on failure), and report what is known.
-// current is the running build version; home is the tilde home dir;
+// current is the running build version; home is the opcode home dir;
 // apiURL is DefaultAPIURL in production. now is injectable for tests.
 func LatestKnown(ctx context.Context, current, home, apiURL string, now time.Time) Status {
 	// Dev builds never check: "newer" has no meaning when nothing
@@ -232,7 +232,7 @@ func LatestKnown(ctx context.Context, current, home, apiURL string, now time.Tim
 			// an hour instead of re-dialing, and /doctor can say so.
 			c = Cache{Tag: c.Tag, CheckedAt: now, Err: err.Error()}
 		case !IsRelease(fresh):
-			// An upstream tag tilde cannot read is not a version.
+			// An upstream tag opcode cannot read is not a version.
 			// Caching one would buy a day of silence under a tag no
 			// surface can show, so it counts as a failed attempt.
 			c = Cache{Tag: c.Tag, CheckedAt: now,

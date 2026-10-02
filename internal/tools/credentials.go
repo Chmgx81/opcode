@@ -15,21 +15,21 @@ import (
 var errCredentialsFile = errors.New("access to the credentials file is not allowed")
 
 // credentialsPath is the one file no tool may touch in any mode
-// (audit S1): ~/.tilde/auth.json holds every provider key the user
+// (audit S1): ~/.opcode/auth.json holds every provider key the user
 // has, and read-tier calls run free everywhere — without this deny,
 // the file's contents would land in the model's context, and from
 // there in any transcript. Duplicated from config.UserDir (four
 // lines) because config imports this package; the cycle forces the
 // choice and the duplication is smaller than an interface would be.
 func credentialsPath() string {
-	if dir := os.Getenv("TILDE_HOME"); dir != "" {
+	if dir := os.Getenv("OPCODE_HOME"); dir != "" {
 		return filepath.Join(dir, "auth.json")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".tilde", "auth.json")
+	return filepath.Join(home, ".opcode", "auth.json")
 }
 
 // touchesCredentials reports whether a call names the credentials
@@ -45,7 +45,7 @@ func credentialsPath() string {
 // parsed by anyone; that route is bounded by the sandbox's network
 // block, by the redaction in Gate.Execute, and by the approval-gated
 // unsandboxed escape. And directory-level reach (grep rooted at ~ or
-// at ~/.tilde) is handled where the files are opened, by openReadable,
+// at ~/.opcode) is handled where the files are opened, by openReadable,
 // because refusing every grep that could reach the file would refuse
 // grepping the home directory altogether.
 func touchesCredentials(tool Tool, args string) bool {
@@ -136,7 +136,7 @@ func normalizePath(p string) string {
 // file. The check is on the opened descriptor, by inode: gate-time
 // path checks alone leave a window in which a sandboxed command can
 // swap a symlink between the check and the read, and cover no
-// directory walk at all (grep from ~ or from ~/.tilde reaches the file
+// directory walk at all (grep from ~ or from ~/.opcode reaches the file
 // without ever naming it).
 func openReadable(path string) (*os.File, error) {
 	f, err := os.Open(path)
@@ -159,7 +159,7 @@ func openReadable(path string) (*os.File, error) {
 // in every mode with no prompt, so an uncapped io.ReadAll on a 64 MiB
 // file is the model's way to exhaust the process's memory — and under
 // a memory limit the Go runtime's OOM is a fatal, unrecoverable crash
-// that takes tilde and the turn with it. web_fetch (256 KiB), grep
+// that takes opcode and the turn with it. web_fetch (256 KiB), grep
 // (1 MiB per file), list_dir (500) and glob (200) are all bounded for
 // the same reason; this matches them.
 const maxFileReadBytes = 1 << 20

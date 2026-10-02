@@ -9,8 +9,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Chmgx81/tilde/internal/safe"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/safe"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // View implements tea.Model: identity block and timeline, a working
@@ -576,7 +576,7 @@ func (m *Model) floatingView() []string {
 		// a prompt the user has to guess at.
 		files := strings.Join(m.awaitingTrust.Approved, ", ")
 		out = append(out, m.floatingBlock(promptBoxStyle, append(
-			wrapAll("trust this project? tilde would be able to run: "+files, w-8),
+			wrapAll("trust this project? opcode would be able to run: "+files, w-8),
 			dimStyle.Render("y trust "+GlyphSep+" n or esc decline")), w, 1, 0, 2)...)
 	}
 	if m.awaitingPerm != nil {
@@ -961,7 +961,7 @@ func (m *Model) atMenuRows(w int) []string {
 // scrolls (up/down/pgup/pgdn, the transcript pager's own keys) instead
 // of truncating: the whole point of the overlay is that every binding
 // and every command is in it, and a silently shortened one is a lie
-// about what tilde can do.
+// about what opcode can do.
 func (m *Model) helpRows(w int) []string {
 	rows := []string{
 		accentStyle.Render("keys and commands"),
@@ -1010,8 +1010,8 @@ func (m *Model) helpRows(w int) []string {
 	head := []string{rows[0]}
 	if m.opt.UpdateTag != "" {
 		head = append(head, dimStyle.Render(
-			GlyphUpdate+" "+m.opt.UpdateTag+"  a newer tilde is available "+
-				plainOr("—", "-")+" run `tilde update` to install it"))
+			GlyphUpdate+" "+m.opt.UpdateTag+"  a newer opcode is available "+
+				plainOr("—", "-")+" run `opcode update` to install it"))
 	}
 	// The rows this block may spend: the whole frame's content budget,
 	// less the header, the two pinned bindings, and the trailer. The
@@ -1525,7 +1525,7 @@ func (m *Model) permDialogRows(req *permRequest, w int) ([]string, int, int) {
 		spaced := []string{head, ""}
 		spaced = append(spaced, literal...)
 		spaced = append(spaced, "", dimStyle.Render(
-			"tilde needs your approval to run this. Do you want to proceed?"), "")
+			"opcode needs your approval to run this. Do you want to proceed?"), "")
 		spaced = append(spaced, options...)
 		spaced = append(spaced, "", keys)
 		return spaced, 2 + len(literal), len(options) + 2

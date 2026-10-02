@@ -38,7 +38,7 @@ jobs:
       # -race needs cgo, which the ubuntu runner has. Landlock/seccomp
       # tests skip themselves when the runner's kernel lacks support.
       - run: go test -race -count=1 ./...
-      - run: go build ./cmd/tilde
+      - run: go build ./cmd/opcode
       # TUI/UX spec 1.3: the headless path never imports the TUI stack.
       - name: headless must not import the TUI stack
         run: if go list -deps ./internal/headless | grep -qE 'internal/tui|bubbletea|lipgloss'; then echo "headless imports the TUI stack" && exit 1; fi

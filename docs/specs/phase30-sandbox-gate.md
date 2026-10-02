@@ -21,7 +21,7 @@ reserving prompts for sandbox escapes.
 - Per-call Landlock rulesets (a read-only ruleset for shell
   commands in read-only mode). The process-wide sandbox stays.
 - Codex's granular approval switches, exec-policy rules, and
-  reviewer routing — out of scope at tilde's scale.
+  reviewer routing — out of scope at opcode's scale.
 - Network confinement (Landlock ABI here doesn't cover it; the
   spec never claimed it).
 
@@ -71,7 +71,7 @@ are unchanged and still cover escapes.
 - Landlock unavailable (non-Linux, old kernel, sandbox off in
   config): ask mode prompts for every action — it must never
   auto-run a command it cannot actually confine.
-- Headless (`tilde -p`, no prompter): unchanged posture — bounded
+- Headless (`opcode -p`, no prompter): unchanged posture — bounded
   actions now run, every escape fails closed.
 - Symlinked in-tree path resolving outside the roots → prompts.
 - Unparsable args → not bounded → prompts (fail closed).

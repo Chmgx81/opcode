@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Chmgx81/tilde/internal/sandbox"
+	"github.com/Chmgx81/opcode/internal/sandbox"
 )
 
 // Permission modes (Section 7). The mode sets the posture; the gate
@@ -16,7 +16,7 @@ import (
 // are enforced per call, not hoped for.
 //
 // Three modes, Codex's preset triad (Read Only / Default / Full
-// Access) and Claude Code's plan/default/bypass at tilde's scale:
+// Access) and Claude Code's plan/default/bypass at opcode's scale:
 //
 //   - plan: research posture. Read tools run free; Draft-Only tools
 //     (present_plan) run free — the mechanical exit from planning;
@@ -113,7 +113,7 @@ func ModeInstruction(mode string) string {
 //     write, edit, patch, grep, glob, list): no posture — not even
 //     full-auto — hands the user's keys to the model's context or
 //     lets the model rewrite them. A user who wants to see them can
-//     run "!cat ~/.tilde/auth.json" themselves.
+//     run "!cat ~/.opcode/auth.json" themselves.
 //   - Read-Only and Draft-Only tools are always allowed — running
 //     them cannot change state.
 //   - Action-Allowed tools in full-auto are always allowed.

@@ -71,7 +71,7 @@ func TestWebFetchAllowLocalFetchFlagStillWorks(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	t.Setenv("OPCODE_ALLOW_LOCAL_FETCH", "1")
 	host, port, err := splitHostPort(t, srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestWebFetchAllowLocalFetchFlagStillWorks(t *testing.T) {
 	// "localhost" — the two spellings a dev server is actually reached
 	// by. "127.1" is deliberately absent: it is a valid IPv4 form that
 	// only some resolvers accept, so asserting on it tested the
-	// machine's resolver rather than tilde.
+	// machine's resolver rather than opcode.
 	for _, spelling := range []string{host, "localhost"} {
 		url := fmt.Sprintf("http://%s:%s/", spelling, port)
 		out, err := (WebFetch{}).Execute(context.Background(), jsonArgs(t, map[string]any{"url": url}))
@@ -99,7 +99,7 @@ func TestWebFetchAllowLocalFetchFlagStillWorks(t *testing.T) {
 // resolving to 127.0.0.1. A flag honored by only one of them would leave
 // a dev server unreachable "at random", depending on the spelling used.
 func TestWebFetchAllowLocalFetchDisablesBothChecks(t *testing.T) {
-	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	t.Setenv("OPCODE_ALLOW_LOCAL_FETCH", "1")
 	// A name the literal check cannot see as loopback at all, and which
 	// therefore only the dial-time check would refuse. It must be
 	// allowed, and must be refused with the flag unset.
@@ -109,7 +109,7 @@ func TestWebFetchAllowLocalFetchDisablesBothChecks(t *testing.T) {
 	if err := checkFetchTarget("http://localhost:8080/"); err != nil {
 		t.Errorf("with the flag set, the literal check still refused: %v", err)
 	}
-	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "")
+	t.Setenv("OPCODE_ALLOW_LOCAL_FETCH", "")
 	if err := checkFetchTarget("http://localhost:8080/"); err == nil {
 		t.Error("with the flag unset, the literal check allowed localhost")
 	}
@@ -189,10 +189,10 @@ func TestCheckFetchTargetSpellings(t *testing.T) {
 	}
 	// The opt-in disables the check entirely, both at the spelling and
 	// at the dial.
-	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	t.Setenv("OPCODE_ALLOW_LOCAL_FETCH", "1")
 	for rawURL := range cases {
 		if err := checkFetchTarget(rawURL); err != nil {
-			t.Errorf("TILDE_ALLOW_LOCAL_FETCH=1 must allow %q: %v", rawURL, err)
+			t.Errorf("OPCODE_ALLOW_LOCAL_FETCH=1 must allow %q: %v", rawURL, err)
 		}
 	}
 }
