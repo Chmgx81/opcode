@@ -287,14 +287,18 @@ reset and the toast cannot drift between entry points.
 pinned in models.json first (the active one marked), then providers
 with a resolvable key whose live list is one enter away, then
 providers without one, each naming the `/login` that unlocks it —
-enter starts exactly that. A key stored by `/login` is visible to
-the session immediately (the resolvers' startup snapshot never sees
-the write), and the login's success fetches that provider's live
-model list itself, so the journey is key → models → pick with no
-command to remember in between. Sending with an active provider that
-has no resolvable key is refused before the turn starts, and
-switching to an unkeyed provider says so at the switch — both name
-`/login <provider>` as the fix.
+enter starts exactly that. The browse picker (`/models`, and the
+first-run list) holds the same rule: a keyless row starts the
+login, never a fetch that can only fail — the row names
+`/login <name>` and Enter does it. A key stored by `/login` is
+visible to the session immediately (the resolvers' startup
+snapshot never sees the write), and the login's success fetches
+that provider's live model list itself, so the journey is
+key → models → pick with no command to remember in between.
+Sending with an active provider that has no resolvable key is
+refused before the turn starts, and switching to an unkeyed
+provider says so at the switch — both name `/login <provider>` as
+the fix.
 
 ### 3.6 Other dialogs
 
