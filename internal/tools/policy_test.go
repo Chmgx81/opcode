@@ -242,6 +242,20 @@ func TestWriteThroughSymlinkDotDotStaysInsideRoots(t *testing.T) {
 // model emits: existing file, new file, new nested dirs, the traversal
 // escapes, symlink loops, dangling links, and the ordinary "." and
 // ".." that stay inside.
+// resolveSymlinks is how a test builds an expected path on a platform
+// where a directory and its real path differ (macOS /var ->
+// /private/var). The parent is what gets resolved, never the path
+// itself: the leaf is the file that does not exist yet, which is the
+// whole point of the test, and EvalSymlinks fails on a missing final
+// component and would hand back the unresolved path.
+func resolveSymlinks(path string) string {
+	parent, leaf := filepath.Split(path)
+	if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+		return filepath.Join(resolved, leaf)
+	}
+	return path
+}
+
 func TestPathInWritableRoots(t *testing.T) {
 	root, outside := rootSandbox(t)
 	mk := func(path, content string) string {
@@ -344,7 +358,10 @@ func TestResolveLikeKernelThroughSymlinkedAncestor(t *testing.T) {
 	if !ok {
 		t.Fatal("a new file under an existing symlinked directory was refused")
 	}
-	if want := filepath.Join(real, "fresh.txt"); resolved != want {
+	// The expectation is resolved too: on macOS the temp dir is itself
+	// reached through /var -> /private/var, so the path the test built
+	// and the path the resolver returns spell the same place two ways.
+	if want := resolveSymlinks(filepath.Join(real, "fresh.txt")); resolved != want {
 		t.Errorf("resolved = %q, want %q", resolved, want)
 	}
 }
@@ -366,7 +383,7 @@ func TestResolveLikeKernelLinkTargetEndingInDotDot(t *testing.T) {
 	if !ok {
 		t.Fatal("a new file under a link whose target ends in .. was refused")
 	}
-	if want := filepath.Join(project, "new.txt"); resolved != want {
+	if want := resolveSymlinks(filepath.Join(project, "new.txt")); resolved != want {
 		t.Errorf("resolved = %q, want %q", resolved, want)
 	}
 	// A link that really does dangle is still refused: that is the case
