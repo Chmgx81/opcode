@@ -16,7 +16,7 @@ trust.
 | | |
 |---|---|
 | Latest release | **v0.4.0** (2026-10-02; v0.5.0 renames the project to opcode) |
-| Head | 15 Go packages (~16.8k lines non-test, 562 tests) |
+| Head | 15 Go packages (~16.8k lines non-test, 563 tests) |
 | Go | the `go` line of `go.mod` (1.25.13); CI installs exactly that |
 | Release platforms | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 |
 | Sandbox | Linux only (Landlock 5.13+; seccomp network block on x86_64) |
@@ -46,9 +46,12 @@ subagents, sessions with compaction, the provider catalog with a
 native Anthropic client, live model browsing, the display-boundary
 sanitizer, `/doctor`, `/theme`, `/diff`, LaTeX-as-Unicode, precise
 approval grants, the reasoning-effort dial, `opcode update` with
-checksum verification, the CI/release pipeline, and the Phase 45
+checksum verification, the CI/release pipeline, the Phase 45
 UI restyle — the composer in the shared box language and a
-one-line greeting lockup ([phase45](docs/specs/phase45-ui-restyle.md)).
+one-line greeting lockup ([phase45](docs/specs/phase45-ui-restyle.md)) —
+and the Phase 46 palette and list restyle: the violet identity
+(teal kept as a named theme) and one selection language for every
+list ([phase46](docs/specs/phase46-palette-and-lists.md)).
 
 ## In progress
 

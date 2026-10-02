@@ -72,6 +72,7 @@ func contrastRatio(a, b string) float64 {
 // on, for the contrast table below.
 var themeFloors = map[string]string{
 	"dark":  "#0d1117",
+	"teal":  "#0d1117",
 	"green": "#050806",
 	"light": "#ffffff",
 }
@@ -109,6 +110,13 @@ func TestThemeContrastIsLegible(t *testing.T) {
 				}
 			}
 		}
+		// The selection band's text rides the accent itself, so its
+		// bar is against the band, not the floor — a band the reader
+		// has to squint at is emphasis that hides the choice.
+		if got := contrastRatio(th.hex[10], th.hex[0]); got < 4.5 {
+			t.Errorf("theme %s: onAccent on the selection band is %.2f:1, want 4.5:1",
+				th.name, got)
+		}
 	}
 }
 
@@ -143,19 +151,19 @@ func TestThemePickerPreviewAndRestore(t *testing.T) {
 		t.Errorf("backup = %q, want dark", m.themeBackup)
 	}
 
-	// dark, light, green: two downs land on green, and the preview
-	// applies it live.
+	// dark, light, teal, green: two downs land on teal, and the
+	// preview applies it live.
 	m.picker.down()
 	m.picker.down()
 	m.themePreview()
-	if m.curTheme != "green" || HexAccent != "#16db65" {
-		t.Errorf("preview did not apply green: cur=%s accent=%s", m.curTheme, HexAccent)
+	if m.curTheme != "teal" || HexAccent != "#2dd4bf" {
+		t.Errorf("preview did not apply teal: cur=%s accent=%s", m.curTheme, HexAccent)
 	}
 
 	// Esc: the picker closes with nothing selected.
 	m.picker = nil
 	m.themePreview()
-	if m.curTheme != "dark" || HexAccent != "#2dd4bf" {
+	if m.curTheme != "dark" || HexAccent != "#a78bfa" {
 		t.Errorf("cancel did not restore dark: cur=%s accent=%s", m.curTheme, HexAccent)
 	}
 	last := m.entries[len(m.entries)-1]

@@ -7,7 +7,7 @@ import (
 
 // Palette — the TUI & UX Specification's design tokens (Section 2.1,
 // docs/specs/tui-ux-spec.md). Body text uses the terminal's default
-// foreground (HexText empty = no fg set); one teal accent; muted and
+// foreground (HexText empty = no fg set); one violet accent; muted and
 // subtle grays; two surfaces (user block, code). Every rendered color
 // (UI, markdown, diffs) pulls from these values so the look stays
 // consistent and swappable here.
@@ -16,12 +16,13 @@ import (
 // set when the terminal reports a light background (or
 // OPCODE_THEME=light).
 var (
-	HexAccent = "#2dd4bf" // accent: brand, focus, selection, prompt
-	HexInfo   = "#60a5fa" // info: neutral notices, links
-	HexDeep   = "#6e7683" // border: rules, dialog frames
-	HexDeep2  = "#262a31" // surface.user: user-message block bg
-	HexCode   = "#1c2026" // surface.code: code block bg
-	HexText   = ""        // fg: terminal default (empty = no fg style)
+	HexAccent   = "#a78bfa" // accent: brand, focus, selection, prompt
+	HexInfo     = "#7dd3fc" // info: neutral notices, links
+	HexDeep     = "#6e7683" // border: rules, dialog frames
+	HexDeep2    = "#2a2732" // surface.user: user-message block bg
+	HexCode     = "#1f1c26" // surface.code: code block bg
+	HexText     = ""        // fg: terminal default (empty = no fg style)
+	HexOnAccent = "#0d1117" // on-accent: text on the selection band
 
 	// Semantic colors.
 	HexSuccess = "#4ade80" // ok, added
@@ -31,11 +32,9 @@ var (
 	HexSubtle  = "#8b93a0" // fg.subtle: hints, chrome, placeholders
 	// Text colors are held to 4.5:1 against the two surfaces they sit
 	// on (the terminal floor and the code panel); HexDeep is a boundary
-	// and is held to the 3:1 a UI edge needs. The subtle gray and the
-	// border were both under their bars — the placeholder and the
-	// hints at 3.9:1, the composer's own rules at 2.0:1, which is a
-	// frame the eye cannot find. theme_test.go's contrast table is why
-	// these values are what they are.
+	// and is held to the 3:1 a UI edge needs; HexOnAccent is held to
+	// 4.5:1 against the accent band it rides. theme_test.go's contrast
+	// table is why these values are what they are.
 )
 
 // adaptTheme re-skins the palette for the terminal's actual
@@ -59,22 +58,26 @@ func adaptTheme(dark bool) {
 // feature.
 type theme struct {
 	name, desc string
-	hex        [10]string // accent, info, deep, deep2, code, success, danger, warning, dim, subtle
+	hex        [11]string // accent, info, deep, deep2, code, success, danger, warning, dim, subtle, onAccent
 }
 
-// themes are ordered as the picker lists them. "dark" is the teal
-// default; "green" is the original Phase 7 brand stack (electric
-// green on near-black) kept alive as a choice.
+// themes are ordered as the picker lists them. "dark" is the violet
+// default (Phase 46); "teal" is the Phase 34 default it replaced,
+// kept as a choice; "green" is the original Phase 7 brand stack
+// (electric green on near-black) kept alive the same way.
 var themes = []theme{
-	{"dark", "teal accent on dark — the default", [10]string{
+	{"dark", "violet accent on dark — the default", [11]string{
+		"#a78bfa", "#7dd3fc", "#6e7683", "#2a2732", "#1f1c26",
+		"#4ade80", "#f87171", "#fbbf24", "#9aa0a6", "#8b93a0", "#0d1117"}},
+	{"light", "for light terminal backgrounds", [11]string{
+		"#7c3aed", "#1d4ed8", "#7f858d", "#ede9f5", "#f6f4fa",
+		"#15803d", "#b91c1c", "#b45309", "#5f6368", "#666b70", "#ffffff"}},
+	{"teal", "the Phase 34 default — teal on dark", [11]string{
 		"#2dd4bf", "#60a5fa", "#6e7683", "#262a31", "#1c2026",
-		"#4ade80", "#f87171", "#fbbf24", "#9aa0a6", "#8b93a0"}},
-	{"light", "for light terminal backgrounds", [10]string{
-		"#0f766e", "#1d4ed8", "#7f858d", "#eef0f3", "#f5f6f8",
-		"#15803d", "#b91c1c", "#b45309", "#5f6368", "#666b70"}},
-	{"green", "the original brand stack — electric green on near-black", [10]string{
+		"#4ade80", "#f87171", "#fbbf24", "#9aa0a6", "#8b93a0", "#062a24"}},
+	{"green", "the original brand stack — electric green on near-black", [11]string{
 		"#16db65", "#60a5fa", "#3a7a53", "#0d2818", "#0a1f14",
-		"#4ade80", "#f87171", "#fbbf24", "#8fa898", "#829486"}},
+		"#4ade80", "#f87171", "#fbbf24", "#8fa898", "#829486", "#050806"}},
 }
 
 // ThemeNames lists the valid theme names, in picker order.
@@ -138,6 +141,7 @@ func applyThemeName(name string) bool {
 	HexWarning = t.hex[7]
 	HexDim = t.hex[8]
 	HexSubtle = t.hex[9]
+	HexOnAccent = t.hex[10]
 	refreshTokens()
 	// Glamour renderers embed the style config at creation; drop the
 	// cache so post-switch renders pick up the swapped palette.
@@ -173,6 +177,13 @@ func refreshTokens() {
 	dangerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexDanger))
 	okStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(HexSuccess))
 	resultStyle = dimStyle
+	// The selection band: the list row the cursor is on, filled with
+	// the accent and carrying text in the on-accent token. The caret
+	// still marks the row — the band is emphasis, never the only
+	// signal.
+	selectedStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(HexOnAccent)).
+		Background(lipgloss.Color(HexAccent))
 	// Prompt titles are bold default-fg (spec 2.3: bold for names and
 	// labels); amber stays on the attention box border, not the words.
 	promptStyle = lipgloss.NewStyle().Bold(true)
@@ -332,7 +343,7 @@ func plainOr(unicode, ascii string) string {
 // Styles derived from the tokens; populated by refreshTokens.
 var (
 	accentStyle, accent2Style, dimStyle, subtleStyle, infoStyle, warnStyle,
-	dangerStyle, okStyle, resultStyle, promptStyle,
+	dangerStyle, okStyle, resultStyle, promptStyle, selectedStyle,
 	steerStyle, queuedStyle, toolNameStyle, boldStyle,
 	promptBoxStyle, paletteStyle, helpStyle, composerStyle lipgloss.Style
 )

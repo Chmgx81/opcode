@@ -69,7 +69,7 @@ func TestRenderDiffBodyColors(t *testing.T) {
 	}{
 		{5, "38;2;248;113;113", "deleted line danger"}, // #f87171
 		{6, "38;2;73;222;128", "added line success"},   // #4ade80 (lipgloss gamut-shifts 74->73)
-		{4, "38;2;96;165;250", "hunk header info"},     // #60a5fa
+		{4, "38;2;125;211;252", "hunk header info"},    // #7dd3fc
 		{0, "1m", "file header bold"},
 	}
 	for _, c := range checks {

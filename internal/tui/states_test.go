@@ -7,6 +7,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
 	"github.com/Chmgx81/opcode/internal/config"
 	"github.com/Chmgx81/opcode/internal/tools"
 )
@@ -370,5 +373,63 @@ func TestReasoningCountsCharacters(t *testing.T) {
 	got := stripANSI(strings.Join(m.renderEntry(&m.entries[0]), "\n"))
 	if !strings.Contains(got, "10 chars") {
 		t.Errorf("a 10-character answer reported as: %q", got)
+	}
+}
+
+// TestMenuRowSelectionBand: every list — the pickers, the command
+// palette, the @-mention menu — draws its items through menuRow, so
+// selection is one language everywhere. The band is emphasis; the
+// caret is the signal, so it must survive without color. The detail
+// column reads as a column, and no width ever produces a row wider
+// than the box it renders into — the wrap that became three rows and
+// broke the frame's row budget once already.
+func TestMenuRowSelectionBand(t *testing.T) {
+	restoreTheme(t)
+	defer func(p termenv.Profile) { lipgloss.SetColorProfile(p) }(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	sel := menuRow(true, "anthropic", "enter to browse models", 64)
+	if !strings.Contains(sel, GlyphCaret) {
+		t.Errorf("the selected row lost its caret: %q", stripANSI(sel))
+	}
+	if !strings.Contains(sel, "48;2;167;139;250") { // band: accent bg #a78bfa
+		t.Errorf("the selected row has no accent band: %q", sel)
+	}
+	if !strings.Contains(sel, "38;2;13;17;23") { // on-accent fg #0d1117
+		t.Errorf("the band's text is not on-accent: %q", sel)
+	}
+
+	un := menuRow(false, "groq", "no key", 64)
+	if strings.Contains(un, "48;2;") {
+		t.Errorf("an unselected row painted a band: %q", un)
+	}
+	if strings.Contains(un, GlyphCaret) {
+		t.Errorf("an unselected row stole the caret: %q", stripANSI(un))
+	}
+
+	// The details line up: the label gutter is fixed, so two rows of
+	// different label lengths start their detail at the same column.
+	a := stripANSI(menuRow(false, "ab", "detail", 64))
+	b := stripANSI(menuRow(false, "longerlabel", "detail", 64))
+	if strings.Index(a, "detail") != strings.Index(b, "detail") {
+		t.Errorf("the detail column is ragged: %q vs %q", a, b)
+	}
+
+	// No width makes a row wider than the box's inner width — a wider
+	// row is wrapped by the box and a wrapped row is a row the frame's
+	// budget never counted.
+	for w := 8; w <= 120; w++ {
+		for _, selected := range []bool{true, false} {
+			for _, tc := range []struct{ label, detail string }{
+				{"pre]0;pwnedapostend", "no key — /login groq"},
+				{"x", ""},
+			} {
+				r := menuRow(selected, tc.label, tc.detail, w)
+				if n := lipgloss.Width(r); n > maxInt(w-4, 2) {
+					t.Errorf("w=%d selected=%v: menu row is %d wide: %q",
+						w, selected, n, stripANSI(r))
+				}
+			}
+		}
 	}
 }

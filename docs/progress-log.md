@@ -9,7 +9,7 @@
 
 # Build log (archived)
 
-This is the full chronological build log, Phase 0 through Phase 45,
+This is the full chronological build log, Phase 0 through Phase 46,
 moved here verbatim from `PROGRESS.md`. It is the record of what each
 phase set out to do, what was verified live, and what was left
 unverified or deliberately deferred.
@@ -3220,3 +3220,37 @@ locks the box, its plain posture, and the narrow bare fallback;
 `TestFrameFitsEveryStateAtEveryWidth` holds the 8–120 column sweep
 with the box in every state, including the two-line-draft case that
 the honest accounting fixed.
+
+# Phase 46 — the palette and the lists (status: complete, verified)
+
+Phase 46 ([specs/phase46-palette-and-lists.md](specs/phase46-palette-and-lists.md)):
+the redesign's missing halves — the colors and the list surfaces.
+
+- **A violet identity.** The teal default was Tailwind's, not
+  opcode's. `dark` is now `#a78bfa` on violet-tinted surfaces
+  (`#2a2732` / `#1f1c26`) with a sky info (`#7dd3fc`); `light` is
+  `#7c3aed` on `#ede9f5` / `#f6f4fa`. The semantic tokens (success,
+  danger, warning, muted, subtle, border) are unchanged — they are
+  contrast-locked meaning. The old teal default became a named
+  theme, `teal` (the courtesy `green` got), so no choice is lost.
+- **One selection language for every list.** The pickers, the
+  command palette, and the @-mention menu draw their rows through
+  one composer, `menuRow`: the selected row is an accent band
+  (the caret still marks it — the band is emphasis, never the only
+  signal) and the label column is a fixed gutter, so the details
+  align into a column instead of a ragged second word. A new
+  `HexOnAccent` token holds the band's text, per theme.
+- **Both bars held.** Every new value was checked before landing
+  and is held permanently: text tokens 4.5:1 against the floor and
+  the code panel, border 3:1, on-accent 4.5:1 against the band.
+  `TestThemeContrastIsLegible` grew the teal floor and the band
+  bar; `TestMenuRowSelectionBand` locks the band, the caret, the
+  aligned column, and an 8–120 column width sweep — the sweep that
+  caught the first version's wrapped rows (a fixed gutter at eight
+  columns made one item three rows and broke the frame budget; the
+  row now drops the detail below the width where the gutter fits).
+
+Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
+`go test -race -count=1 ./...` suite pass; hardcoded SGR assertions
+in `tui_test.go` and `diff_test.go` moved to the new hex values;
+README badges carry the new accent.
