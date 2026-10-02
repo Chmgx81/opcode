@@ -3543,3 +3543,31 @@ directory-style pages with every internal link carrying the
 /opcode/ base, the served-URL link checker passes over `dist/`, and
 no page requests a third-party font or CDN. The deploy workflow
 does `npm ci && npm run build` on Node 22 and publishes `dist/`.
+
+# The site, v2 — the dark-tech redesign (2026-10-02)
+
+Rebuilt to a deliberate design spec: deep #000 floor, Inter with
+the display treatment for headlines (weight 500, tracking down to
+-3.36px), Geist Mono for every piece of data, square brutalist
+buttons against fully-rounded status chips, 1px ring cards on
+#0a0a0a, one accent blue (#52a8ff) and one success green (#62c073).
+The violet identity was retired on the site — the spec fixed the
+palette, and the product's own accent lives in the terminal, not
+the marketing.
+
+Structure: a 100svh hero over radial glow and grid with the
+install line and a first-run terminal under the scrim; a
+border-connected metrics grid (15 providers · 579 tests · 5
+platforms · 0 telemetry — all real); the "anatomy of a turn" event
+stream — trace chips, a span sidebar, and START/DURATION as
+timeline bars, the shape of a real opcode turn; a three-card bento
+(plan-mode status rows, subagent activity bars, a diff with
+green/blue side borders); alternating zigzag deep-dives (the
+permission dialog with No preselected — the honest default —
+sessions, headless); and a dense 16-tile grid of the rest, each
+icon drawn in the logo's square-cap line style.
+
+Inter Display is not on fontsource (404); Inter Variable carries
+the display treatment instead. Verified: build clean, all internal
+links resolve at served URLs, fonts self-hosted, no third-party
+requests.

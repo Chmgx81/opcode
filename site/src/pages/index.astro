@@ -2,16 +2,31 @@
 import Base from '../layouts/Base.astro';
 import Terminal from '../components/Terminal.astro';
 const base = import.meta.env.BASE_URL;
+const arrow = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 10L10 2M10 2H4M10 2V8" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"/></svg>`;
 
-const modes = [
-  { glyph: '\u23F8', name: 'plan', desc: 'Read-only tools; every write, command, or fetch proposes a plan you approve.', tone: 'text-accent2' },
-  { glyph: '\u203A', name: 'build', badge: 'default', desc: 'Sandboxed commands and in-tree writes run free; anything else asks.', tone: 'text-accent' },
-  { glyph: '\u23B5\u23B5', name: 'full-auto', desc: 'Everything proceeds without asking — the sandbox still confines writes to the project.', tone: 'text-warn' },
+// One illustrative turn, rendered in the span table below — the same
+// shape opcode reports live: tool spans with real durations.
+const turn = [
+  { span: 'read_file', file: 'internal/tui/view.go', start: 0.0, dur: 0.2, left: 0, width: 2 },
+  { span: 'edit_file', file: 'internal/tui/view.go', start: 0.3, dur: 1.1, left: 2, width: 8 },
+  { span: 'bash', file: 'go test ./internal/tui/', start: 1.6, dur: 4.2, left: 11, width: 30 },
+  { span: 'model', file: 'streaming the answer', start: 6.1, dur: 8.0, left: 43, width: 57, active: true },
 ];
-const cards = [
-  { title: 'A permission gate that shows its work', body: 'The literal command on the dialog, No never preselected, and “don’t ask again” grants never wider than what the dialog showed.' },
-  { title: 'Sessions that survive', body: 'The session file rewrites atomically at every turn boundary — a crash loses the turn in flight, never the conversation. Resume with --continue or /sessions.' },
-  { title: 'Live tasks & context readout', body: 'A todo panel tracks multi-step work, and the working line reads the context window when it is configured — context 62% before compaction ever surprises you.' },
+const bento = [
+  { tag: 'PLAN MODE', title: 'Research first, act on approval' },
+  { tag: 'SUBAGENTS', title: 'A second agent, a bounded scope' },
+  { tag: 'THE DIFF', title: 'See the change before it lands' },
+];
+const metrics = [
+  { value: '15', unit: '', label: 'providers built in — switched live' },
+  { value: '579', unit: '', label: 'tests, green under -race' },
+  { value: '5', unit: '', label: 'platforms per release' },
+  { value: '0', unit: '', label: 'telemetry, accounts, subscriptions' },
+];
+const modes = [
+  { chip: 'plan', dot: 'pass', desc: 'Read-only tools; every write proposes a plan you approve.' },
+  { chip: 'build', dot: 'active', desc: 'Sandboxed commands and in-tree writes run free; anything else asks.' },
+  { chip: 'full-auto', dot: 'fail', desc: 'Everything proceeds without asking — the sandbox still confines writes.' },
 ];
 const faqs = [
   { q: 'Do I need an account or a subscription?', a: 'No. opcode talks to your provider with your key. There is nothing to sign up for and nothing to pay us — you pay your provider, as always.' },
@@ -21,157 +36,299 @@ const faqs = [
   { q: 'Can I use it in CI or scripts?', a: 'Yes — opcode -p "prompt" runs one headless turn; --json emits one JSON event per line. Use full-auto for unattended runs; permissions fail closed with nobody to ask.' },
   { q: 'Where do my sessions and keys live?', a: '~/.opcode/ — sessions in sessions/, keys in auth.json (0600), config in config.json. Nothing is written to a project directory except the work you asked for.' },
 ];
+
+// The tile grid: small line icons in the logo's square-cap style.
+const ico = (d: string, color = '#52a8ff') =>
+  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="${d}" stroke="${color}" stroke-width="1.5" stroke-linecap="square"/></svg>`;
+const W = '#ededed';
+const tiles = [
+  { label: 'Kernel sandbox', icon: ico('M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-3z', W) },
+  { label: 'Live model lists', icon: ico('M4 6h16M4 12h16M4 18h10') },
+  { label: 'Syntax-highlighted diffs', icon: ico('M4 7h16M9 7v10M14 12h6M4 17h6', W) },
+  { label: 'Todo panel', icon: ico('M4 6h2v2H4zM9 7h11M4 15h2v2H4zM9 16h11', W) },
+  { label: '@ file mentions', icon: ico('M9 9a3 3 0 1 1 6 0c0 3-3 3-3 6M12 19v.5', W) },
+  { label: 'Clipboard images', icon: ico('M7 4h10v16H7zM10 8h4M10 12h4M10 16h2', W) },
+  { label: 'Shell mode (!)', icon: ico('M12 5v9M12 18v1', W) },
+  { label: 'Markdown streaming', icon: ico('M4 18V8l4 4 4-8 4 12 4-6v0', W) },
+  { label: 'Transcript pager', icon: ico('M6 4h12v16H6zM9 8h6M9 12h6M9 16h3', W) },
+  { label: 'Compaction', icon: ico('M5 5h14M9 12h6M5 19h14', W) },
+  { label: 'Prompt history', icon: ico('M4 9a8 8 0 0 1 14 3M20 15a8 8 0 0 1-14-3M18 12h2v-3M4 12v3h2', W) },
+  { label: 'Four themes', icon: ico('M12 3a9 9 0 0 0 0 18c1 0 2-1 2-2s-1-2-1-3 1-2 2-2h3a3 3 0 0 0 3-3 9 9 0 0 0-9-8z') },
+  { label: 'Screen-reader posture', icon: ico('M12 3a9 9 0 1 0 9 9M12 3v9l6 6', W) },
+  { label: 'MCP servers', icon: ico('M9 3v6M15 3v6M7 9h10v4a5 5 0 0 1-10 0zM12 18v3', W) },
+  { label: 'Skills system', icon: ico('M6 3h12l-2 7 2 11H6L8 10 6 3z', W) },
+  { label: '/doctor', icon: ico('M12 3v2M5 7h14v10H5zM9 11h6M12 21v0', W) },
+];
 ---
 <Base title="opcode — a terminal coding agent, in one Go binary"
   description="opcode is a terminal coding agent: 15 providers, a kernel sandbox, plan mode, subagents, per-turn session autosave — in one Go binary, under your permission system.">
 
-<section class="relative">
-  <div class="hero-backdrop"></div>
-  <div class="relative mx-auto max-w-6xl px-6 pt-24 pb-20 sm:pt-32">
-    <p data-reveal class="inline-flex items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3.5 py-1.5 text-xs font-semibold text-accent tracking-wide uppercase">
-      Open source · MIT · one Go binary
-    </p>
-    <h1 data-reveal class="mt-7 text-[2.7rem] sm:text-6xl font-extrabold tracking-tight leading-[1.05] max-w-3xl">
-      A terminal coding agent,<br>in <span class="gradient-text">one Go binary</span>.
+<!-- HERO: full-height frame, glow + grid, scrim, square CTAs -->
+<section class="relative min-h-[100svh] flex flex-col">
+  <div class="hero-glow"></div>
+  <div class="scrim absolute inset-x-0 bottom-0 h-[65%] pointer-events-none"></div>
+  <div class="relative mx-auto w-full max-w-6xl px-[56px] max-[640px]:px-6 pt-[38vh] max-[640px]:pt-[24vh]">
+    <h1 data-reveal class="headline-fluid max-w-[752px]">
+      A terminal coding agent,<br>in one Go binary.
     </h1>
-    <p data-reveal class="mt-6 text-lg text-mut max-w-2xl leading-relaxed">
-      Reads and writes files, runs commands, streams markdown — under your
-      permission system, not around it. Any provider, your key,
+    <p data-reveal class="mt-6 text-[16px] text-[#e7e7e7] max-w-xl">
+      Reads and writes files, runs commands, streams markdown — under
+      your permission system, not around it. Any provider, your key,
       no subscription.
     </p>
-
-    <div id="install" data-reveal class="mt-10 flex flex-col sm:flex-row gap-4 sm:items-center">
-      <div class="group flex-1 max-w-2xl rounded-xl border border-line bg-panel focus-within:border-accent/50 transition-colors">
-        <code class="flex items-center gap-3 px-5 py-4 font-mono text-[13px] sm:text-sm text-fg overflow-x-auto">
-          <span class="text-sub select-none">$</span>
-          curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash
-        </code>
-      </div>
-      <a href="https://github.com/Chmgx81/opcode/releases"
-        class="rounded-xl px-6 py-4 text-center font-semibold text-bg bg-gradient-to-r from-[#b4a7fa] to-accent hover:shadow-glow transition-shadow">
-        Get the latest release
+    <div id="install" data-reveal class="mt-9 flex flex-col sm:flex-row gap-3 sm:items-center">
+      <a href="https://github.com/Chmgx81/opcode/releases" class="btn-square text-[16px]">
+        Get the latest release <Fragment set:html={arrow} />
       </a>
+      <code class="hidden lg:block font-mono text-[13px] text-[#999999] py-3">
+        curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash
+      </code>
     </div>
-    <p data-reveal class="mt-4 text-sm text-sub">
-      or <code class="font-mono text-mut">go install github.com/Chmgx81/opcode/cmd/opcode@latest</code> · the installer verifies a sha256 before it installs anything
-    </p>
-
-    <div data-reveal class="mt-16 max-w-3xl mx-auto">
+  </div>
+  <div class="relative mt-auto pt-16 pb-0">
+    <div class="mx-auto max-w-3xl px-6">
       <Terminal title="opcode — first run">
-        <div class="text-sub">welcome to opcode — setup is three steps, all in this window:</div>
-        <div><span class="t-mut">  1. pick a provider below — each row says whether it needs a key</span></div>
-        <div><span class="t-mut">  2. paste its API key when asked — masked, stored 0600 in auth.json</span></div>
-        <div><span class="t-mut">  3. pick a model from the live list — the choice is remembered</span></div>
-        <div class="mt-3"><span class="t-err">&#10007;</span> no api key for mistral — <span class="t-mut">/login mistral stores one</span></div>
-        <div><span class="t-acc">&#10095;</span> anthropic <span class="t-mut">enter to browse models</span></div>
-        <div><span class="t-mut">  groq      no key — /login groq</span></div>
-        <div><span class="t-mut">  ollama    enter to browse models</span></div>
+        <div class="t-dim">welcome to opcode — setup is three steps, all in this window:</div>
+        <div><span class="t-sub">  1. pick a provider below — each row says whether it needs a key</span></div>
+        <div><span class="t-sub">  2. paste its API key when asked — masked, stored 0600 in auth.json</span></div>
+        <div><span class="t-sub">  3. pick a model from the live list — the choice is remembered</span></div>
+        <div class="mt-3"><span class="t-acc">&#10095;</span> anthropic <span class="t-sub">enter to browse models</span></div>
+        <div><span class="t-sub">  groq      no key — /login groq</span></div>
+        <div><span class="t-sub">  ollama    enter to browse models</span></div>
       </Terminal>
     </div>
   </div>
 </section>
 
-<section class="mx-auto max-w-6xl px-6 py-20">
-  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Why opcode</p>
-  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Safe by default. Provider-agnostic. Honest about it.</h2>
-  <div class="mt-10 grid gap-5 sm:grid-cols-3">
-    <div data-reveal class="card p-6">
-      <h3 class="font-semibold text-lg">Sandboxed by default</h3>
-      <p class="mt-2 text-sm text-mut leading-relaxed">Shell commands run in a kernel sandbox — Landlock confines the filesystem, seccomp blocks network sockets. Writes outside the project ask first; reads of your credentials never run.</p>
-    </div>
-    <div data-reveal class="card p-6">
-      <h3 class="font-semibold text-lg">Any provider, your key</h3>
-      <p class="mt-2 text-sm text-mut leading-relaxed">Fifteen providers built in — OpenRouter, Anthropic, OpenAI, Mistral, Google, Groq, Ollama, and more — switched live at runtime. Keys are stored 0600 and never leave your machine.</p>
-    </div>
-    <div data-reveal class="card p-6">
-      <h3 class="font-semibold text-lg">One binary, no account</h3>
-      <p class="mt-2 text-sm text-mut leading-relaxed">No runtime, no plugin stack, no subscription, no telemetry. One optional update check you can turn off with one environment variable. Open source, MIT.</p>
-    </div>
-  </div>
-</section>
-
-<section class="mx-auto max-w-6xl px-6 py-20">
-  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Features</p>
-  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Plan the work, delegate it, watch it land.</h2>
-
-  <div class="mt-12 grid gap-12 lg:grid-cols-2 lg:gap-10 items-center">
-    <div data-reveal>
-      <h3 class="text-2xl font-bold">Plan mode</h3>
-      <p class="mt-3 text-mut leading-relaxed">Research first, act on approval. In <code class="text-accent2">plan</code> mode the agent works read-only; when a change is warranted it presents a plan and waits. One keypress switches the session into acting — <code class="text-accent2">y</code> to implement with every action still asking, <code class="text-accent2">a</code> to implement with auto-accept. The mode is visible on the footer at all times, colored by what it means.</p>
-    </div>
-    <div data-reveal>
-      <Terminal title="opcode — plan approval">
-        <div><span class="t-acc">&#9673;</span> plan</div>
-        <div><span class="t-mut">  &#9744; Explore the layout of internal/tui</span></div>
-        <div><span class="t-mut">  &#9678; Draft the picker extraction</span></div>
-        <div><span class="t-mut">  &#9744; Update the call sites</span></div>
-        <div class="mt-2"><span class="t-dim">&#9651; thought for 2.1s · 214 chars (ctrl+r to expand)</span></div>
-        <div class="mt-3 t-bold">proceed with this plan?</div>
-        <div><span class="t-mut">y implement (actions will ask) · a implement with</span></div>
-        <div><span class="t-mut">auto-accept · n/Esc keep planning</span></div>
-      </Terminal>
-    </div>
-  </div>
-
-  <div class="mt-16 grid gap-12 lg:grid-cols-2 lg:gap-10 items-center">
-    <div data-reveal class="lg:order-2">
-      <h3 class="text-2xl font-bold">Subagents</h3>
-      <p class="mt-3 text-mut leading-relaxed">Delegate a focused task — a bounded scope, its own rounds, its own budget — to a second agent running the same tools under the same permission gate. Progress renders as labeled lines in the transcript; the result comes back as one block. Subagents are bounded by round caps and a watchdog, inherit cancellation, and cannot recurse.</p>
-    </div>
-    <div data-reveal class="lg:order-1">
-      <Terminal title="opcode — subagent">
-        <div><span class="t-dim">[review-diff] &#9673; reading the changed files…</span></div>
-        <div><span class="t-dim">[review-diff] &#9881; internal/tui/view.go — 4 findings</span></div>
-        <div><span class="t-dim">[review-diff] &#10003; review complete (2m 6s)</span></div>
-        <div class="mt-3"><span class="t-ok">&#10003;</span> The diff is consistent and safe to merge:</div>
-        <div><span class="t-mut">three extraction sites updated, one signature renamed.</span></div>
-      </Terminal>
-    </div>
-  </div>
-
-  <div class="mt-16 grid gap-5 sm:grid-cols-3">
-    {cards.map((c) => (
-      <div data-reveal class="card p-6">
-        <h3 class="font-semibold">{c.title}</h3>
-        <p class="mt-2 text-sm text-mut leading-relaxed">{c.body}</p>
+<!-- METRICS: 4-column border-connected grid -->
+<section class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-20">
+  <div data-reveal class="grid grid-cols-2 md:grid-cols-4 divide-x divide-white/[0.145] border border-white/[0.145] text-center">
+    {metrics.map((m, i) => (
+      <div class={`p-7 max-md:p-5 ${i > 1 ? 'max-md:border-t max-md:border-white/[0.145]' : ''}`}>
+        <p class="metric">{m.value}<span class="unit">{m.unit}</span></p>
+        <p class="mt-4 font-mono text-[12px] text-[#999999] leading-relaxed">{m.label}</p>
       </div>
     ))}
   </div>
 </section>
 
-<section class="mx-auto max-w-6xl px-6 py-20">
-  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Three modes</p>
-  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Cycle it with Tab, or pick it.</h2>
-  <p data-reveal class="mt-4 text-mut max-w-2xl">The mode scopes every keystroke. It has its own glyph and color on the footer, and <code class="text-accent2">/mode</code> opens a picker that says what each posture runs without asking.</p>
-  <div class="mt-10 grid gap-5 sm:grid-cols-3">
+<!-- EVENT STREAM: the anatomy of a turn -->
+<section id="turn" class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">Event stream</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">The anatomy of a turn.</h2>
+  <p data-reveal class="mt-4 text-[16px] text-[#999999] max-w-2xl">Every tool call is a span you can read — what ran, when it started,
+  how long it took. Sandbox denials name themselves; interrupts keep the evidence.</p>
+
+  <div data-reveal class="card mt-10 overflow-hidden">
+    <div class="flex flex-wrap items-center gap-2.5 px-5 py-4 border-b border-white/[0.145]">
+      <span class="font-mono text-[13px] text-[#e7e7e7]">trace <span class="text-[#999999]">turn-8f3a</span></span>
+      <span class="v-chip pass"><span class="dot"></span>complete</span>
+      <span class="v-chip"><span class="dot"></span>14.2s</span>
+      <span class="v-chip active"><span class="dot"></span>sandbox on</span>
+    </div>
+    <div class="grid md:grid-cols-[240px_1fr]">
+      <div class="border-b md:border-b-0 md:border-r border-white/[0.145] font-mono text-[13px] p-4 flex md:flex-col gap-3 overflow-x-auto">
+        {turn.map((t) => (
+          <span class="flex items-center gap-2 whitespace-nowrap">
+            <span class={`w-1.5 h-1.5 rounded-full ${t.active ? 'bg-[#52a8ff]' : 'bg-[#62c073]'}`}></span>
+            <span class="text-[#999999]">{t.span}</span>
+          </span>
+        ))}
+      </div>
+      <table class="dtable w-full">
+        <thead>
+          <tr class="text-left">
+            <th class="px-5 py-3">span</th>
+            <th class="px-5 py-3 hidden sm:table-cell">start</th>
+            <th class="px-5 py-3">duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {turn.map((t) => (
+            <tr>
+              <td class="px-5 py-3.5">
+                <span class="text-[#e7e7e7]">{t.span}</span>
+                <span class="text-[#666]"> {t.file}</span>
+              </td>
+              <td class="px-5 py-3.5 hidden sm:table-cell">{t.start.toFixed(1)}s</td>
+              <td class="px-5 py-3.5 w-[45%]">
+                <div class="flex items-center gap-3">
+                  <div class="tl-track"><div class={`tl-bar ${t.active ? 'active' : ''}`} style={`left:${t.left}%;width:${t.width}%`}></div></div>
+                  <span class="whitespace-nowrap">{t.dur.toFixed(1)}s</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- BENTO -->
+<section id="features" class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">Features</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">Plan the work. Delegate it. Watch it land.</h2>
+
+  <div class="mt-10 grid gap-4 md:grid-cols-3">
+    <div data-reveal class="card p-6 flex flex-col">
+      <span class="v-chip active"><span class="dot"></span>{bento[0].tag}</span>
+      <h3 class="mt-4 text-[19px] font-medium text-white">{bento[0].title}</h3>
+      <p class="mt-2 text-sm text-[#999999] leading-relaxed">The agent works read-only until a change is warranted; then it presents a plan and waits. <span class="text-[#e7e7e7] font-mono text-[13px]">y</span> implements with every action still asking, <span class="text-[#e7e7e7] font-mono text-[13px]">a</span> with auto-accept.</p>
+      <div class="mt-6 pt-4 border-t border-white/[0.145] flex flex-col gap-2.5 font-mono text-[12px]">
+        <div class="flex items-center justify-between gap-3"><span class="text-[#999999] truncate">explore internal/tui</span><span class="v-chip pass"><span class="dot"></span>done</span></div>
+        <div class="flex items-center justify-between gap-3"><span class="text-[#999999] truncate">draft the picker extraction</span><span class="v-chip active"><span class="dot"></span>active</span></div>
+        <div class="flex items-center justify-between gap-3"><span class="text-[#999999] truncate">update the call sites</span><span class="v-chip"><span class="dot"></span>pending</span></div>
+      </div>
+    </div>
+
+    <div data-reveal class="card p-6 flex flex-col">
+      <span class="v-chip pass"><span class="dot"></span>{bento[1].tag}</span>
+      <h3 class="mt-4 text-[19px] font-medium text-white">{bento[1].title}</h3>
+      <p class="mt-2 text-sm text-[#999999] leading-relaxed">A focused task runs in a second agent under the same permission gate — bounded by round caps and a watchdog, inheriting cancellation, unable to recurse.</p>
+      <div class="mt-6 pt-4 border-t border-white/[0.145] flex flex-col gap-3 font-mono text-[12px]">
+        <div class="flex items-center gap-3"><span class="w-20 text-[#999999]">reviewer</span><div class="h-1.5 bg-[#52a8ff]" style="width:72%"></div><span class="text-[#666] ml-auto">2m06s</span></div>
+        <div class="flex items-center gap-3"><span class="w-20 text-[#999999]">tests</span><div class="h-1.5 bg-[#62c073]" style="width:38%"></div><span class="text-[#666] ml-auto">48s</span></div>
+        <div class="flex items-center gap-3"><span class="w-20 text-[#999999]">docs</span><div class="h-1.5 bg-[#ededed]" style="width:14%"></div><span class="text-[#666] ml-auto">12s</span></div>
+      </div>
+    </div>
+
+    <div data-reveal class="card p-6 flex flex-col">
+      <span class="v-chip warn"><span class="dot"></span>{bento[2].tag}</span>
+      <h3 class="mt-4 text-[19px] font-medium text-white">{bento[2].title}</h3>
+      <p class="mt-2 text-sm text-[#999999] leading-relaxed">Writes render as syntax-highlighted diffs before they are part of the tree. Expand any result with <span class="text-[#e7e7e7] font-mono text-[13px]">ctrl+r</span>; the transcript pager keeps everything readable.</p>
+      <div class="mt-6 pt-4 border-t border-white/[0.145] font-mono text-[12px] leading-[2]">
+        <div class="diff-add pl-3 text-[#62c073]">+ func menuRow(selected bool, label, detail string, w int)</div>
+        <div class="pl-3 text-[#666]">  const gutter = 14</div>
+        <div class="diff-mod pl-3 text-[#52a8ff]">~ return selectedStyle.Width(inner).Render(row)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-4 grid gap-4 sm:grid-cols-3">
+    {[
+      { t: 'A permission gate that shows its work', d: 'The literal command on the dialog, No never preselected, grants never wider than what the dialog showed.' },
+      { t: 'Sessions that survive', d: 'The session file rewrites atomically at every turn boundary — a crash loses the turn in flight, never the conversation.' },
+      { t: 'Live tasks & context readout', d: 'A todo panel tracks multi-step work; the working line reads the window when configured — context 62%.' },
+    ].map((c) => (
+      <div data-reveal class="card p-6">
+        <h3 class="text-[15px] font-medium text-white">{c.t}</h3>
+        <p class="mt-2 text-sm text-[#999999] leading-relaxed">{c.d}</p>
+      </div>
+    ))}
+  </div>
+</section>
+
+<!-- ZIGZAG: deep dives, text one side, the real terminal the other,
+     swapping each row -->
+<section class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">In practice</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">Nothing runs on faith.</h2>
+
+  <div class="mt-14 flex flex-col gap-16 md:gap-20">
+    <div class="grid gap-8 lg:grid-cols-2 lg:gap-14 items-center">
+      <div data-reveal>
+        <span class="v-chip active"><span class="dot"></span>permission gate</span>
+        <h3 class="mt-4 text-[26px] font-medium text-white tracking-[-0.03em]">The literal command, and No preselected.</h3>
+        <p class="mt-3 text-[15px] text-[#999999] leading-relaxed max-w-md">An action outside the mode's bounds opens a dialog that shows exactly what will run. The dangerous answer is never the default, and "don't ask again" grants are canonicalized — never wider than what the dialog showed.</p>
+      </div>
+      <div data-reveal>
+        <Terminal title="opcode — approval">
+          <div><span class="t-bold">Bash command</span> <span class="t-sub">· Runs a command</span></div>
+          <div class="t-body mt-2">npm init -y</div>
+          <div class="t-sub">opcode needs your approval to run this.</div>
+          <div class="mt-2">  1. Yes</div>
+          <div><span class="t-sub">  2. Yes, and don't ask again for: </span><span class="t-body">npm init:*</span></div>
+          <div><span class="t-acc">❯ 3. No</span></div>
+          <div class="t-dim mt-2">1-3 or arrows to choose · enter selects · esc</div>
+        </Terminal>
+      </div>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2 lg:gap-14 items-center">
+      <div data-reveal class="lg:order-2">
+        <span class="v-chip pass"><span class="dot"></span>sessions</span>
+        <h3 class="mt-4 text-[26px] font-medium text-white tracking-[-0.03em]">A crash loses one turn, not the conversation.</h3>
+        <p class="mt-3 text-[15px] text-[#999999] leading-relaxed max-w-md">The session file rewrites atomically at every turn boundary. Resume the newest with <span class="font-mono text-[13px] text-[#e7e7e7]">--continue</span> — a damaged newest file is skipped and named — or browse them all with <span class="font-mono text-[13px] text-[#e7e7e7]">/sessions</span>.</p>
+      </div>
+      <div data-reveal class="lg:order-1">
+        <Terminal title="opcode — sessions">
+          <div><span class="t-acc">◈</span> <span class="t-body">opcode — session saved · resume it with /sessions</span></div>
+          <div class="mt-2"><span class="t-dim">$</span> <span class="t-body">opcode --continue</span></div>
+          <div><span class="t-ok">&#10003;</span> <span class="t-sub">resumed session 20260102-150405 (42 messages)</span></div>
+          <div class="mt-2"><span class="t-sub">20260101-182211  add rate limiting to the login route</span></div>
+          <div><span class="t-sub">20260101-111040  the picker extraction, phase 46</span></div>
+        </Terminal>
+      </div>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2 lg:gap-14 items-center">
+      <div data-reveal>
+        <span class="v-chip warn"><span class="dot"></span>headless</span>
+        <h3 class="mt-4 text-[26px] font-medium text-white tracking-[-0.03em]">One flag for CI and scripts.</h3>
+        <p class="mt-3 text-[15px] text-[#999999] leading-relaxed max-w-md"><span class="font-mono text-[13px] text-[#e7e7e7]">-p</span> runs one turn with no UI; <span class="font-mono text-[13px] text-[#e7e7e7]">--json</span> emits one event per line for jq. Permissions fail closed with nobody to ask — full-auto is for runs you trust and the sandbox confines.</p>
+      </div>
+      <div data-reveal>
+        <Terminal title="opcode — headless">
+          <div><span class="t-dim">$</span> <span class="t-body">opcode -p --json "list the failing packages" | jq -r '.kind'</span></div>
+          <div class="mt-2"><span class="t-sub">tool_result</span></div>
+          <div><span class="t-sub">usage</span></div>
+          <div><span class="t-ok">turn_complete</span></div>
+        </Terminal>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TILES: everything else, at a glance -->
+<section class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">And the rest</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">Small things, deliberately built.</h2>
+  <div class="mt-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+    {tiles.map((t) => (
+      <div data-reveal class="card p-4 flex items-center gap-3">
+        <Fragment set:html={t.icon} />
+        <span class="text-[13px] text-[#e7e7e7] leading-tight">{t.label}</span>
+      </div>
+    ))}
+  </div>
+</section>
+
+<!-- MODES -->
+<section class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">Three modes</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">Cycle it with Tab, or pick it.</h2>
+  <div class="mt-10 grid gap-4 md:grid-cols-3">
     {modes.map((m) => (
       <div data-reveal class="card p-6">
-        <p class={`font-mono text-2xl ${m.tone}`}>{m.glyph} {m.name}{m.badge && <span class="ml-2 align-middle text-[10px] font-sans font-semibold uppercase tracking-wide text-sub border border-line rounded-full px-2 py-0.5">{m.badge}</span>}</p>
-        <p class="mt-3 text-sm text-mut leading-relaxed">{m.desc}</p>
+        <span class={`v-chip ${m.dot} font-mono`}><span class="dot"></span>{m.chip}</span>
+        <p class="mt-4 text-sm text-[#999999] leading-relaxed">{m.desc}</p>
       </div>
     ))}
   </div>
 </section>
 
-<section class="mx-auto max-w-6xl px-6 py-20">
-  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Providers</p>
-  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Fifteen built in, custom endpoints welcome.</h2>
-  <div data-reveal class="mt-8 max-w-3xl card overflow-hidden">
-    <table class="w-full text-sm">
+<!-- PROVIDERS -->
+<section class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">Providers</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">Fifteen built in, custom endpoints welcome.</h2>
+  <div data-reveal class="card mt-10 overflow-hidden">
+    <table class="dtable w-full">
       <tbody>
-        <tr class="border-b border-line"><td class="px-5 py-3 font-mono text-accent2">openrouter <span class="text-sub">(default)</span></td><td class="px-5 py-3 text-mut">openrouter.ai/api/v1</td><td class="px-5 py-3 font-mono text-mut">OPENROUTER_API_KEY</td></tr>
-        <tr class="border-b border-line"><td class="px-5 py-3 font-mono text-accent2">anthropic</td><td class="px-5 py-3 text-mut">Messages API, native client</td><td class="px-5 py-3 font-mono text-mut">ANTHROPIC_API_KEY</td></tr>
-        <tr class="border-b border-line"><td class="px-5 py-3 font-mono text-accent2">mistral · google · groq · …</td><td class="px-5 py-3 text-mut">OpenAI-compatible</td><td class="px-5 py-3 font-mono text-mut">&lt;NAME&gt;_API_KEY</td></tr>
-        <tr><td class="px-5 py-3 font-mono text-accent2">ollama</td><td class="px-5 py-3 text-mut">localhost:11434</td><td class="px-5 py-3 font-mono text-mut">none</td></tr>
+        <tr><td class="!text-[#52a8ff] border-t-0">openrouter <span class="text-[#666]">(default)</span></td><td class="border-t-0">openrouter.ai/api/v1</td><td class="border-t-0 hidden sm:table-cell">OPENROUTER_API_KEY</td></tr>
+        <tr><td class="!text-[#52a8ff]">anthropic</td><td>Messages API, native client</td><td class="hidden sm:table-cell">ANTHROPIC_API_KEY</td></tr>
+        <tr><td class="!text-[#52a8ff]">mistral · google · groq · …</td><td>OpenAI-compatible</td><td class="hidden sm:table-cell">&lt;NAME&gt;_API_KEY</td></tr>
+        <tr><td class="!text-[#52a8ff]">ollama</td><td>localhost:11434</td><td class="hidden sm:table-cell">none</td></tr>
       </tbody>
     </table>
   </div>
-  <p data-reveal class="mt-5 text-sm text-mut">Keys resolve from <code class="text-accent2">auth.json</code> (with <code class="text-accent2">!command</code> support for secret managers), then the environment. Credentials never load from a project directory. <a class="text-accent hover:underline" href={`${base}docs/providers/`}>Full table →</a></p>
+  <p data-reveal class="mt-5 text-sm font-mono text-[#999999]">keys resolve from auth.json (with !command for secret managers), then the environment — never from a project directory. <a class="text-[#52a8ff] hover:underline" href={`${base}docs/providers/`}>full table →</a></p>
 </section>
 
-<section class="mx-auto max-w-6xl px-6 py-20">
-  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">FAQ</p>
-  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Questions people actually ask.</h2>
+<!-- FAQ -->
+<section class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24">
+  <p data-reveal class="font-mono text-[12px] uppercase tracking-[0.14em] text-[#52a8ff]">FAQ</p>
+  <h2 data-reveal class="headline-fluid !text-[clamp(28px,4vw,44px)] mt-3 max-w-xl">Questions people actually ask.</h2>
   <div class="mt-8 grid gap-3 max-w-3xl">
     {faqs.map((f, i) => (
       <details data-reveal class="faq" open={i === 0}>
@@ -181,5 +338,11 @@ const faqs = [
     ))}
   </div>
 </section>
+
+<div class="mx-auto max-w-6xl px-[56px] max-[640px]:px-6 pt-24 pb-4">
+  <a data-reveal href={`${base}docs/`} class="btn-square text-[18px]">
+    Read the docs <Fragment set:html={arrow} />
+  </a>
+</div>
 
 </Base>
