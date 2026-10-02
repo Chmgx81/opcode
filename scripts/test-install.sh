@@ -134,7 +134,7 @@ with open(portfile, "w") as f:
 srv.serve_forever()
 PY
 
-python3 "$work/server.py" "$S" "$TAG" "$work/port" &
+python3 "$work/server.py" "$S" "$TAG" "$work/port" 2>"$work/server.err" &
 server_pid=$!
 # A POSIX counter, not `seq`: seq is GNU coreutils and macOS ships the BSD
 # userland, where the command does not exist. The shell prints "command not
@@ -148,9 +148,12 @@ while [ "$i" -lt 50 ]; do
   sleep 0.1
 done
 if [ ! -s "$work/port" ]; then
-  echo "test-install: fake release server did not start (port file $work/port)" >&2
+  echo "test-install: fake release server did not start (waited 5s for $work/port)" >&2
+  # Python's traceback goes here, so the log says why rather than repeating
+  # the symptom. Redirected to a file: a background process sharing this
+  # script's stderr would interleave with the test output.
+  sed 's/^/test-install: server said: /' "$work/server.err" >&2 || true
   kill "$server_pid" 2>/dev/null || true
-  wait "$server_pid" 2>&1 | sed 's/^/test-install: server said: /' >&2 || true
   exit 2
 fi
 BASE="http://127.0.0.1:$(cat "$work/port")"
