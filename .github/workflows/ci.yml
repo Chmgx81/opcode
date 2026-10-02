@@ -83,9 +83,6 @@ jobs:
       # target and a platform-specific race should fail the build
       # before it ships, not after.
       - run: go test -race -count=1 ./...
-      - name: probe env
-        if: runner.os == 'macOS'
-        run: bash scripts/probe-env.sh
       - name: installer against a fake release
         run: bash scripts/test-install.sh
 
