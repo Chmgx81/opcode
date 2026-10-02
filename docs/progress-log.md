@@ -9,7 +9,7 @@
 
 # Build log (archived)
 
-This is the full chronological build log, Phase 0 through Phase 48,
+This is the full chronological build log, Phase 0 through Phase 49,
 moved here verbatim from `PROGRESS.md`. It is the record of what each
 phase set out to do, what was verified live, and what was left
 unverified or deliberately deferred.
@@ -3356,3 +3356,33 @@ Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
 `TestWorkingLineContextReadout` holds all three behaviors: no
 readout without a window, the percentage with one, and the reflow
 dropping occupancy before elapsed time.
+
+# Phase 49 — scrollback that scrolls (status: complete, verified)
+
+Phase 49 ([specs/phase49-scrollback.md](specs/phase49-scrollback.md)),
+found live (the third report): a long first answer filled the live
+region, the frame trimmed its start to "… 24 earlier lines", and
+the terminal's own scrolling had nothing to show — a finished turn
+only committed to native scrollback when the NEXT turn started.
+
+- **A finished turn commits when it finishes.** `turnEnded`
+   commits through `tea.Println` the moment the turn completes, so
+   after every answer the terminal's own scrollbar works — the
+   reader's native way back, never a turn behind. The queued
+   follow-up path already committed there; the two paths agree
+   now. The frozen-text contract is unchanged: what's printed no
+   longer redraws, and the last turn's ctrl+r expansion moves to
+   the pager, which always expanded everything.
+- **The trim marker names its escape.** "… 24 earlier lines"
+   counted the loss and named no way to read it — the one dead
+   end left in a UI whose rule is that every empty state says its
+   way forward. It reads "… 24 earlier lines — ctrl+o to read"
+   now, and the dash degrades under --plain like the rest of the
+   chrome. The marker now appears only while a turn is in flight.
+
+Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
+`go test -race -count=1 ./...` suite pass — the commit tests held
+the mechanics (rhythm, boundary renders, View skipping committed
+entries) and needed no timing changes.
+`TestFinishedTurnCommitsAtTheEnd` holds the new boundary;
+`TestTrimMarkerNamesTheEscape` holds the named escape.

@@ -58,6 +58,7 @@ and its full chronological log,
 | 46 | [phase46-palette-and-lists.md](phase46-palette-and-lists.md) | The violet identity palette (teal kept as a theme); one selection language for every list | shipped |
 | 47 | [phase47-modes-and-first-run.md](phase47-modes-and-first-run.md) | `/mode` as a picker with per-mode color; `/model` as the hub; the login → models → pick journey; key pre-flight | shipped |
 | 48 | [phase48-context-readout.md](phase48-context-readout.md) | The working line's context occupancy readout — `context 62%` when the window is configured, silent when unknown | shipped |
+| 49 | [phase49-scrollback.md](phase49-scrollback.md) | A finished turn commits to native scrollback the moment it ends; the trim marker names the pager | shipped |
 
 Phases 7–12, 14–17, 24, 27–29 and 31 have no spec file of their own;
 their work is recorded in the [build log](../progress-log.md) and

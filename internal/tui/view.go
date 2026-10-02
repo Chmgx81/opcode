@@ -1265,8 +1265,12 @@ func (m *Model) fit(layers []string, protected int) []string {
 	// The marker counts rows, not layers: one dropped layer can be a
 	// dozen-row markdown block, and "… 3 earlier lines" over a
 	// forty-line cut reads as a lie.
+	// The marker names the pager: "… 24 earlier lines" alone is a
+	// dead end, and a dead end that counts its loss is worse than
+	// one that does not — it proves the lines exist somewhere.
 	out = append(out, dimStyle.Render(clipCols(
-		fmt.Sprintf("… %d earlier lines", cutRows), m.termWidth())))
+		fmt.Sprintf("… %d earlier lines "+plainOr("—", "-")+" ctrl+o to read",
+			cutRows), m.termWidth())))
 	return append(out, layers[dropped:]...)
 }
 

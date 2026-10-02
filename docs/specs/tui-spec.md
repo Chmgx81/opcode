@@ -105,11 +105,16 @@ window manager's job — a terminal app cannot do it.
 One frame, top to bottom: **scrollback** (committed turns) →
 **live region** (the current turn's entries, working line, streaming
 tail) → **composer or dialog** → **footer**. Finished turns commit
-to native scrollback at the next turn boundary (`tea.Println`):
-what's printed no longer redraws, and only the current turn can
-trip the `… N earlier lines` marker — past turns are in the
-terminal's own history, scrollable and searchable. Committed text is
-frozen: ctrl+r expansion applies to the live region only.
+to native scrollback the moment they finish (`tea.Println`): the
+terminal's own scrollbar is the reader's native way back through a
+long answer, and it is never a turn behind. What's printed no
+longer redraws, and only a turn in flight can trip the
+`… N earlier lines — ctrl+o to read` marker — everything finished
+is in the terminal's own history, scrollable and searchable, and
+the marker names the pager rather than counting its loss silently.
+Committed text is frozen: ctrl+r expansion applies to the live
+region only; the pager expands everything, committed and live
+alike.
 
 **Nothing exceeds the terminal, ever** — no row wider than it, no
 frame taller than it. That is a property of the whole frame, not of
