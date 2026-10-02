@@ -16,7 +16,7 @@ trust.
 | | |
 |---|---|
 | Latest release | **v0.4.0** (2026-10-02; v0.5.0 renames the project to opcode) |
-| Head | 15 Go packages (~16.9k lines non-test, 570 tests) |
+| Head | 15 Go packages (~16.9k lines non-test, 572 tests) |
 | Go | the `go` line of `go.mod` (1.25.13); CI installs exactly that |
 | Release platforms | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 |
 | Sandbox | Linux only (Landlock 5.13+; seccomp network block on x86_64) |

@@ -1481,7 +1481,14 @@ func (m *Model) turnEnded() tea.Cmd {
 	m.working = false
 	m.cancel = nil
 	if len(m.queue) == 0 {
-		return nil
+		// The finished turn commits NOW, not at the next boundary.
+		// The terminal's own scrollback is the reader's native way
+		// back through a long answer, and holding it a turn behind
+		// left the whole session unscrollable — the live region
+		// trimmed it instead ("… 24 earlier lines") with no way to
+		// read what went except the pager. Frozen is the point:
+		// what's printed no longer redraws.
+		return m.commitEntries()
 	}
 	next := m.queue[0]
 	m.queue = m.queue[1:]

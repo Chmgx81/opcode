@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"fmt"
+	"io"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Chmgx81/opcode/internal/llm"
 )
@@ -124,5 +128,54 @@ func TestSubmitRecordsHistoryWhileWorking(t *testing.T) {
 	}
 	if len(m.queue) != 0 {
 		t.Errorf("steer queued instead: %+v", m.queue)
+	}
+}
+
+// TestFinishedTurnCommitsAtTheEnd: the turn commits to native
+// scrollback the moment it finishes, not at the next boundary. The
+// terminal's own scrolling is the reader's native way back through
+// a long answer; holding the finished turn live left the whole
+// session unscrollable and let the frame trim it to a marker.
+func TestFinishedTurnCommitsAtTheEnd(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, [][]llm.ChatEvent{})
+	// commit prints through the program; an unstarted one is inert
+	// but non-nil, which is all the seam needs.
+	m.program = tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(io.Discard))
+	m.add(entry{kind: entryUser, text: "the question"})
+	m.add(entry{kind: entryAssistant, text: "a long answer that deserves scrolling"})
+	m.working = true
+
+	cmd := m.turnEnded()
+	if cmd == nil {
+		t.Fatal("turnEnded returned no print command")
+	}
+	if m.committed != len(m.entries) {
+		t.Errorf("committed = %d, want %d — the finished turn stayed live",
+			m.committed, len(m.entries))
+	}
+	if v := stripANSI(m.View()); strings.Contains(v, "a long answer") {
+		t.Errorf("the finished answer is still in the live region:\n%s", v)
+	}
+}
+
+// TestTrimMarkerNamesTheEscape: the frame's trim marker counts the
+// lines it cut and says how to read them — "… N earlier lines" alone
+// is a dead end, and one that counts its loss is worse: it proves
+// the lines exist somewhere.
+func TestTrimMarkerNamesTheEscape(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, [][]llm.ChatEvent{})
+	m.entries = nil
+	for i := 0; i < 40; i++ {
+		m.add(entry{kind: entryAssistant, text: fmt.Sprintf("line %d of a very long answer", i)})
+	}
+	resize(m, 80, 10)
+	v := stripANSI(m.View())
+	if !strings.Contains(v, "earlier lines") {
+		t.Fatalf("no trim marker in the frame:\n%s", v)
+	}
+	if !strings.Contains(v, "ctrl+o") {
+		t.Errorf("the trim marker names no way to read the trimmed lines:\n%s", v)
 	}
 }
