@@ -3505,3 +3505,13 @@ Verified: every internal link resolves (a Python HTMLParser pass
 over all seven pages), the stylesheet is site-root-relative so
 GitHub Pages serves it under the docs subpaths, and the deploy
 workflow uses only first-party actions.
+
+Found live (the fourth report): the site rendered unstyled — every
+link was site-root-absolute (`/assets/style.css`), and a GitHub
+Pages project site serves under the `/opcode/` subpath, so the
+browser fetched `chmgx81.github.io/assets/style.css` and got a 404.
+The link check that passed had verified filesystem paths, not served
+URLs — the wrong check, so a false green. All links are relative
+now, per-file, and the check resolves every href at its served URL
+under the base path, which is the check that actually models the
+deployment.
