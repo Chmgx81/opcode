@@ -309,3 +309,112 @@ func TestFirstRunOpensOnboardingPicker(t *testing.T) {
 		t.Error("header shows an empty model slot")
 	}
 }
+
+// TestModelPickerIsTheHub: /model lists what a user can actually
+// reach — models.json choices first (the active one marked), then
+// providers with a resolvable key whose live list is one enter away,
+// then providers without one, each naming the /login that unlocks it.
+// The first-run user who has only stored a key must not land on a
+// dead end about models.json.
+func TestModelPickerIsTheHub(t *testing.T) {
+	m, _ := modelPickerTestModel(t)
+	m.openModelPicker()
+	if m.picker == nil {
+		t.Fatal("/model opened no picker")
+	}
+	var fetch, login, pinned int
+	var anthropic pickerItem
+	for _, it := range m.picker.items {
+		switch it.Action {
+		case "fetch":
+			fetch++
+			if !strings.Contains(it.Detail, "live models") {
+				t.Errorf("fetch row %q does not say what enter does: %q", it.Label, it.Detail)
+			}
+		case "login":
+			login++
+			if !strings.Contains(it.Detail, "/login "+it.Label) {
+				t.Errorf("login row %q does not name its command: %q", it.Label, it.Detail)
+			}
+			if it.Label == "anthropic" {
+				anthropic = it
+			}
+		default:
+			pinned++ // a models.json model row, or a pinned provider
+		}
+	}
+	// The fixture pins two models (test-model, other-model) under
+	// openrouter; "keyed" resolves through the wired KeyFor but is
+	// not pinned, so it offers its live list.
+	if pinned != 2 {
+		t.Errorf("pinned rows = %d, want the two models.json models", pinned)
+	}
+	if fetch == 0 {
+		t.Error("no keyed provider offers its live list")
+	}
+	if login == 0 {
+		t.Error("no unkeyed provider names /login")
+	}
+	if anthropic.Provider == "" {
+		t.Fatal("anthropic has no login row")
+	}
+	// Enter on an unkeyed provider starts the key capture — the hub
+	// is the whole journey, not a map of it.
+	m.picker = nil
+	m.pickerSelect(anthropic)
+	if m.login == nil || m.login.provider != "anthropic" {
+		t.Errorf("enter on an unkeyed provider started %+v, want the anthropic login", m.login)
+	}
+}
+
+// TestLoginContinuesToModels: a stored key exists to pick a model
+// with. The login's success fetches that provider's live list itself,
+// and the fetch's arrival opens the catalog picker — the resolver's
+// startup snapshot never sees the write, so the session's own copy is
+// what makes the fetch work without a restart.
+func TestLoginContinuesToModels(t *testing.T) {
+	m, _ := modelPickerTestModel(t)
+	m.beginLogin("anthropic")
+	m.composer.SetValue("sk-a-test-key")
+	cmd := m.submitLogin()
+	if cmd == nil {
+		t.Fatal("a stored key did not continue to the model list")
+	}
+	if _, ok := m.sessionKeyFor("anthropic"); !ok {
+		t.Error("the stored key is invisible to the session until a restart")
+	}
+	restore := swapFetch(func(ctx context.Context, api, baseURL, key string) ([]llm.ModelInfo, error) {
+		if key != "sk-a-test-key" {
+			t.Errorf("fetch used key %q, want the one just stored", key)
+		}
+		return []llm.ModelInfo{{ID: "claude-x"}}, nil
+	})
+	defer restore()
+	msg := cmd()
+	fetched, ok := msg.(modelsFetchedMsg)
+	if !ok {
+		t.Fatalf("cmd = %T, want a models fetch", msg)
+	}
+	if fetched.err != nil {
+		t.Fatalf("the fetch failed: %v", fetched.err)
+	}
+	m.handleModelsFetched(fetched)
+	if m.picker == nil || m.picker.kind != pickerCatalog {
+		t.Fatalf("the catalog picker did not open: %+v", m.picker)
+	}
+}
+
+// TestSwitchToUnkeyedProviderWarns: the switch lands, but the user
+// finds out at the switch — not at the first send — that the
+// provider has no key, with the fix named.
+func TestSwitchToUnkeyedProviderWarns(t *testing.T) {
+	m, switched := modelPickerTestModel(t)
+	m.switchModel("anthropic", "claude-x")
+	if len(*switched) == 0 || (*switched)[0] != "anthropic/claude-x" {
+		t.Fatalf("the switch did not land: %v", *switched)
+	}
+	tr := m.transcript()
+	if !strings.Contains(tr, "no api key for anthropic") || !strings.Contains(tr, "/login anthropic") {
+		t.Errorf("the switch did not warn about the missing key:\n%s", tr)
+	}
+}

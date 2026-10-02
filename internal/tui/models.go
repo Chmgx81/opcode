@@ -66,14 +66,40 @@ func (m *Model) allProviders() []string {
 	return names
 }
 
+// sessionKeyFor resolves a provider's key as THIS session sees it:
+// what /login stored in-session first — auth.json's startup snapshot
+// does not see a later write, and a stored key should work the moment
+// it is stored — then the injected chain (auth.json at launch, then
+// the environment). /logout forgets the in-session copy.
+func (m *Model) sessionKeyFor(provider string) (string, bool) {
+	if k, ok := m.storedKeys[provider]; ok && k != "" {
+		return k, true
+	}
+	if m.opt.KeyFor == nil {
+		return "", false
+	}
+	return m.opt.KeyFor(provider)
+}
+
+// providerNeedsKey reports whether a provider is keyed or local: the
+// pickers, the fetches, and the pre-flight all ask this one question,
+// and a provider with no chain wired is never blocked on a guess.
+func (m *Model) providerNeedsKey(name string, pc config.ProviderConfig) bool {
+	if pc.BaseURL == "" || config.IsLocalBaseURL(pc.BaseURL) {
+		return false
+	}
+	if m.opt.KeyFor == nil {
+		return false
+	}
+	_, ok := m.sessionKeyFor(name)
+	return !ok
+}
+
 // providerDetail is the one-line hint under a provider row: whether
 // its models can be fetched right now. Local servers need no key.
 func (m *Model) providerDetail(name string, pc config.ProviderConfig) string {
-	isLocal := pc.BaseURL == "" || config.IsLocalBaseURL(pc.BaseURL)
-	if !isLocal && m.opt.KeyFor != nil {
-		if _, ok := m.opt.KeyFor(name); !ok {
-			return "no key — /login " + name
-		}
+	if m.providerNeedsKey(name, pc) {
+		return "no key — /login " + name
 	}
 	return "enter to browse models"
 }
@@ -123,19 +149,17 @@ func (m *Model) fetchModelsCmd(provider string) tea.Cmd {
 		}
 	}
 	var key string
-	if m.opt.KeyFor != nil {
-		k, ok := m.opt.KeyFor(provider)
+	if k, ok := m.sessionKeyFor(provider); ok {
+		key = k
+	} else if m.providerNeedsKey(provider, pc) {
 		// Saying so up front beats a doomed request that comes back
 		// as a bare 401 (audit C12).
-		if !ok && !config.IsLocalBaseURL(pc.BaseURL) {
-			return func() tea.Msg {
-				return modelsFetchedMsg{provider: provider,
-					err: fmt.Errorf("no key for %s", provider),
-					hint: "no api key for " + provider + " — /login " + provider +
-						" stores one, /doctor checks the resolution chain"}
-			}
+		return func() tea.Msg {
+			return modelsFetchedMsg{provider: provider,
+				err: fmt.Errorf("no key for %s", provider),
+				hint: "no api key for " + provider + " — /login " + provider +
+					" stores one, /doctor checks the resolution chain"}
 		}
-		key = k
 	}
 	m.add(entry{kind: entryDim, text: "fetching models from " + provider + "…"})
 	api, base := pc.API, pc.BaseURL

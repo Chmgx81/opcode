@@ -16,7 +16,7 @@ trust.
 | | |
 |---|---|
 | Latest release | **v0.4.0** (2026-10-02; v0.5.0 renames the project to opcode) |
-| Head | 15 Go packages (~16.8k lines non-test, 563 tests) |
+| Head | 15 Go packages (~16.9k lines non-test, 568 tests) |
 | Go | the `go` line of `go.mod` (1.25.13); CI installs exactly that |
 | Release platforms | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 |
 | Sandbox | Linux only (Landlock 5.13+; seccomp network block on x86_64) |
@@ -51,7 +51,11 @@ UI restyle — the composer in the shared box language and a
 one-line greeting lockup ([phase45](docs/specs/phase45-ui-restyle.md)) —
 and the Phase 46 palette and list restyle: the violet identity
 (teal kept as a named theme) and one selection language for every
-list ([phase46](docs/specs/phase46-palette-and-lists.md)).
+list ([phase46](docs/specs/phase46-palette-and-lists.md)). Phase 47
+made `/mode` a picker with per-mode color, `/model` the reachable
+hub, and the first-run journey continuous — login → models → pick,
+with the key pre-flight before the request
+([phase47](docs/specs/phase47-modes-and-first-run.md)).
 
 ## In progress
 

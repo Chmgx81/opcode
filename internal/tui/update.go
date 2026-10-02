@@ -739,6 +739,16 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 		return inputCommand, nil
 	}
 
+	// Pre-flight the key: an active provider with no resolvable key
+	// means a doomed request and a 401 about the past. Say it now,
+	// with the fix — the turn does not start.
+	if pc, ok := m.providerConfigFor(m.opt.ProviderName); ok && m.providerNeedsKey(m.opt.ProviderName, pc) {
+		m.add(entry{kind: entryErr,
+			text: "no api key for " + m.opt.ProviderName + " — /login " + m.opt.ProviderName +
+				" stores one, /doctor checks the resolution chain"})
+		return inputCommand, nil
+	}
+
 	// Commit everything before this turn's user entry to native
 	// scrollback: past turns, the greeting, and command output
 	// freeze above the live region and stop re-rendering per frame.
@@ -1231,6 +1241,10 @@ func (m *Model) submitLogin() tea.Cmd {
 		m.add(entry{kind: entryErr, text: "login failed: " + err.Error()})
 		return nil
 	}
+	// The in-session copy: the resolvers hold auth.json's startup
+	// snapshot, so without this the pickers would deny the key the
+	// user just typed until a restart.
+	m.storedKeys[provider] = key
 	// The live client only changes when the stored key belongs to the
 	// active provider — a different provider's key is stored for its
 	// next session, not applied to this one's requests.
@@ -1240,7 +1254,11 @@ func (m *Model) submitLogin() tea.Cmd {
 	} else {
 		m.add(entry{kind: entryOK, text: "key for " + provider + " stored in auth.json (0600) — used when " + provider + " is the active provider"})
 	}
-	return nil
+	// The journey continues on its own: a stored key exists to pick a
+	// model with, so its provider's live list opens next. A failed
+	// fetch (bad key, dead endpoint) is itself feedback, and the
+	// picker is esc-closable — the offer is never a trap.
+	return m.fetchModelsCmd(provider)
 }
 
 // logout removes the stored key for a provider: bare /logout means the
@@ -1266,23 +1284,30 @@ func (m *Model) logout(provider string) {
 		// the revoked key.
 		m.applyNewKey("")
 	}
+	// The in-session copy goes with it: a logged-out provider must
+	// not still look keyed to the pickers until a restart.
+	delete(m.storedKeys, provider)
 	m.add(entry{kind: entryOK,
 		text: "removed the stored key for " + provider +
 			". This does not unset environment variables or revoke the key at the provider."})
 }
 
-// setMode implements /mode, tab, and shift+tab: no argument shows the
-// mode; a valid name switches, resets any session allow-all grant, and
-// announces the change with an animated toast.
+// setMode implements /mode: no argument opens the mode picker; a valid
+// name switches, resets any session allow-all grant, and announces the
+// change with an animated toast. Tab and shift+tab cycle without
+// passing through here.
 func (m *Model) setMode(arg string) tea.Cmd {
 	if arg == "" {
-		m.add(entry{kind: entryDim,
-			text: "mode is " + m.opt.Mode + " — options: " + strings.Join(tools.Modes, ", ") + "; /mode <name> or tab"})
+		m.openModePicker()
 		return nil
 	}
 	mode := tools.NormalizeMode(arg)
 	if !tools.ValidMode(mode) {
+		// The picker IS the answer to "what is valid": open it on top
+		// of the error, so the typo costs one Enter, not one command
+		// the user has to remember.
 		m.add(entry{kind: entryErr, text: "unknown mode " + arg + " — options: " + strings.Join(tools.Modes, ", ")})
+		m.openModePicker()
 		return nil
 	}
 	if mode == m.opt.Mode {
@@ -1304,6 +1329,37 @@ func (m *Model) setMode(arg string) tea.Cmd {
 
 func (m *Model) rebuildGate(mode string) {
 	m.opt.Orch.Gate.SetDecide(tools.PolicyDecide(mode, m.Prompt()))
+}
+
+// modeDesc is the one-line description the mode picker shows: what
+// each posture runs without asking. The README's safety table is the
+// source of this copy — the picker and the docs must not drift.
+func modeDesc(mode string) string {
+	switch mode {
+	case tools.ModePlan:
+		return "read-only tools; every write, command, or fetch proposes a plan you approve"
+	case tools.ModeFullAuto:
+		return "everything proceeds without asking — the sandbox still confines writes"
+	default:
+		return "sandboxed commands and in-tree writes run free; anything else asks"
+	}
+}
+
+// openModePicker builds the /mode list: the three postures, each with
+// what it runs without asking, the active one marked — the same shape
+// the theme picker gives a choice the whole session is scoped by.
+func (m *Model) openModePicker() {
+	items := make([]pickerItem, 0, len(tools.Modes))
+	for _, mode := range tools.Modes {
+		detail := modeDesc(mode)
+		if mode == m.opt.Mode {
+			detail += " — active"
+		}
+		items = append(items, pickerItem{
+			Label: mode, Detail: detail, Action: "mode:" + mode,
+		})
+	}
+	m.picker = newPicker(pickerModes, "permission mode", items)
 }
 
 func (m *Model) answerTrust(trusted bool) {
@@ -1499,8 +1555,13 @@ func (m *Model) handleModelCommand(arg string) {
 		text: "unknown model " + arg + " — /model to pick one, or add it to models.json"})
 }
 
-// openModelPicker lists every configured provider and model, marking
-// the active one.
+// openModelPicker is the model hub, ordered by what a user can reach:
+// models pinned in models.json first (the active one marked), then
+// providers with a resolvable key whose live list is one enter away,
+// then providers without a key, each naming the /login that unlocks
+// it — enter starts exactly that. The first-run user who has only
+// stored a key lands on their provider instead of a dead end about
+// models.json.
 func (m *Model) openModelPicker() {
 	if m.working {
 		m.add(entry{kind: entryErr, text: "finish or interrupt the turn before switching models"})
@@ -1510,14 +1571,16 @@ func (m *Model) openModelPicker() {
 		m.add(entry{kind: entryErr, text: "model switching is not wired in this build"})
 		return
 	}
+	var items []pickerItem
+	pinned := map[string]bool{}
 	names := make([]string, 0, len(m.opt.Models.Providers))
 	for name := range m.opt.Models.Providers {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	var items []pickerItem
 	for _, name := range names {
 		pc := m.opt.Models.Providers[name]
+		pinned[name] = true
 		if len(pc.Models) == 0 {
 			items = append(items, pickerItem{
 				Label:    name,
@@ -1533,6 +1596,27 @@ func (m *Model) openModelPicker() {
 			}
 			items = append(items, pickerItem{Label: model, Detail: detail, Provider: name, Model: model})
 		}
+	}
+	// The rest of the catalog, keyed before keyless: a stored key
+	// means one enter from that provider's live list.
+	for _, name := range m.allProviders() {
+		if pinned[name] {
+			continue
+		}
+		pc, ok := m.providerConfigFor(name)
+		if !ok {
+			continue
+		}
+		if m.providerNeedsKey(name, pc) {
+			items = append(items, pickerItem{
+				Label: name, Detail: "no key — /login " + name, Provider: name, Action: "login",
+			})
+			continue
+		}
+		items = append(items, pickerItem{
+			Label: name, Detail: "key stored — enter to browse its live models",
+			Provider: name, Action: "fetch",
+		})
 	}
 	if len(items) == 0 {
 		m.add(entry{kind: entryDim,
@@ -1582,6 +1666,13 @@ func (m *Model) switchModel(provider, model string) {
 	note := "switched to " + m.opt.Model + " (provider " + m.opt.ProviderName + ") — the next request uses it"
 	m.showToast("model switched to " + m.opt.Model)
 	m.add(entry{kind: entryOK, text: note})
+	// The switch lands, but say it if the provider has no key: the
+	// user chose a destination, and finding out at the first send is
+	// a message about the past — this one is about the next step.
+	if pc, ok := m.providerConfigFor(provider); ok && m.providerNeedsKey(provider, pc) {
+		m.add(entry{kind: entryErr,
+			text: "no api key for " + provider + " — /login " + provider + " stores one, /doctor checks the chain"})
+	}
 }
 
 // openSessionsPicker lists saved sessions newest-first.
@@ -1685,10 +1776,14 @@ func (m *Model) pickerSelect(it pickerItem) tea.Cmd {
 		return nil
 	case "fetch":
 		return m.fetchModelsCmd(it.Provider)
-	default:
-		m.switchModel(it.Provider, it.Model)
-		return nil
 	}
+	if mode, ok := strings.CutPrefix(it.Action, "mode:"); ok {
+		// The same switch path /mode <name> and tab use, so the grant
+		// reset and the toast cannot drift between entry points.
+		return m.setMode(mode)
+	}
+	m.switchModel(it.Provider, it.Model)
+	return nil
 }
 
 // resumeSession saves the current conversation, then re-seeds the

@@ -292,6 +292,13 @@ type Model struct {
 	stream    strings.Builder
 	login     *loginFlow
 
+	// storedKeys holds what /login saved THIS session, keyed by
+	// provider. auth.json is the durable store, but the resolver's
+	// startup snapshot does not see a later write — this map is how
+	// the pickers, the fetches, and the pre-flight know a key exists
+	// without a restart. /logout forgets its copy here too.
+	storedKeys map[string]string
+
 	// Composer recall history: submitted prompts, persisted to
 	// history.jsonl under OPCODE_HOME. histIdx is the recall
 	// position (len(hist) means the live draft); draftSave holds
@@ -464,7 +471,7 @@ var commands = []command{
 	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
 	{"/theme", "pick the palette — live preview, esc restores"},
 	{"/diff", "show the working tree's git changes"},
-	{"/mode", "show or switch permission mode"},
+	{"/mode", "pick the permission mode (or /mode <name>)"},
 	{"/model", "pick or switch the model"},
 	{"/sessions", "browse and resume a saved session"},
 	{"/skills", "list available skills"},
@@ -528,6 +535,7 @@ func New(opt Options) *Model {
 		spinner:    sp,
 		pasteAt:    map[string]string{},
 		subStreams: map[string]*strings.Builder{},
+		storedKeys: map[string]string{},
 		effort:     opt.Effort,
 	}
 	// Prompt recall history: loaded once at startup, appended per
@@ -571,10 +579,10 @@ func New(opt Options) *Model {
 		// is already open so the first one is visible without reading
 		// anything.
 		m.entries = append(m.entries,
-			entry{kind: entryDim, text: "welcome — three steps, all in here, no files to edit:"},
-			entry{kind: entryDim, text: "  1. pick a provider in the list below (or esc and /login later)"},
-			entry{kind: entryDim, text: "  2. paste its key when asked — masked, stored 0600 in auth.json"},
-			entry{kind: entryDim, text: "  3. pick a model from the live list — the choice is remembered"},
+			entry{kind: entryDim, text: "welcome to opcode — setup is three steps, all in this window:"},
+			entry{kind: entryDim, text: "  1. pick a provider below — each row says whether it needs a key"},
+			entry{kind: entryDim, text: "  2. paste its API key when asked — masked on screen, stored 0600 in auth.json"},
+			entry{kind: entryDim, text: "  3. pick a model from the live list — the choice is remembered; /login and /model work any time"},
 			entry{kind: entryDim, text: ""})
 		m.openModelsPicker("")
 	}

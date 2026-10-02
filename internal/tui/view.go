@@ -751,11 +751,13 @@ func (m *Model) composerView() []string {
 	// token at rest, amber in shell mode.
 	out = append(out, m.composerBox(composer)...)
 
-	// Mode line in the reference shape: "~ mode (tab to cycle)" then
-	// the minimal hints. Codex's footer fitting: candidates from
-	// fullest to bare mode, first one that fits the terminal wins — a
-	// shortcut never separates from its label on narrow screens.
-	mode := accent2Style.Render(modeGlyph(m.opt.Mode) + " " + m.opt.Mode)
+	// Mode line in the reference shape: "mode (tab to cycle)" then
+	// the minimal hints. The mode segment wears its own color — the
+	// state every keystroke is scoped by, colored by what it means —
+	// and Codex's footer fitting: candidates from fullest to bare
+	// mode, first one that fits the terminal wins — a shortcut never
+	// separates from its label on narrow screens.
+	mode := modeStyle(m.opt.Mode).Render(modeGlyph(m.opt.Mode) + " " + m.opt.Mode)
 	bare := mode
 	// The effort segment rides the mode line whenever a posture is
 	// set — a dial you cannot see is a dial you cannot trust.
@@ -1560,7 +1562,7 @@ func (m *Model) permDialogRows(req *permRequest, w int) ([]string, int, int) {
 	return rows, 1 + len(literal), len(options) + 1
 }
 
-// modeGlyph maps a permission mode to its footer glyph. The brand ~
+// modeGlyph maps a permission mode to its footer glyph. The brand mark
 // belongs to the composer; each mode reads at a glance by shape.
 func modeGlyph(mode string) string {
 	switch tools.NormalizeMode(mode) {
@@ -1570,5 +1572,21 @@ func modeGlyph(mode string) string {
 		return GlyphModeFullAuto
 	default: // build, unknown
 		return GlyphModeBuild
+	}
+}
+
+// modeStyle colors the mode segment by what the posture means: plan
+// is inquiry (info), build is the working posture (the brand
+// accent), full-auto proceeds without asking (amber — caution's own
+// color). The glyph already differs; the color is emphasis, never the
+// only signal.
+func modeStyle(mode string) lipgloss.Style {
+	switch tools.NormalizeMode(mode) {
+	case tools.ModePlan:
+		return infoStyle
+	case tools.ModeFullAuto:
+		return warnStyle
+	default:
+		return accentStyle
 	}
 }

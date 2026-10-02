@@ -213,9 +213,16 @@ func TestEmptyStatesNameAWayForward(t *testing.T) {
 		m.opt.SwitchModel = func(string, string) error { return nil }
 		m.entries = nil
 		m.openModelPicker()
-		got := m.entries[len(m.entries)-1].text
-		if !strings.Contains(got, "models.json") {
-			t.Errorf("an empty /model names no file to edit: %q", got)
+		// The hub: an empty models.json is not a dead end — the
+		// catalog's providers are offered, each row a way forward
+		// (browse with a key, /login without one).
+		if m.picker == nil {
+			t.Fatal("empty models.json opened no picker — the catalog providers should be offered")
+		}
+		for _, it := range m.picker.items {
+			if it.Action != "fetch" && it.Action != "login" && it.Model == "" {
+				t.Errorf("row %q names no way forward: %+v", it.Label, it)
+			}
 		}
 	})
 
