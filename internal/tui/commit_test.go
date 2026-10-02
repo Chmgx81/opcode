@@ -221,3 +221,28 @@ func TestCtrlRKeepsTheFrozenPromises(t *testing.T) {
 		t.Error("ctrl+r did not expand the live results")
 	}
 }
+
+// TestTurnEndSavesTheSession: the session saves at every turn
+// boundary — the UI claims it does, and a crash or a closed terminal
+// must lose at most the turn that just ended, not the conversation
+// since launch.
+func TestTurnEndSavesTheSession(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, [][]llm.ChatEvent{})
+	saved := 0
+	m.opt.SaveCurrentSession = func() { saved++ }
+
+	m.working = true
+	m.turnEnded()
+	if saved != 1 {
+		t.Fatalf("turn ends saved %d sessions, want 1", saved)
+	}
+
+	// The queued-follow-up path saves before the next turn starts.
+	m.working = true
+	m.queue = []queued{{text: "the follow-up"}}
+	m.turnEnded()
+	if saved != 2 {
+		t.Errorf("a follow-up turn saved %d sessions, want 2", saved)
+	}
+}

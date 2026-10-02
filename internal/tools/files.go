@@ -162,14 +162,20 @@ func (WriteFile) Execute(ctx context.Context, args string) (string, error) {
 	}
 	// Defense in depth: the gate denies the credentials file in every
 	// mode, but a direct Execute with a nil Decide (tests, headless
-	// wiring mistakes) must not be the way around it.
+	// wiring mistakes) must not be the way around it. The roots
+	// re-check is the same discipline: the gate resolved the path at
+	// decision time, and a swapped directory between then and now
+	// must not turn an approved write into an outside-the-roots one.
 	if isCredentialsFile(a.Path, credentialsPath()) {
 		return "", fmt.Errorf("write_file: %w", errCredentialsFile)
+	}
+	if !pathInWritableRoots(a.Path) {
+		return "", fmt.Errorf("write_file: %s resolves outside the writable roots", a.Path)
 	}
 	if err := os.MkdirAll(parentDir(a.Path), 0o755); err != nil {
 		return "", fmt.Errorf("write_file: %w", err)
 	}
-	if err := os.WriteFile(a.Path, []byte(a.Content), 0o644); err != nil {
+	if err := writeGuarded(a.Path, []byte(a.Content)); err != nil {
 		return "", fmt.Errorf("write_file: %w", err)
 	}
 	info, err := os.Stat(a.Path)
@@ -222,6 +228,9 @@ func (EditFile) Execute(ctx context.Context, args string) (string, error) {
 	if isCredentialsFile(a.Path, credentialsPath()) {
 		return "", fmt.Errorf("edit_file: %w", errCredentialsFile)
 	}
+	if !pathInWritableRoots(a.Path) {
+		return "", fmt.Errorf("edit_file: %s resolves outside the writable roots", a.Path)
+	}
 	data, err := readFileGuarded(a.Path)
 	if err != nil {
 		return "", fmt.Errorf("edit_file: %w", err)
@@ -231,7 +240,7 @@ func (EditFile) Execute(ctx context.Context, args string) (string, error) {
 		return "", fmt.Errorf("edit_file: %q not found in %s", a.Old, a.Path)
 	case 1:
 		updated := strings.Replace(string(data), a.Old, a.New, 1)
-		if err := os.WriteFile(a.Path, []byte(updated), 0o644); err != nil {
+		if err := writeGuarded(a.Path, []byte(updated)); err != nil {
 			return "", fmt.Errorf("edit_file: %w", err)
 		}
 		return fmt.Sprintf("replaced one occurrence in %s", a.Path), nil

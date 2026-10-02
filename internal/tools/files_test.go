@@ -353,3 +353,47 @@ func TestRegistry(t *testing.T) {
 		}
 	}
 }
+
+// TestWriteGuardedRefusesSwappedTargets: the write side of the read
+// path's hardening — a symlink landing on the target between the
+// gate's check and the write is refused, and so is a hard-linked file
+// (the Landlock ABI 1 move: link the target outside the roots, resolve
+// in-roots). A plain write still works.
+func TestWriteGuardedRefusesSwappedTargets(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(dir, "outside.txt")
+
+	// A symlink at the target: O_NOFOLLOW refuses it.
+	target := filepath.Join(dir, "swapped.txt")
+	if err := os.Symlink(outside, target); err != nil {
+		t.Skip("platform cannot create symlinks")
+	}
+	if err := writeGuarded(target, []byte("x")); err == nil {
+		t.Error("writeGuarded wrote through a symlink")
+	} else if _, statErr := os.Lstat(outside); statErr == nil {
+		t.Error("the write landed outside through the link")
+	}
+
+	// A hard-linked file: link count above one is refused.
+	a := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(a, []byte("seed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := filepath.Join(dir, "b.txt")
+	if err := os.Link(a, b); err != nil {
+		t.Skip("platform cannot hard-link")
+	}
+	if err := writeGuarded(b, []byte("x")); err == nil {
+		t.Error("writeGuarded wrote through a hard link")
+	}
+
+	// A plain write works, and the credentials file is refused on the
+	// opened descriptor.
+	plain := filepath.Join(dir, "plain.txt")
+	if err := writeGuarded(plain, []byte("content")); err != nil {
+		t.Errorf("writeGuarded refused a plain write: %v", err)
+	}
+	if data, err := os.ReadFile(plain); err != nil || string(data) != "content" {
+		t.Errorf("the plain write did not land: %q %v", data, err)
+	}
+}

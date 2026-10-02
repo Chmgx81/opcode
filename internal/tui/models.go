@@ -211,7 +211,7 @@ func (m *Model) handleModelsFetched(msg modelsFetchedMsg) {
 		// provider, not a failure of opcode, and the way out is the
 		// same picker over a different provider.
 		m.add(entry{kind: entryDim, text: msg.provider +
-			" listed no models — /models picks another provider, or set one by name with /model <model>"})
+			" listed no models — /models picks another provider, or add the model to models.json under its provider and switch with /model <name>"})
 		return
 	}
 	// Sorted regardless of source, so the picker is stable.

@@ -16,7 +16,7 @@ trust.
 | | |
 |---|---|
 | Latest release | **v0.6.0** (2026-10-02; the UI redesign — Phases 45–49: the box composer, the violet identity, one list language, the mode picker, the first-run journey, the context readout, native scrollback) |
-| Head | 15 Go packages (~16.9k lines non-test, 573 tests) |
+| Head | 15 Go packages (~16.9k lines non-test, 579 tests) |
 | Go | the `go` line of `go.mod` (1.25.13); CI installs exactly that |
 | Release platforms | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 |
 | Sandbox | Linux only (Landlock 5.13+; seccomp network block on x86_64) |
@@ -78,6 +78,22 @@ are not re-litigated.
 
 Still open:
 
+- **No retry or backoff on transient provider errors.** A 429 or a
+  5xx fails the turn and names the next step; the user resends. A
+  single automatic retry with the provider's retry-after would take
+  the rough edges off rate limits — design work, not a one-liner
+  (billing and steering semantics need deciding first).
+- **MCP tool calls are capped at 30s, for every server.** A
+  legitimate slow tool (a build, a test suite) fails and a restart
+  does not trigger on timeouts. A per-server `timeout` field in
+  `mcp.json` is the shape; not built because no one has asked.
+- **Compaction is off unless `context_window` is set.** The working
+  line's occupancy readout is silent without it too. A "context is
+  getting large" dim note at a generous fixed threshold (say 100k
+  tokens) would warn without guessing a model's real window.
+- **Skill-script trust is re-checked at launch, not mid-session.**
+  Scripts run sandboxed either way; the gap is documentation-only
+  and SECURITY.md states it.
 - **Read-tier reads any path.** `read_file` is unconstrained apart
   from `auth.json`. This is a documented posture, not a bug — see
   [SECURITY.md](SECURITY.md) — but a path allowlist is the obvious
@@ -96,10 +112,10 @@ Still open:
 - **Package boundaries.** `internal/tools` and `internal/tui` are
   both large; the natural splits (a permission leaf package,
   prompt/picker files) are a next-touch refactor, not urgent.
-- **No `internal/config` → `internal/tools` import yet.** The
-  direction is one-way today, so there is no cycle; it is worth
-  doing if `tools` ever needs a config constant. A leaf package is
-  the cleaner fix when that day comes.
+- **`internal/config` imports `internal/tools` (mode names); the
+  reverse edge does not exist, so the graph stays acyclic.** The
+  dependency is narrow and one-way; if it ever widens, a leaf
+  package holding the mode constants is the cleaner cut.
 - **`!` is shell-only.** The escape runs `bash -c`; there is no
   `!read_file`-style form to invoke a tool by hand.
 - **Releases are unsigned.** No build attestation or cosign

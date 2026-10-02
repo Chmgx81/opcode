@@ -57,7 +57,10 @@ system you control. What that does and does not protect:
   instructions aimed at the model (prompt injection). Project-level
   skills only load after you trust the project, and the trust
   fingerprint covers skill scripts, `SKILL.md` bodies, and their
-  bundled references/assets — editing any of them re-asks.
+  bundled references/assets — editing any of them re-asks at the
+  next launch (the fingerprint is computed at startup; skill
+  scripts still run sandboxed, so a mid-session edit gains nothing
+  over sandboxed bash).
 - **The model's web fetches cannot reach your network.** `web_fetch`
   refuses loopback, private-LAN, link-local, and unspecified
   addresses (literal IPs) on every redirect hop, and asks first in

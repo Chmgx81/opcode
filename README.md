@@ -114,7 +114,7 @@ asks instead of pretending. Details and the threat model:
 | **?** | help overlay |
 
 Commands: `/model` `/models` `/mode` `/sessions` `/skills` `/mcp` `/theme`
-`/diff` `/login` `/logout` `/doctor` `/update` `/help` `/exit`. Unknown
+`/diff` `/login` `/logout` `/doctor` `/update` `/help` `/exit` `/quit`. Unknown
 commands error in place with the closest match — never a billed model
 turn. `@` opens a live file picker; `!` runs a shell command directly.
 

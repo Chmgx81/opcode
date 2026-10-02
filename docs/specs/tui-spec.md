@@ -146,7 +146,7 @@ cannot answer is the one failure a permission dialog may not have.
 ### 3.1 Greeting (once, scrolls away)
 
 ```
- ▄▄▄▄    ▄▄▄▄▄    ◈ opcode v0.5.0
+ ▄▄▄▄    ▄▄▄▄▄    ◈ opcode v0.6.0
 █▀  ▀█  █▀  ▀█    anthropic/claude-sonnet-4.5 · /home/you/project
 █▄  ▄█  █▄▄▄▀
  ▀▄▄▀   █

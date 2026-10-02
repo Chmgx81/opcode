@@ -131,6 +131,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The quit keys are never swallowed by any layer: the double-press
+	// exit must work in a picker, a dialog, the pager, and the login
+	// flow, and a layer that eats them silently is a trap. The
+	// interrupt answers any pending prompt on its way out.
+	if s := msg.String(); s == "ctrl+c" || s == "ctrl+d" {
+		return m.quitKey()
+	}
+
 	// The trust prompt owns the keyboard first.
 	if m.awaitingTrust != nil {
 		if time.Since(m.awaitingTrust.OpenedAt) < typeAheadGuard {
@@ -309,8 +317,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// The transcript pager owns the keyboard while open: arrows and
 	// page keys scroll it, everything else but closing it is
-	// swallowed — typing goes nowhere until it closes.
-	if m.transcriptOpen {
+	// swallowed — typing goes nowhere until it closes. The quit keys
+	// are the exception: they fall through to the quit logic, so the
+	// double-press exit works here too.
+	if m.transcriptOpen && msg.String() != "ctrl+c" && msg.String() != "ctrl+d" {
 		switch msg.String() {
 		case "ctrl+o", "esc", "ctrl+r":
 			// ctrl+r closes what it opened: the key is a toggle
@@ -334,30 +344,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.transcriptTop = 0
 		return m, nil
 	case "ctrl+c", "ctrl+d":
-		// Codex's double-press exit: the first press arms a short
-		// window — and interrupts a running turn — the toast says
-		// so; only a second press inside the window exits. An
-		// explicit /exit needs no arming.
-		if time.Since(m.quitArmedAt) < quitWindow {
-			m.cancelTurn()
-			m.cancelShell()
-			return m, tea.Quit
-		}
-		m.quitArmedAt = time.Now()
-		if m.working {
-			m.cancelTurn()
-			m.showToast("interrupted — ctrl+c again to exit")
-			return m, nil
-		}
-		if m.shell != nil {
-			// Same posture as a turn: the first press stops the work
-			// in flight and hints at the exit.
-			m.cancelShell()
-			m.showToast("interrupted — ctrl+c again to exit")
-			return m, nil
-		}
-		m.showToast("ctrl+c again to exit")
-		return m, nil
+		return m.quitKey()
 	case "esc":
 		if m.working {
 			m.cancelTurn()
@@ -485,6 +472,35 @@ const typeAheadGuard = 400 * time.Millisecond
 // the toast hint shows for the same span, so the promise on screen
 // never outlives the window.
 const quitWindow = 4 * time.Second
+
+// quitKey is what ctrl+c and ctrl+d always do, in every layer. The
+// double-press exit: the first press arms a short window and
+// interrupts whatever is running — the toast says so; only a second
+// press inside the window exits. An explicit /exit needs no arming.
+// handleKey calls this before any layer can swallow the keys: a quit
+// key that a picker or dialog eats silently is a trap.
+func (m *Model) quitKey() (tea.Model, tea.Cmd) {
+	if time.Since(m.quitArmedAt) < quitWindow {
+		m.cancelTurn()
+		m.cancelShell()
+		return m, tea.Quit
+	}
+	m.quitArmedAt = time.Now()
+	if m.working {
+		m.cancelTurn()
+		m.showToast("interrupted — ctrl+c again to exit")
+		return m, nil
+	}
+	if m.shell != nil {
+		// Same posture as a turn: the first press stops the work in
+		// flight and hints at the exit.
+		m.cancelShell()
+		m.showToast("interrupted — ctrl+c again to exit")
+		return m, nil
+	}
+	m.showToast("ctrl+c again to exit")
+	return m, nil
+}
 
 // resizeComposer grows the input with its content, one visible line
 // per typed or wrapped line, capped so a huge paste can't eat the
@@ -1497,6 +1513,15 @@ func (m *Model) addResultEntry(ev orchestrator.Event) {
 func (m *Model) turnEnded() tea.Cmd {
 	m.working = false
 	m.cancel = nil
+	// The session saves at every turn boundary — the UI has always
+	// claimed it does ("opcode saves a session when a turn ends"), and
+	// a crash, a kill, or a closed terminal must lose at most the
+	// turn that just ended, not the conversation since launch. The
+	// write is atomic and skips empty conversations, so it cannot
+	// shadow a real session with an empty file.
+	if m.opt.SaveCurrentSession != nil {
+		m.opt.SaveCurrentSession()
+	}
 	if len(m.queue) == 0 {
 		// The finished turn commits NOW, not at the next boundary.
 		// The terminal's own scrollback is the reader's native way

@@ -188,7 +188,7 @@ opcode/
     specs/          # this file, tui-spec.md, per-phase specs (see specs/README.md)
     reference/      # Codex source audits + the opcode-focused adoption synthesis
     releasing.md    # how a release is cut, and what the pipeline does
-    progress-log.md # the full chronological build log (Phase 0 → 44)
+    progress-log.md # the full chronological build log (Phase 0 → 49)
   scripts/          # test-install.sh — exercises install.sh against a fake release
   install.sh        # the one-liner installer
   AGENTS.md

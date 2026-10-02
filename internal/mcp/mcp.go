@@ -470,7 +470,7 @@ func (c *Client) Call(ctx context.Context, tool string, arguments json.RawMessag
 		if err == nil {
 			return out, nil
 		}
-		if attempt > 0 || err == nil || !strings.Contains(err.Error(), errDead.Error()) {
+		if attempt > 0 || !strings.Contains(err.Error(), errDead.Error()) {
 			return "", err
 		}
 		if err := c.Start(ctx); err != nil {

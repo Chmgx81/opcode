@@ -1,5 +1,11 @@
 # Phase 45 — UI restyle: one box language, a tighter greeting
 
+> **Superseded in part (Phase 47, live findings):** the identity line
+> described below included the mode; the greeting is a frozen launch
+> snapshot and the mode is a live dial, so the mode left the line —
+> see the log entry "the mode leaves the greeting's frozen snapshot".
+> Everything else here holds.
+
 ## Goal
 
 The audit asked "what would a redesign actually improve?" and the

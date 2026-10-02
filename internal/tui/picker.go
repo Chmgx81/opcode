@@ -97,8 +97,10 @@ type keyInput struct {
 }
 
 // handlePickerKey routes one keypress while a picker is open. It returns
-// the selected item when Enter chose one. ctrl+c is deliberately not
-// handled here so it still quits the program.
+// the selected item when Enter chose one. ctrl+c/ctrl+d are deliberately
+// not handled here — handled=false lets them fall through to the quit
+// logic, so the double-press exit works with a picker open; a layer
+// that swallows the quit key with no feedback is a trap.
 func (m *Model) handlePickerKey(k keyInput) (selected *pickerItem, handled bool) {
 	p := m.picker
 	if p == nil {
@@ -127,6 +129,12 @@ func (m *Model) handlePickerKey(k keyInput) (selected *pickerItem, handled bool)
 			p.applyFilter()
 		}
 		return nil, true
+	}
+	if k.name == "ctrl+c" || k.name == "ctrl+d" {
+		// Not handled: the quit logic owns the double-press exit, and
+		// it must work with a picker open — a layer that swallows the
+		// quit key with no feedback is a trap.
+		return nil, false
 	}
 	if k.printable != "" {
 		p.query += k.printable

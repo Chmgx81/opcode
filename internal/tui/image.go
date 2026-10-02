@@ -75,11 +75,13 @@ func resolveClipboardTool(name string) string {
 func readClipboardImage() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	available := false
 	for _, src := range clipboardSources {
 		tool := resolveClipboardTool(src.name)
 		if tool == "" {
 			continue
 		}
+		available = true
 		cmd := exec.CommandContext(ctx, tool, src.args...)
 		out, err := cmd.Output()
 		if err != nil || len(out) == 0 {
@@ -90,6 +92,12 @@ func readClipboardImage() ([]byte, error) {
 				humanBytes(len(out)), humanBytes(imageBytesCap))
 		}
 		return out, nil
+	}
+	if !available {
+		// "No image on the clipboard" would be a lie the user cannot
+		// act on: without a clipboard tool opcode cannot see the
+		// clipboard at all, and the fix is an install, not a copy.
+		return nil, fmt.Errorf("no clipboard tool found — install one: wl-paste (Wayland), xclip (X11), or pngpaste (macOS: brew install pngpaste)")
 	}
 	return nil, ErrNoImage
 }

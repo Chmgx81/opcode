@@ -1025,10 +1025,20 @@ func TestConcurrentSendHistorySteerSeedIsRaceFree(t *testing.T) {
 }
 
 // cancelingTool cancels the turn's context mid-dispatch, the way an
-// interrupt landing during a tool call does.
-type cancelingTool struct{ cancel context.CancelFunc }
+// interrupt landing during a tool call does. output simulates a tool
+// that partially applied before the interrupt landed.
+type cancelingTool struct {
+	cancel context.CancelFunc
+	name   string // empty = "cancel_now"
+	output string
+}
 
-func (cancelingTool) Name() string        { return "cancel_now" }
+func (c cancelingTool) Name() string {
+	if c.name != "" {
+		return c.name
+	}
+	return "cancel_now"
+}
 func (cancelingTool) Description() string { return "test tool" }
 func (cancelingTool) Parameters() json.RawMessage {
 	return json.RawMessage(`{"type":"object"}`)
@@ -1036,7 +1046,7 @@ func (cancelingTool) Parameters() json.RawMessage {
 func (cancelingTool) Tier() tools.Tier { return tools.TierReadOnly }
 func (c cancelingTool) Execute(ctx context.Context, args string) (string, error) {
 	c.cancel()
-	return "", ctx.Err()
+	return c.output, ctx.Err()
 }
 
 func TestInterruptedToolCallsStillGetResults(t *testing.T) {
@@ -1646,5 +1656,42 @@ func TestEffortIsSafeToReadWhileItIsSwitched(t *testing.T) {
 	wg.Wait()
 	if got := orch.Effort(); got != "" {
 		t.Errorf("Effort() = %q, want the last write", got)
+	}
+}
+
+// TestInterruptedToolKeepsItsPartialOutput: a tool interrupted
+// mid-run may have partially applied — a killed command's side
+// effects are real — so its own output rides along with the
+// interrupted note instead of being discarded. The model must not be
+// told a write that happened did not.
+func TestInterruptedToolKeepsItsPartialOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &fakeProvider{rounds: [][]llm.ChatEvent{
+		{{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c1", Name: "cancel_partial", Arguments: `{}`}},
+			{Type: llm.ToolCallEvent, Call: llm.ToolCall{ID: "c2", Name: "read_file", Arguments: `{"path": "missing-ok"}`}}},
+	}}
+	orch, reg := newTestOrchestrator(p, nil, t.TempDir())
+	reg.Register(cancelingTool{
+		cancel: cancel,
+		name:   "cancel_partial",
+		output: "created draft.txt, 12 lines",
+	})
+
+	for ev := range orch.Send(ctx, "go") {
+		_ = ev
+	}
+	h := orch.History()
+	if len(h) < 3 || h[2].Role != "tool" || h[2].ToolCallID != "c1" {
+		t.Fatalf("history after interrupt = %+v", h)
+	}
+	if !strings.Contains(h[2].Content, "interrupted by the user") {
+		t.Errorf("the interrupted note is missing: %q", h[2].Content)
+	}
+	if !strings.Contains(h[2].Content, "created draft.txt") {
+		t.Errorf("the partially-applied evidence was discarded: %q", h[2].Content)
+	}
+	// The later call is answered as never run — its tool never started.
+	if len(h) < 4 || !strings.Contains(h[3].Content, "before this tool ran") {
+		t.Errorf("the never-started call was not marked: %+v", h)
 	}
 }

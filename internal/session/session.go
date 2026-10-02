@@ -246,6 +246,38 @@ func Latest(dir string) (*Session, string, error) {
 	return s, path, err
 }
 
+// LatestReadable returns the newest session that parses, walking
+// older files when the newest does not, and naming every file it
+// skipped. `--continue` must not die on one corrupt file: the
+// user's other sessions are the recovery, and silence about what
+// was skipped would read as a session that never existed.
+func LatestReadable(dir string) (*Session, string, []string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, "", nil, nil
+	}
+	if err != nil {
+		return nil, "", nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	var skipped []string
+	for i := len(names) - 1; i >= 0; i-- {
+		path := filepath.Join(dir, names[i])
+		s, err := Load(path)
+		if err == nil {
+			return s, path, skipped, nil
+		}
+		skipped = append(skipped, names[i])
+	}
+	return nil, "", skipped, nil
+}
+
 // NewFile creates the file path for a fresh session: the sessions dir
 // plus a timestamped, unique name.
 func NewFile(userDir string) string {

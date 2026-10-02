@@ -7,6 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 func ctrlCKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlC} }
@@ -240,5 +242,51 @@ func TestEscClosesExactlyOneThing(t *testing.T) {
 	m.Update(escKey())
 	if v := m.composer.Value(); v != "a draft that matters" {
 		t.Errorf("esc ate the draft with nothing open: %q", v)
+	}
+}
+
+// TestQuitKeysWorkInEveryLayer: no overlay may swallow ctrl+c — a
+// quit key that a picker, a dialog, or the pager eats silently is a
+// trap, and the README's "press twice to exit" promise must hold
+// everywhere. The first press arms and announces; the second quits.
+func TestQuitKeysWorkInEveryLayer(t *testing.T) {
+	for _, layer := range []struct {
+		name   string
+		opener func(m *Model)
+	}{
+		{"picker", func(m *Model) {
+			m.picker = newPicker(pickerThemes, "theme",
+				[]pickerItem{{Label: "dark"}})
+		}},
+		{"pager", func(m *Model) { m.transcriptOpen = true }},
+		{"help", func(m *Model) { m.helpOpen = true }},
+		{"permission", func(m *Model) {
+			m.awaitingPerm = &permRequest{openedAt: time.Now().Add(-time.Second)}
+		}},
+	} {
+		t.Run(layer.name, func(t *testing.T) {
+			dir := t.TempDir()
+			m, _ := newText(t, dir, [][]llm.ChatEvent{})
+			layer.opener(m)
+
+			// First press: armed, announced, still in the layer.
+			model, _ := m.Update(keyMsg("ctrl+c"))
+			m2 := model.(*Model)
+			if m2.quitArmedAt.IsZero() {
+				t.Error("the layer swallowed ctrl+c — the exit never armed")
+			}
+			if m2.toast == "" {
+				t.Error("the armed quit said nothing — silent no-op")
+			}
+
+			// Second press inside the window: quits from inside the layer.
+			model, cmd := m2.Update(keyMsg("ctrl+c"))
+			if model.(*Model) == m2 && cmd == nil {
+				t.Fatal("the second ctrl+c did not quit")
+			}
+			if cmd == nil {
+				t.Fatal("quit returned no command")
+			}
+		})
 	}
 }

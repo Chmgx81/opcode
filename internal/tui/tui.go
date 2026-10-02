@@ -35,7 +35,7 @@ import (
 // and builds without version wiring). Production passes the real
 // build version in — one version everywhere: the banner, --version,
 // and the fetch UA agree.
-const version = "v0.3.0"
+const version = "v0.6.0"
 
 // The opcode logo, shown at the top of a fresh session; it scrolls away
 // with the transcript.

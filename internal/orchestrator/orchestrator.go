@@ -196,6 +196,15 @@ func (o *Orchestrator) SetProvider(p llm.Provider) {
 	o.Provider = p
 }
 
+// SetModel switches the model name; the next model request carries it.
+// Same guard as SetProvider — cfgMu — because the turn goroutine
+// reads the field while a switch lands from the UI goroutine.
+func (o *Orchestrator) SetModel(model string) {
+	o.cfgMu.Lock()
+	defer o.cfgMu.Unlock()
+	o.Model = model
+}
+
 // systemPrompt composes the base prompt, the skills index, and the
 // active mode's instruction — assembled fresh each round so mid-session
 // changes (a trust grant adding project skills, a mode switch) are
@@ -465,7 +474,21 @@ func (o *Orchestrator) runTurn(ctx context.Context, events chan<- Event) error {
 				out, err := o.dispatch(ctx, call)
 				if err != nil {
 					if ctx.Err() != nil {
-						o.answerCancelledCalls(calls[i:])
+						// The tool may have partially applied before
+						// the interrupt landed — a killed command's
+						// side effects are real. Its own output is
+						// the only evidence of what ran, so it rides
+						// along instead of being discarded, and the
+						// model is not told a write that happened
+						// did not.
+						cur := "error: interrupted by the user before this tool ran to completion"
+						if trimmed := strings.TrimSpace(out); trimmed != "" {
+							cur += "\n" + trimmed
+						}
+						o.appendHistory(llm.Message{
+							Role: "tool", ToolCallID: call.ID, Content: truncate(cur),
+						})
+						o.answerCancelledCalls(calls[i+1:])
 						return ErrCancelled
 					}
 					// Tool failures go back to the model as the tool

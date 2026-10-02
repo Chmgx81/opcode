@@ -114,6 +114,11 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 		isTTY(os.Stdin), isTTY(os.Stdout)); err != nil {
 		return err
 	}
+	if *jsonOut && *prompt == "" {
+		// Silently ignoring the flag would open the interactive TUI
+		// with the user believing they asked for JSON events.
+		return fmt.Errorf("--json formats headless events — it needs -p <prompt>")
+	}
 
 	userDir, err := config.UserDir()
 	if err != nil {
@@ -341,9 +346,16 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 	orch.CompactionModel = cfg.CompactionModel
 
 	// Session persistence (Section 3.7): --resume/--continue seeds
-	// the orchestrator's history from a saved session; every run saves
-	// its tree on exit with credentials redacted.
+	// the orchestrator's history from a saved session; every turn
+	// rewrites the session file atomically, credentials redacted.
 	var resumeNote string
+	// sessionPath is the conversation's file, held for the
+	// process's life: every save rewrites it atomically, so a crash
+	// or kill loses at most the turn in flight. Resuming switches
+	// the pointer — continuing a session grows that session's own
+	// file — and a session with no turns never writes one at all, so
+	// an accidental empty launch cannot shadow a real conversation.
+	sessionPath := session.NewFile(userDir)
 	if *resume != "" || *cont {
 		var s *session.Session
 		var path string
@@ -352,7 +364,15 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 			s, err = session.Load(*resume)
 			path = *resume
 		} else {
-			s, path, err = session.Latest(session.Dir(userDir))
+			// --continue walks older files when the newest does not
+			// parse: one damaged file must not brick the return
+			// path, and every skip is named rather than silent.
+			var skipped []string
+			s, path, skipped, err = session.LatestReadable(session.Dir(userDir))
+			for _, name := range skipped {
+				startupNotes = append(startupNotes, "session "+name+
+					" could not be read — skipped, /sessions lists the rest")
+			}
 			if s == nil && err == nil {
 				return fmt.Errorf("no saved sessions in %s", session.Dir(userDir))
 			}
@@ -369,6 +389,7 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 				filepath.Base(what), err)
 		}
 		orch.Seed(s.History())
+		sessionPath = path
 		resumeNote = fmt.Sprintf("resumed session %s (%d messages)", filepath.Base(path), len(s.History()))
 	}
 
@@ -433,11 +454,19 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 		}
 	}
 
-	// saveSession snapshots the conversation into the tree-structured
-	// session file, credentials redacted (Section 3.7).
+	// saveSession snapshots the conversation into the session file,
+	// credentials redacted (Section 3.7). The TUI calls it at every
+	// turn boundary; the rewrite is atomic, so a crash mid-save leaves
+	// the previous complete session in place. A conversation with no
+	// messages writes nothing: an empty session file would shadow
+	// the real latest for --continue.
 	saveSession := func() {
-		s := session.FromHistory(cfg.Model, cfg.PermissionMode, orch.History())
-		if err := s.Save(session.NewFile(userDir), redactor.Secrets()); err != nil {
+		hist := orch.History()
+		if len(hist) == 0 {
+			return
+		}
+		s := session.FromHistory(cfg.Model, cfg.PermissionMode, hist)
+		if err := s.Save(sessionPath, redactor.Secrets()); err != nil {
 			fmt.Fprintf(os.Stderr, "opcode: could not save session: %v\n", err)
 		}
 	}
@@ -473,8 +502,12 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 				providerName, pc.APIKeyEnv)
 		}
 		newProvider := llm.New(pc.API, pc.BaseURL, k.Value)
-		orch.Provider = newProvider
-		orch.Model = model
+		// Through the cfgMu-guarded setters, never the fields: the
+		// turn goroutine reads Provider and Model while a switch
+		// lands from the UI goroutine, and the TUI's working-guard
+		// is an invariant one future call site may not keep.
+		orch.SetProvider(newProvider)
+		orch.SetModel(model)
 		subRunner.Provider = newProvider
 		subRunner.Model = model
 		// The new key is a new secret; the redactor accumulates it
@@ -491,6 +524,10 @@ directory — see https://github.com/Chmgx81/opcode#quick-start
 			return 0, err
 		}
 		orch.Seed(s.History())
+		// Continuing a session grows that session's own file: the
+		// autosave pointer follows the resume, and the TUI saved the
+		// pre-resume conversation before calling here.
+		sessionPath = path
 		return len(s.History()), nil
 	}
 

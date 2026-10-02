@@ -3412,3 +3412,69 @@ the pager, and ctrl+r keeps the frozen hints' promise.
 Local pre-flight for the tag: `go mod tidy` clean, `gofmt` empty,
 `go vet` clean, the full `-race` suite (15 packages, 573 tests),
 `scripts/test-install.sh` (48 checks), and the doc link check.
+
+# The full-stack review (2026-10-02, post-v0.6.0)
+
+Four parallel review passes — security (against the
+secure-code-review skill methodology), end-user experience,
+reliability and scalability, and maintainability per AGENTS.md.
+Every finding was verified against the code before anything was
+changed; the maintainability pass found the codebase honest (docs
+earn their "re-checked against the code" claims — one exception,
+fixed) and the security pass confirmed more claims than it broke.
+
+**Fixed, in this order of severity:**
+
+- **The session autosave was a lie.** The UI said "opcode saves a
+  session when a turn ends"; nothing saved between launch and exit,
+  and a crash lost the whole conversation. The session file is now
+  held for the process's life and rewritten atomically at every
+  turn boundary; resuming switches the pointer so continuing a
+  session grows that session's own file; and an empty conversation
+  writes nothing — so an accidental empty launch can no longer
+  shadow the real latest for `--continue`. `--continue` also walks
+  past a corrupt newest session instead of dying on it, naming
+  every file it skipped. (`TestTurnEndSavesTheSession`,
+  `TestLatestReadableWalksPastCorruption`)
+- **The write path lacked the open-time bound the read path has.**
+  `openReadable` checks the opened descriptor by inode because a
+  sandboxed command can swap a symlink under a gate-time check;
+  writes had no equivalent — `os.WriteFile`, following whatever the
+  filesystem said. Every in-process write now goes through
+  `writeGuarded`: `O_NOFOLLOW` on the final component, a refusal
+  for files with more than one hard link (the Landlock ABI 1 move),
+  and an exec-time revalidation of the writable roots.
+  (`TestWriteGuardedRefusesSwappedTargets`)
+- **An interrupt discarded a completed tool's evidence.** A tool
+  interrupted mid-run may have partially applied; its partial
+  output was dropped and the history recorded a generic
+  "interrupted" note. The output rides along now — the model is not
+  told a write that happened did not.
+  (`TestInterruptedToolKeepsItsPartialOutput`)
+- **ctrl+c was swallowed in every modal.** The picker's own comment
+  claimed it quits; the code returned handled for every key. The
+  quit keys now route through one `quitKey` before any layer can
+  eat them — arm, announce, second press exits — verified in the
+  picker, the pager, help, and the permission dialog.
+  (`TestQuitKeysWorkInEveryLayer`)
+- **Smaller truths:** "no image on the clipboard" no longer lies on
+  a Mac without pngpaste (the error names the install); the
+  empty-model-list advice no longer points at a `/model <name>`
+  that refuses the name; `--json` without `-p` errors instead of
+  silently opening the TUI; `switchModel` goes through the
+  cfgMu-guarded setters; `/quit` joined the README's command list.
+- **Docs:** PROGRESS's "no config→tools import" claim (false — the
+  import exists, the claim now describes the real one-way edge);
+  the architecture log's stale "Phase 0 → 44"; a superseded-note
+  on the phase45 spec; stale version constants; `.commandcode/`
+  ignored.
+
+**Deliberately deferred (named, in PROGRESS.md "Still open"):**
+provider retry/backoff, a per-server MCP tool-call timeout, a
+"context is getting large" warning without a configured window,
+mid-session skill-script re-fingerprinting, transcript memory
+pruning, and the `run()` split — each is design work with real
+trade-offs, not a gap to paper over.
+
+Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
+`go test -race -count=1 ./...` suite pass — 579 tests.

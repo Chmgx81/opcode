@@ -186,3 +186,22 @@ func readFileGuarded(path string) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// writeGuarded is os.WriteFile through openWritableUnix: the write
+// side of the read path's hardening. The gate checked the path at
+// decision time; this checks the file being opened at write time —
+// no symlink swap in the window, no hard-linked file the sandbox
+// placed, and never the credentials file. Every in-process write
+// goes through here: write_file, edit_file, and apply_patch.
+func writeGuarded(path string, data []byte) error {
+	f, err := openWritableUnix(path)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(data)
+	cerr := f.Close()
+	if werr != nil {
+		return werr
+	}
+	return cerr
+}

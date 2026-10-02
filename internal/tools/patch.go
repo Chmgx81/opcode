@@ -201,7 +201,7 @@ func writeFileLines(path string, lines []string) error {
 	if content != "" {
 		content += "\n"
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return writeGuarded(path, []byte(content))
 }
 
 // parseJSONLoose unmarshals into v, treating unparsable input as

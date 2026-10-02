@@ -309,3 +309,44 @@ func TestLoadSubstitutesTextForAnImageOnlyMessage(t *testing.T) {
 		})
 	}
 }
+
+// TestLatestReadableWalksPastCorruption: --continue must not die on
+// one damaged file — the newest session that parses wins, and every
+// newer file that did not is named rather than silently skipped.
+func TestLatestReadableWalksPastCorruption(t *testing.T) {
+	dir := t.TempDir()
+	writeSession := func(name string) string {
+		path := filepath.Join(dir, name)
+		s := FromHistory("m", "ask-every-time", []llm.Message{{Role: "user", Content: name}})
+		if err := s.Save(path, nil); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	older := writeSession("20260101-110000-bbb.json")
+	newer := writeSession("20260101-120000-aaa.json")
+	// The newest file of all is damaged: written after both real ones.
+	if err := os.WriteFile(filepath.Join(dir, "20260101-130000-ccc.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, path, skipped, err := LatestReadable(dir)
+	if err != nil || s == nil {
+		t.Fatalf("LatestReadable = (%v, %q, %v, %v), want the newest readable session", s, path, skipped, err)
+	}
+	if path != newer && path != older {
+		t.Errorf("path = %q, want one of the readable sessions", path)
+	}
+	if len(skipped) != 1 || !strings.Contains(skipped[0], "130000") {
+		t.Errorf("skipped = %v, want the damaged file named", skipped)
+	}
+}
+
+// TestLatestReadableEmpty: an empty directory is not an error — the
+// caller says "no saved sessions" in its own words.
+func TestLatestReadableEmpty(t *testing.T) {
+	s, path, skipped, err := LatestReadable(t.TempDir())
+	if s != nil || path != "" || skipped != nil || err != nil {
+		t.Errorf("LatestReadable(empty) = (%v, %q, %v, %v), want zeros", s, path, skipped, err)
+	}
+}
