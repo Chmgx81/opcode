@@ -9,7 +9,7 @@
 
 # Build log (archived)
 
-This is the full chronological build log, Phase 0 through Phase 46,
+This is the full chronological build log, Phase 0 through Phase 47,
 moved here verbatim from `PROGRESS.md`. It is the record of what each
 phase set out to do, what was verified live, and what was left
 unverified or deliberately deferred.
@@ -3254,3 +3254,49 @@ Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
 `go test -race -count=1 ./...` suite pass; hardcoded SGR assertions
 in `tui_test.go` and `diff_test.go` moved to the new hex values;
 README badges carry the new accent.
+
+# Phase 47 — the mode picker and the first-run flow (status: complete, verified)
+
+Phase 47 ([specs/phase47-modes-and-first-run.md](specs/phase47-modes-and-first-run.md)):
+the mode UI and the journey from "no config" to "first prompt sent".
+
+- **`/mode` is a picker, not a sentence.** Bare `/mode` printed a dim
+  line; it now opens the same component `/theme` uses — one row per
+  posture, each carrying the README safety table's own sentence,
+  the active one marked, Enter switching through the exact path tab
+  uses. An unknown `/mode <name>` opens the picker on top of its
+  error: the list IS the answer to "what is valid". The mode line
+  wears its own color — plan in info blue, build in the brand
+  accent, full-auto in amber — with the glyph still differing, so
+  color is never the only signal.
+- **`/model` is the hub.** It read models.json only, so the first-run
+  user who had just stored a key was told nothing was configured —
+  a dead end one step from the finish. It now lists what a user can
+  reach: models.json choices first (active marked), providers with
+  a resolvable key whose live list is one enter away, then keyless
+  providers, each naming `/login <name>` — enter starts exactly
+  that. The journey the brief described, minus the typing.
+- **Continuity, not luck.** `/login`'s success now fetches that
+  provider's live model list itself, so the chain is key → models →
+  pick with no command to remember in between. This required fixing a
+  real gap: the resolvers hold auth.json's startup snapshot and
+  never see a later write, so a key stored this session was
+  invisible to every picker and fetch until a restart. The session
+  keeps its own copy (`storedKeys`), `/logout` forgets it, and the
+  pickers, fetches, and pre-flight resolve through it.
+- **The error before the request.** Sending with an active provider
+  that has no resolvable key used to wait for a doomed 401. The
+  pre-flight refuses the turn and names `/login <provider>`;
+  switching to an unkeyed provider says so at the switch, with the
+  same fix.
+- **The welcome reads like a product.** The three-step first-run
+  copy names what each step does and which commands work later.
+
+Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
+`go test -race -count=1 ./...` suite pass. New tests: the mode
+picker's rows, marks, and select path (`TestModePicker`); the hub's
+ordering and both row actions (`TestModelPickerIsTheHub`); the
+login → fetch → catalog chain with the session key
+(`TestLoginContinuesToModels`); the switch warning
+(`TestSwitchToUnkeyedProviderWarns`); and the pre-flight refusing
+the turn with zero requests billed (`TestSendPreflightsTheKey`).

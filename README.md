@@ -62,9 +62,12 @@ echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.opcode/config.json
 | `groq` · `deepseek` · `together` · `cerebras` · `xai` · `moonshot` · `fireworks` · `qwen` | OpenAI-compatible | `<NAME>_API_KEY` |
 | `ollama` | localhost:11434 | none |
 
-- `/login` stores a key any time (`/login <provider>` skips the picker);
-  `/models` fetches a provider's live model list and `/model` switches
-  without a restart.
+- `/login` stores a key any time (`/login <provider>` skips the picker),
+  then offers that provider's live model list; `/model` is the hub —
+  models.json choices, providers you hold keys for (enter browses
+  their live lists), and keyless ones one `/login` away. Sending
+  with no key for the active provider is refused before the request,
+  with the fix named.
 - Custom endpoints and proxies live in `models.json`'s `providers` block;
   an explicit entry always wins over the catalog.
 - Keys resolve: `auth.json` (supports `!command` for secret managers),

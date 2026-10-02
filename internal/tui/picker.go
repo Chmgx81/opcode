@@ -29,6 +29,7 @@ const (
 	pickerProviders // /models step 1 and /login: choose a provider
 	pickerCatalog   // /models step 2: one provider's live model list
 	pickerThemes    // /theme: choose the palette
+	pickerModes     // /mode: choose the permission posture
 )
 
 type picker struct {

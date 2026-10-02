@@ -690,8 +690,19 @@ func TestModeCommandAndTrustPrompt(t *testing.T) {
 	if !strings.Contains(m.transcript(), "unknown mode nonsense") {
 		t.Errorf("invalid mode not rejected: %s", m.transcript())
 	}
-
-	typeAndEnter(m, "/mode full-auto")
+	// The picker the error opened IS the answer: pick full-auto from
+	// it, through the same select path Enter uses live.
+	if m.picker == nil || m.picker.kind != pickerModes {
+		t.Fatalf("unknown mode opened no picker: %s", m.transcript())
+	}
+	m.picker.down()
+	m.picker.down()
+	it, ok := m.picker.current()
+	if !ok || it.Action != "mode:"+tools.ModeFullAuto {
+		t.Fatalf("picker cursor = %+v, want full-auto", it)
+	}
+	m.picker = nil
+	m.pickerSelect(it)
 	if m.opt.Orch.Mode != tools.ModeFullAuto {
 		t.Errorf("orchestrator mode = %q", m.opt.Orch.Mode)
 	}
@@ -1634,5 +1645,62 @@ func TestBlockBreathingSpace(t *testing.T) {
 	}
 	if !blankAfter(think) {
 		t.Errorf("no blank between the receipt and the next user turn:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestModePicker: bare /mode is a picker, not a sentence — the mode is
+// the state every keystroke is scoped by, so it gets the treatment
+// /theme gets: one row per posture, each saying what runs without
+// asking, the active one marked exactly once.
+func TestModePicker(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+
+	m.setMode("")
+	if m.picker == nil || m.picker.kind != pickerModes {
+		t.Fatal("bare /mode opened no picker")
+	}
+	if len(m.picker.items) != len(tools.Modes) {
+		t.Fatalf("picker rows = %d, want %d modes", len(m.picker.items), len(tools.Modes))
+	}
+	act := 0
+	for _, it := range m.picker.items {
+		if it.Action != "mode:"+it.Label {
+			t.Errorf("row %q carries no mode action: %+v", it.Label, it)
+		}
+		if it.Detail == "" || strings.Contains(it.Detail, "\n") {
+			t.Errorf("mode %q has no one-line description: %q", it.Label, it.Detail)
+		}
+		if strings.HasSuffix(it.Detail, " — active") {
+			act++
+			if it.Label != m.opt.Mode {
+				t.Errorf("active mark on %q, want %q", it.Label, m.opt.Mode)
+			}
+		}
+	}
+	if act != 1 {
+		t.Errorf("active marks = %d, want exactly 1", act)
+	}
+}
+
+// TestSendPreflightsTheKey: sending with an active provider that has
+// no resolvable key is refused before the turn starts. The doomed
+// request and its 401 are a message about the past; the pre-flight is
+// one about the next step.
+func TestSendPreflightsTheKey(t *testing.T) {
+	dir := t.TempDir()
+	m, fp := newText(t, dir, nil)
+	m.opt.KeyFor = func(provider string) (string, bool) { return "", false }
+
+	typeAndEnter(m, "hello")
+	if m.working {
+		t.Error("a turn started without a key")
+	}
+	if n := fp.requestCount(); n != 0 {
+		t.Errorf("the doomed request billed %d rounds", n)
+	}
+	tr := m.transcript()
+	if !strings.Contains(tr, "no api key for openrouter") || !strings.Contains(tr, "/login openrouter") {
+		t.Errorf("the pre-flight names no fix:\n%s", tr)
 	}
 }

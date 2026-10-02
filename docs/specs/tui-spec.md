@@ -187,7 +187,11 @@ prompt to `!` and the border to amber. Below fourteen columns the
 box is not drawn: border and padding would leave the input under
 its floor, and a clipped border is worse chrome than none. The mode
 line carries each mode's own glyph — `⏸` plan, `›` build, `⏵⏵`
-full-auto — so the brand `◈` belongs to the composer alone.
+full-auto — and its own color: plan in info blue, build in the brand
+accent, full-auto in amber — the state every keystroke is scoped by,
+colored by what it means. The glyph differs too, so the color is
+emphasis, never the only signal. The brand `◈` belongs to the
+composer alone.
 
 The footer reflows from a candidate list, fullest to barest, first
 one that fits whole. **The mode is never dropped for anything else**:
@@ -273,6 +277,24 @@ frame's budget never counted. `/models` fetches the provider's real
 model list live; `/login` (bare) picks which provider's key to
 store. A filter matching nothing says so *and says how to widen it*,
 because "no matches" alone reads as a broken picker.
+
+`/mode` is the same component over the three permission postures:
+each row says what runs without asking, the active one is marked,
+and Enter goes through the same switch path tab uses — the grant
+reset and the toast cannot drift between entry points.
+
+`/model` is the model hub, ordered by what a user can reach: models
+pinned in models.json first (the active one marked), then providers
+with a resolvable key whose live list is one enter away, then
+providers without one, each naming the `/login` that unlocks it —
+enter starts exactly that. A key stored by `/login` is visible to
+the session immediately (the resolvers' startup snapshot never sees
+the write), and the login's success fetches that provider's live
+model list itself, so the journey is key → models → pick with no
+command to remember in between. Sending with an active provider that
+has no resolvable key is refused before the turn starts, and
+switching to an unkeyed provider says so at the switch — both name
+`/login <provider>` as the fix.
 
 ### 3.6 Other dialogs
 
@@ -534,10 +556,10 @@ them from 8 to 120 columns.
 
 | State | What it does |
 |---|---|
-| First run, no messages | the greeting and the composer; the footer names `?` and `/` |
+| First run, no messages | the welcome names the three steps, the provider picker is already open, and the footer names `?` and `/` |
 | No saved sessions | names where they land and what saves one |
 | No skills / no MCP servers | names the file each comes from |
-| No models configured | names `models.json` and `/models <provider>` |
+| No models configured | `/model` still offers the catalog — keyed providers browse their live lists, keyless ones name `/login` |
 | A provider listing nothing | says so and points at `/models` for another provider |
 | A filter matching nothing | names what was typed and how to widen it |
 | An `@` matching nothing | says the path must be under the working directory |
