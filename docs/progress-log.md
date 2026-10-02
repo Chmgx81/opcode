@@ -3478,3 +3478,30 @@ trade-offs, not a gap to paper over.
 
 Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
 `go test -race -count=1 ./...` suite pass — 579 tests.
+
+# The website (2026-10-02)
+
+`site/` — a zero-dependency static site: plain HTML and one
+stylesheet, no generator, no JavaScript, no cookies, no tracking.
+Deployed to GitHub Pages by `.github/workflows/site.yml` on every
+push to main that touches it; Pages serves the `site/` directory
+as-is.
+
+The landing page leads with the one-line install, the honest
+differentiators (kernel sandbox, fifteen providers with your key,
+one binary and no account), and the feature blocks this category's
+products headline — plan mode, subagents — shown as real terminal
+mockups of opcode's own output, not invented screenshots. The docs
+section mirrors the living documents, and every page carries an
+"edit on GitHub" line pointing at its source, so the site cannot
+quietly drift from the code. Deliberately absent: pricing tables
+(there is nothing to price), testimonials and logo walls (there is
+no social proof to show, and fabricating it would break the no-slop
+rules), and any claim the code does not meet — the headless page's
+first draft invented a `--mode` flag; it was caught and replaced
+with the real config-based mechanism before commit.
+
+Verified: every internal link resolves (a Python HTMLParser pass
+over all seven pages), the stylesheet is site-root-relative so
+GitHub Pages serves it under the docs subpaths, and the deploy
+workflow uses only first-party actions.

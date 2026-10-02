@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration — opcode</title>
+<meta name="description" content="config.json, models.json, auth.json, and the environment variables opcode reads.">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <nav class="nav" aria-label="Site">
+    <a class="brand" href="/"><span class="glyph">&#9671;</span> opcode</a>
+    <div class="links">
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/Chmgx81/opcode">GitHub</a>
+    </div>
+  </nav>
+</header>
+<main id="main" class="docsidebar">
+<aside>
+  <nav aria-label="Docs">
+    <a href="/docs/">Getting started</a>
+    <a href="/docs/usage.html">Usage</a>
+    <a href="/docs/configuration.html" aria-current="page">Configuration</a>
+    <a href="/docs/providers.html">Providers</a>
+    <a href="/docs/security.html">Security</a>
+    <a href="/docs/headless.html">Headless &amp; CI</a>
+  </nav>
+</aside>
+<article>
+  <p class="kicker">Docs</p>
+  <h1>Configuration</h1>
+  <p>Everything lives under <code>~/.opcode/</code>. You rarely touch
+  any of it by hand — <code>/login</code> stores keys,
+  <code>/model</code> persists the model, <code>/theme</code> the
+  palette — but the files are plain JSON and documented here.</p>
+  <h3><code>config.json</code></h3>
+  <pre><code>{
+  "model": "anthropic/claude-sonnet-4.5",
+  "mode": "build",
+  "theme": "dark",
+  "context_window": 200000,
+  "compaction_model": "openrouter/cheap-sum",
+  "update_checks": false
+}</code></pre>
+  <ul>
+    <li><code>model</code> — <code>provider/model</code>; written by picking a model in the UI.</li>
+    <li><code>mode</code> — <code>plan</code>, <code>build</code>, or <code>full-auto</code>.</li>
+    <li><code>theme</code> — <code>dark</code> (violet), <code>light</code>, <code>teal</code>, or <code>green</code>.</li>
+    <li><code>context_window</code> — the model's context size in tokens. Enables compaction and the working line's occupancy readout; 0 (absent) means unknown and nothing is guessed.</li>
+    <li><code>compaction_model</code> — the model that summarizes older context; unset means compaction is off.</li>
+  </ul>
+  <h3><code>auth.json</code></h3>
+  <p>Provider keys, written by <code>/login</code>, stored 0600. A
+  value starting with <code>!</code> runs as a command (a secret
+  manager's <code>op read …</code>) — only from this file, never
+  from a project directory.</p>
+  <h3><code>models.json</code></h3>
+  <p>Custom endpoints and pinned model lists:</p>
+  <pre><code>{
+  "default_provider": "anthropic",
+  "providers": {
+    "my-proxy": {
+      "base_url": "https://proxy.internal/v1",
+      "api": "openai",
+      "api_key_env": "MY_PROXY_KEY",
+      "models": ["gpt-4o", "gpt-4o-mini"]
+    }
+  }
+}</code></pre>
+  <p>An explicit entry always wins over the built-in catalog, and
+  custom providers join every picker.</p>
+  <h3>Environment</h3>
+  <table>
+    <tbody>
+      <tr><td><code>OPCODE_HOME</code></td><td>Move the config directory (default <code>~/.opcode</code>).</td></tr>
+      <tr><td><code>OPCODE_THEME</code></td><td><code>dark</code> or <code>light</code>, when the terminal background is undetectable.</td></tr>
+      <tr><td><code>OPCODE_PLAIN</code></td><td>ASCII-only posture: no unicode glyphs, no animations (also auto-detected for screen readers).</td></tr>
+      <tr><td><code>OPCODE_NO_UPDATE_CHECK</code></td><td>Disable the startup update check.</td></tr>
+      <tr><td><code>&lt;NAME&gt;_API_KEY</code></td><td>Provider keys, when not in <code>auth.json</code>.</td></tr>
+    </tbody>
+  </table>
+  <p class="editline">Source: <a href="https://github.com/Chmgx81/opcode/blob/main/README.md">README.md</a> ·
+  <a href="https://github.com/Chmgx81/opcode/blob/main/internal/config/config.go">internal/config</a></p>
+</article>
+</main>
+<footer class="site">
+  <div class="inner">
+    <span><span style="color:var(--accent)">&#9671;</span> opcode — MIT license</span>
+    <span class="right">No cookies, no tracking, no JavaScript.</span>
+  </div>
+</footer>
+</body>
+</html>
