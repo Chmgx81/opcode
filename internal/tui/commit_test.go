@@ -179,3 +179,45 @@ func TestTrimMarkerNamesTheEscape(t *testing.T) {
 		t.Errorf("the trim marker names no way to read the trimmed lines:\n%s", v)
 	}
 }
+
+// TestCtrlRKeepsTheFrozenPromises: committed text cannot re-render,
+// so ctrl+r with an empty live region opens the transcript pager —
+// the one view that expands everything — and toggles the live
+// expansion only when there is something live to expand. The frozen
+// "(ctrl+r to expand)" hints in scrollback stay true.
+func TestCtrlRKeepsTheFrozenPromises(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, [][]llm.ChatEvent{})
+	m.program = tea.NewProgram(m, tea.WithInput(nil), tea.WithOutput(io.Discard))
+	m.add(entry{kind: entryUser, text: "the question"})
+	m.add(entry{kind: entryAssistant, text: "the answer"})
+	m.working = true
+	m.turnEnded()
+	if m.committed < len(m.entries) {
+		t.Fatal("setup: the turn did not commit")
+	}
+
+	// Nothing live: the key opens the pager instead of flipping a
+	// flag nothing on screen can act on.
+	m.Update(keyMsg("ctrl+r"))
+	if !m.transcriptOpen {
+		t.Fatal("ctrl+r over committed text opened no pager")
+	}
+	if m.expandResults {
+		t.Error("ctrl+r flipped the live toggle over committed text")
+	}
+	m.Update(keyMsg("ctrl+r"))
+	if m.transcriptOpen {
+		t.Error("ctrl+r did not close the pager it opened")
+	}
+
+	// Something live: the toggle, as always.
+	m.add(entry{kind: entryResult, tool: "read_file", summary: "s", full: "full text"})
+	m.Update(keyMsg("ctrl+r"))
+	if m.transcriptOpen {
+		t.Error("ctrl+r opened the pager while live entries could expand in place")
+	}
+	if !m.expandResults {
+		t.Error("ctrl+r did not expand the live results")
+	}
+}

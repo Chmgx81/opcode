@@ -312,7 +312,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// swallowed — typing goes nowhere until it closes.
 	if m.transcriptOpen {
 		switch msg.String() {
-		case "ctrl+o", "esc":
+		case "ctrl+o", "esc", "ctrl+r":
+			// ctrl+r closes what it opened: the key is a toggle
+			// everywhere it lands.
 			m.transcriptOpen = false
 		case "up":
 			m.transcriptTop = maxInt(m.transcriptTop-1, 0)
@@ -400,6 +402,21 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+r":
+		// The toggle the scrollback hints promise — but committed
+		// text is frozen and cannot re-render, so when nothing is
+		// live the key opens the one view that expands everything:
+		// the transcript pager. That keeps the promise the frozen
+		// "(ctrl+r to expand)" hints make, instead of flipping a
+		// flag nothing on screen can act on.
+		if m.transcriptOpen {
+			m.transcriptOpen = false
+			return m, nil
+		}
+		if m.committed >= len(m.entries) {
+			m.transcriptOpen = true
+			m.transcriptTop = 0
+			return m, nil
+		}
 		m.expandResults = !m.expandResults
 		if m.expandResults {
 			m.showToast("tool results expanded")

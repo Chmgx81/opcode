@@ -356,7 +356,7 @@ the fix.
 | ↑ / ↓ | recall a previous prompt (from the first/last line; inside a multiline draft the arrows move the cursor) |
 | Ctrl+J / Shift+Enter | newline |
 | Alt+Enter | queue a follow-up |
-| Ctrl+R | expand / collapse results & thinking (live region only — committed text is frozen) |
+| Ctrl+R | expand / collapse results & thinking; with nothing live (the turn committed) it opens the transcript pager — the one view that can still expand frozen text — and closes it again |
 | Ctrl+O | transcript pager — the whole conversation, results expanded, ↑↓/pgup/pgdn scroll, ctrl+o or esc closes |
 | Ctrl+V | attach the clipboard image (png/jpeg/gif/webp, sniffed) |
 | Ctrl+E | edit the draft in `$VISUAL`/`$EDITOR` |
