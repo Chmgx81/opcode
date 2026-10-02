@@ -3312,3 +3312,17 @@ journey to the model list on its own.
 `TestKeylessProviderPickStartsLogin` locks the path, and the
 all-rows-fetch assertion in `TestModelsPickerListsAllProviders`
 became the per-row contract: keyed and local fetch, keyless logs in.
+
+Found live (the second report): the greeting's identity line said
+`build` while the footer said `⏸ plan`, and the reader cannot know
+which is true. Nothing flips modes at launch — the `✓ mode switched`
+line in the report is the toast working — the flaw is that the
+greeting is a frozen launch snapshot (committed scrollback cannot
+re-render) carrying the mode, a live dial that changes one keypress
+in. The mode left the identity line: the footer is its one true
+home, always current. `model · directory` is what the snapshot can
+honestly say. The empty-model-slot check in
+`TestFirstRunOpensOnboardingPicker` had been passing vacuously
+(probing `View()` for a mode segment the frame may have trimmed
+away with the whole greeting to fit the open picker); it now reads
+the header entry and asserts the placeholder directly.
