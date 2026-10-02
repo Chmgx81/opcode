@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -75,7 +76,12 @@ func TestWebFetchAllowLocalFetchFlagStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, spelling := range []string{host, "127.1", "localhost"} {
+	// The literal address the test server was given, and the name
+	// "localhost" — the two spellings a dev server is actually reached
+	// by. "127.1" is deliberately absent: it is a valid IPv4 form that
+	// only some resolvers accept, so asserting on it tested the
+	// machine's resolver rather than tilde.
+	for _, spelling := range []string{host, "localhost"} {
 		url := fmt.Sprintf("http://%s:%s/", spelling, port)
 		out, err := (WebFetch{}).Execute(context.Background(), jsonArgs(t, map[string]any{"url": url}))
 		if err != nil {
@@ -85,6 +91,27 @@ func TestWebFetchAllowLocalFetchFlagStillWorks(t *testing.T) {
 		if !strings.Contains(out, "local dev server") {
 			t.Errorf("%s: out = %q", spelling, out)
 		}
+	}
+}
+
+// The flag must open the loopback at every layer that refuses it: the
+// literal-host check, and the dial-time check that catches a name
+// resolving to 127.0.0.1. A flag honored by only one of them would leave
+// a dev server unreachable "at random", depending on the spelling used.
+func TestWebFetchAllowLocalFetchDisablesBothChecks(t *testing.T) {
+	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	// A name the literal check cannot see as loopback at all, and which
+	// therefore only the dial-time check would refuse. It must be
+	// allowed, and must be refused with the flag unset.
+	if _, err := net.DefaultResolver.LookupHost(context.Background(), "localhost"); err != nil {
+		t.Skipf("localhost does not resolve here: %v", err)
+	}
+	if err := checkFetchTarget("http://localhost:8080/"); err != nil {
+		t.Errorf("with the flag set, the literal check still refused: %v", err)
+	}
+	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "")
+	if err := checkFetchTarget("http://localhost:8080/"); err == nil {
+		t.Error("with the flag unset, the literal check allowed localhost")
 	}
 }
 

@@ -325,9 +325,10 @@ switch) against each other, so a command handled but unlisted, or
 listed but unhandled, fails there.
 
 Slash commands: `/help /models /model /mode /skills /mcp
-/sessions /login /logout /theme /diff /doctor /exit /quit`.
+/sessions /login /logout /theme /diff /doctor /update /exit /quit`.
 An unknown `/command` errors in place with the closest match —
-it never becomes a model turn.
+it never becomes a model turn. `/update` does not update in place: it
+points at `tilde update`, which runs in a shell, not in the TUI.
 
 ---
 

@@ -283,21 +283,38 @@ func resolveLikeKernel(path string) (resolved string, ok bool) {
 	resolved = filepath.VolumeName(path) + string(filepath.Separator)
 	queue := pathComponents(path)
 	hops := 0
-	// fromLink counts the components still unresolved that arrived from
-	// a followed symlink's target. A missing component is only joinable
+	// linkParts counts the components still queued that arrived from a
+	// followed symlink's target. A missing component may only be joined
 	// lexically once none are outstanding: a component that came from a
 	// link's target and does not exist means the link dangles, and where
 	// a dangling link would land once something creates the file is
 	// anybody's guess. That distinction is the whole reason this tracks
-	// a counter rather than just "have we followed a link".
-	fromLink := 0
+	// the queue rather than just "have we followed a link".
+	//
+	// A target is prepended to the queue, so its components are always
+	// consumed before the ones they displaced, and each one drains this
+	// count as it is resolved. That is what makes a symlink to an
+	// existing directory accept a new file inside it: the directory's
+	// own components are consumed, the count reaches zero, and only
+	// then may a missing component be joined. Counting only the
+	// components that reached an Lstat left the count stuck above zero
+	// for any target ending in "..", refusing honest work. The drain
+	// happens after the component is resolved, never before, so the
+	// last component of a dangling target is still caught.
+	linkParts := 0
 	for len(queue) > 0 {
 		part := queue[0]
 		queue = queue[1:]
 		switch part {
 		case "", ".":
+			if linkParts > 0 {
+				linkParts--
+			}
 		case "..":
 			resolved = filepath.Dir(resolved)
+			if linkParts > 0 {
+				linkParts--
+			}
 		default:
 			candidate := filepath.Join(resolved, part)
 			fi, err := os.Lstat(candidate)
@@ -307,15 +324,15 @@ func resolveLikeKernel(path string) (resolved string, ok bool) {
 				// nothing left to resolve. Every other error (ENOTDIR
 				// through a symlinked file, EACCES, ELOOP) has no
 				// honest answer, so it is refused.
-				if !errors.Is(err, fs.ErrNotExist) || fromLink > 0 {
+				if !errors.Is(err, fs.ErrNotExist) || linkParts > 0 {
 					return "", false
 				}
 				return filepath.Join(append([]string{candidate}, queue...)...), true
 			}
 			if fi.Mode()&os.ModeSymlink == 0 {
 				resolved = candidate
-				if fromLink > 0 {
-					fromLink--
+				if linkParts > 0 {
+					linkParts--
 				}
 				continue
 			}
@@ -331,16 +348,15 @@ func resolveLikeKernel(path string) (resolved string, ok bool) {
 			}
 			parts := pathComponents(target)
 			queue = append(parts, queue...)
-			// Only components that will actually be resolved count: the
-			// empty head of an absolute target and any "." are skipped
-			// by the loop, and counting them would leave the counter
-			// permanently above zero — refusing every later missing
-			// component as a dangling link.
-			for _, p := range parts {
-				if p != "" && p != "." {
-					fromLink++
-				}
+			// This component is itself consumed; the target's are owed
+			// in its place, including the empty head of an absolute
+			// target and any "." or "..": the switch above consumes those
+			// without an Lstat, and a count that skipped them would stay
+			// above zero and refuse every later missing component.
+			if linkParts > 0 {
+				linkParts--
 			}
+			linkParts += len(parts)
 		}
 	}
 	return resolved, true

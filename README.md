@@ -17,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bas
 ```
 
 <p>
-<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/badge/go-1.24-2dd4bf.svg" alt="go"></a>&nbsp;
+<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/badge/go-1.25-2dd4bf.svg" alt="go"></a>&nbsp;
 <a href="https://github.com/Chmgx81/tilde/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/tilde/ci.yml?label=ci" alt="ci"></a>&nbsp;
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2dd4bf.svg" alt="MIT"></a>
 </p>
@@ -151,7 +151,9 @@ esc restores. `/diff` shows the working tree's git changes, colored,
 untracked files included. `/login` and `/logout` store and remove a
 provider's key. `/doctor` diagnoses the whole setup — version, config, key, sandbox,
 trust, MCP, update check, terminal — one line per subsystem with the next step
-when something is wrong. `?` or `/help` lists every key and command;
+when something is wrong.
+`/update` does not update in place — it points at `tilde update`, which
+replaces the binary from a shell. `?` or `/help` lists every key and command;
 /`/exit` (or `/quit`) leaves. Unknown `/commands` error in place with a
 suggestion instead of billing a model turn.
 Typing `@` opens a live file picker (type to filter, enter to attach);

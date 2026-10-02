@@ -77,7 +77,12 @@ func Active() bool {
 // Landlock sandbox. A nil *Runner or a disabled one builds plain
 // commands — every call site works unchanged.
 type Runner struct {
-	self    string // this binary's path, for the __sandbox re-exec
+	self string // this binary's path, for the __sandbox re-exec
+	// want is what the config asked for; enabled is what this
+	// platform can actually do. They differ on a machine without
+	// Landlock, and Status() has to say which is which rather than
+	// call a disabled sandbox "off" as if the user had not asked.
+	want    bool
 	enabled bool
 }
 
@@ -90,7 +95,7 @@ func New(enabled bool) (*Runner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: cannot resolve own binary: %w", err)
 	}
-	return &Runner{self: self, enabled: enabled && Supported()}, nil
+	return &Runner{self: self, want: enabled, enabled: enabled && Supported()}, nil
 }
 
 // Enabled reports whether commands will actually be sandboxed —
@@ -100,13 +105,18 @@ func (r *Runner) Enabled() bool {
 }
 
 // Status is the one-line posture for startup notes: what is enforced
-// and where writes go. It never claims enforcement that isn't real.
+// and where writes go. It never claims enforcement that isn't real,
+// and it never calls a sandbox the user asked for "off" — a user who
+// set "sandbox": true on an unsupported platform needs to know the
+// setting is being ignored, not that they never turned it on.
 func (r *Runner) Status() string {
 	switch {
-	case r == nil || !r.enabled:
+	case r == nil:
 		return "sandbox: off (\"sandbox\": true in config.json confines shell writes)"
-	case !Supported():
+	case r.want && !r.enabled:
 		return "sandbox: unavailable — shell commands run unsandboxed"
+	case !r.enabled:
+		return "sandbox: off (\"sandbox\": true in config.json confines shell writes)"
 	default:
 		abi, _ := ProbeABI()
 		s := fmt.Sprintf(

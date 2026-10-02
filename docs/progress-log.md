@@ -2966,3 +2966,64 @@ cross-builds for linux/arm64, darwin/{amd64,arm64}, windows/amd64.
 Not verified: macOS and Windows runtime behavior (CI covers macOS
 tests; Windows is build-only), and a real provider (the fake server
 speaks the OpenAI wire only).
+
+## CI red on the first push: three portability and honesty bugs (2026-10-01)
+
+The push above went red. All three failures were pre-existing, and
+none of them was visible on this Linux machine — they only surface on
+the macOS runner or under a resolver that is not glibc's.
+
+- **`internal/tools`: a new file through a symlinked directory was
+  refused.** `resolveLikeKernel` counted a link target's outstanding
+  components only when it Lstat-ed them, so a target ending in `..`
+  (or one whose ancestor is itself a symlink) left the count above
+  zero and every later missing component read as a dangling link. On
+  macOS `/var` is a symlink, so the project's own temp dir hit it.
+  The count now drains as each target component is consumed, `..`
+  included. Covered by two new tests, and the existing dangling-link
+  bypass tests still refuse what they must.
+- **`internal/sandbox`: a requested sandbox on an unsupported
+  platform said "off".** `New` folds the config's request together
+  with the platform's capability, so `Status()` could not tell "you
+  asked for off" from "you asked for on and this machine cannot".
+  The runner now keeps both, and the startup line says `unavailable`
+  for the second — which is what a macOS user with `"sandbox": true`
+  was actually seeing. New test covers it on any platform.
+- **`internal/tools`: the web_fetch opt-in test needed the machine's
+  resolver.** It fetched `http://127.1:<port>/`, a valid IPv4 form
+  that glibc resolves and the macOS runner does not, so the test
+  failed there for a reason that had nothing to do with tilde. The
+  address and `localhost` still cover the opt-in; a new test checks
+  that the flag opens both the literal-host and the dial-time check.
+- **`TestWritableRoots` compared a path to its real path.** macOS
+  spells TMPDIR `/var/folders/...` and the real path is
+  `/private/var/...`. The test now compares through the same symlink
+  resolution the gate uses.
+
+Two documentation bugs, both found by an audit pass:
+
+- The architecture spec claimed MCP spoke `stdio or HTTP`; the code
+  rejects an `http://` server at config load. The living doc now says
+  stdio only and says what happens to an http entry.
+- `/update` was implemented, dispatched, and listed in the palette and
+  help sheet, but absent from the spec's command list and the README.
+  Both now list it, and a new test (`TestSpecCommandListMatchesCode`)
+  compares the spec's enumerated list against the `commands` var in
+  both directions, so the prose cannot drift from the code again. It
+  was confirmed to fail when a name is removed from the list or added
+  to it.
+
+## The Go floor is a security floor (2026-10-01)
+
+`go.mod` now says `go 1.25.13` instead of `go 1.25.0`. All three
+govulncheck findings that made CI red were standard-library bugs fixed
+in 1.25.13 — GO-2026-6218 (quadratic `net/url` resolvePath), GO-2026-6090
+(post-handshake TLS messages) and GO-2026-6088 (encoding/xml decode
+depth) — and tilde reaches all three: every provider request, the update
+check, and markdown rendering through glamour's XML lexer. There is no
+code change that fixes them; the patch release is the fix.
+
+This is a build-floor change with a real cost: anyone building tilde from
+source now needs Go 1.25.13 or newer. That is the intended trade — a
+vulnerable dependency floor is not a floor. CI reads the version from
+`go.mod`, so every job, including the cross-builds, moves with it.

@@ -323,6 +323,62 @@ func TestPathInWritableRoots(t *testing.T) {
 
 // A symlink loop must terminate, not spin: the resolution walks with a
 // bounded hop count, like the kernel's own ELOOP limit.
+// A symlink whose target runs through another symlink — /var -> /private/var
+// on macOS, /home -> /var/home on Fedora Atomic — must still resolve, and a
+// new file created through it is ordinary work. The link target's components
+// are consumed as they are popped, so the count of outstanding link
+// components reaches zero before the file that does not exist yet.
+func TestResolveLikeKernelThroughSymlinkedAncestor(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real", "project", "sub")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// dir/var -> dir/real, so dir/var/project/sub resolves through a link.
+	if err := os.Symlink(filepath.Join(dir, "real"), filepath.Join(dir, "var")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	viaLink := filepath.Join(dir, "var", "project", "sub")
+
+	resolved, ok := resolveLikeKernel(filepath.Join(viaLink, "fresh.txt"))
+	if !ok {
+		t.Fatal("a new file under an existing symlinked directory was refused")
+	}
+	if want := filepath.Join(real, "fresh.txt"); resolved != want {
+		t.Errorf("resolved = %q, want %q", resolved, want)
+	}
+}
+
+// A symlink whose target ends in ".." consumes that component without an
+// Lstat. The outstanding-link count must drain on it too, or every later
+// missing component reads as a dangling link and honest work is refused.
+func TestResolveLikeKernelLinkTargetEndingInDotDot(t *testing.T) {
+	dir := t.TempDir()
+	project := filepath.Join(dir, "project")
+	if err := os.MkdirAll(filepath.Join(project, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// alias -> project/sub/.. , i.e. back to project.
+	if err := os.Symlink(filepath.Join(project, "sub", ".."), filepath.Join(project, "alias")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	resolved, ok := resolveLikeKernel(filepath.Join(project, "alias", "new.txt"))
+	if !ok {
+		t.Fatal("a new file under a link whose target ends in .. was refused")
+	}
+	if want := filepath.Join(project, "new.txt"); resolved != want {
+		t.Errorf("resolved = %q, want %q", resolved, want)
+	}
+	// A link that really does dangle is still refused: that is the case
+	// the counter exists for.
+	if err := os.Symlink(filepath.Join(dir, "nowhere"), filepath.Join(project, "dangling")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resolveLikeKernel(filepath.Join(project, "dangling", "new.txt")); ok {
+		t.Error("a file under a dangling symlink was accepted")
+	}
+}
+
 func TestPathInWritableRootsTerminatesOnSymlinkLoop(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a")
