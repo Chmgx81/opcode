@@ -729,6 +729,16 @@ func (m *Model) decideInput(alt bool) (inputDecision, tea.Cmd) {
 		return inputSteered, nil
 	}
 
+	// No model yet (a first run with no config.json): sending would
+	// 400 at the provider with a mystery. The way out is the same
+	// three steps as the welcome: key, then model — so the picker
+	// opens instead of the turn.
+	if m.opt.Model == "" {
+		m.add(entry{kind: entryErr, text: "no model picked yet — /models opens the list; /login stores a key first if the provider needs one"})
+		m.openModelsPicker("")
+		return inputCommand, nil
+	}
+
 	// Commit everything before this turn's user entry to native
 	// scrollback: past turns, the greeting, and command output
 	// freeze above the live region and stop re-rendering per frame.
@@ -1557,6 +1567,17 @@ func (m *Model) switchModel(provider, model string) {
 	if pc, ok := m.providerConfigFor(provider); ok && pc.BaseURL != "" {
 		m.opt.BaseURL = pc.BaseURL
 		m.opt.API = pc.API
+	}
+	// Persist the choice: keys already survive a restart (auth.json),
+	// and a model picked in the UI must too — a first-run user who
+	// sets everything up here should not find it reverted to the
+	// config file's old value on the next launch. A save failure does
+	// not undo the switch; it just means the choice is for this
+	// session only, and the note says exactly that.
+	if err := config.SaveModel(m.opt.TildeHome, model); err != nil {
+		m.add(entry{kind: entryDim, text: "switched, but saving the model failed (this session only): " + err.Error()})
+	} else if err := config.SaveDefaultProvider(m.opt.TildeHome, provider); err != nil {
+		m.add(entry{kind: entryDim, text: "switched, but saving the provider failed (this session only): " + err.Error()})
 	}
 	note := "switched to " + m.opt.Model + " (provider " + m.opt.ProviderName + ") — the next request uses it"
 	m.showToast("model switched to " + m.opt.Model)

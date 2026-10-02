@@ -170,7 +170,7 @@ func TestEnterWhileWorkingSteers(t *testing.T) {
 	var reg tools.Registry
 	reg.Register(tools.ReadFile{})
 	orch := orchestrator.New(fp, "m", "s", &reg, &tools.Gate{})
-	m := New(Options{Orch: orch, TildeHome: dir, ProviderName: "openrouter",
+	m := New(Options{Orch: orch, Model: "m", TildeHome: dir, ProviderName: "openrouter",
 		BaseURL: "http://example.test/v1", AuditPath: filepath.Join(dir, "audit.jsonl")})
 
 	// Patch the provider to block round 1 until the test steers.
@@ -227,7 +227,7 @@ func TestAltEnterWhileWorkingQueuesFollowUp(t *testing.T) {
 	var reg tools.Registry
 	reg.Register(tools.ReadFile{})
 	orch := orchestrator.New(fp, "m", "s", &reg, &tools.Gate{})
-	m := New(Options{Orch: orch, TildeHome: dir, ProviderName: "openrouter",
+	m := New(Options{Orch: orch, Model: "m", TildeHome: dir, ProviderName: "openrouter",
 		BaseURL: "http://example.test/v1", AuditPath: filepath.Join(dir, "audit.jsonl")})
 
 	typeAndEnter(m, "first message")

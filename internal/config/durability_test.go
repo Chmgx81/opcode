@@ -331,3 +331,47 @@ func TestLoadersRejectBadFilesLoudly(t *testing.T) {
 		})
 	}
 }
+
+// SaveModel and SaveDefaultProvider are the /model picker's memory: the
+// choice made in the UI must be what the next launch loads, with every
+// unrelated key (including ones tilde does not model) surviving.
+func TestSaveModelAndDefaultProviderPersistChoice(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"),
+		[]byte(`{"model":"old-model","theme":"green","future_key":[1,2]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveModel(dir, "mistral-small-latest"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model != "mistral-small-latest" {
+		t.Errorf("LoadConfig model = %q", cfg.Model)
+	}
+	if cfg.Theme != "green" {
+		t.Errorf("unrelated key lost: theme = %q", cfg.Theme)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "future_key") {
+		t.Errorf("unknown key lost from config.json: %s", raw)
+	}
+
+	// models.json may not exist at all on a first run; the provider is
+	// created there and LoadModels must select it.
+	if err := SaveDefaultProvider(dir, "mistral"); err != nil {
+		t.Fatal(err)
+	}
+	models, err := LoadModels(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if models.DefaultProvider != "mistral" {
+		t.Errorf("LoadModels default_provider = %q", models.DefaultProvider)
+	}
+}

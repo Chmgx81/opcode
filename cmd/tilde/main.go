@@ -161,7 +161,11 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			"warning: ignoring credentials at %s — tilde never loads credentials from a project directory\n", path)
 	}
 
-	if cfg.Model == "" {
+	// An empty model is fatal only where there is no UI to fix it:
+	// headless has nobody to answer a picker. The interactive UI
+	// starts anyway and its first-run flow (tui.New) walks provider,
+	// key, and model — a new user should never be told to edit JSON.
+	if cfg.Model == "" && *prompt != "" {
 		return fmt.Errorf("no model configured; set \"model\" (e.g. \"anthropic/claude-sonnet-4.5\") in %s",
 			filepath.Join(userDir, "config.json"))
 	}

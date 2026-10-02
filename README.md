@@ -27,14 +27,24 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bas
 ## Quick start
 
 ```sh
-mkdir -p ~/.tilde
-echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.tilde/config.json   # 1. any OpenAI-compatible model
-tilde                                                                   # 2. run it in a project
+tilde        # in a project directory — that's the whole setup
 ```
 
-No key yet? Start tilde and run `/login` — it lists every provider to
-configure; `/login <provider>` skips the picker. Keys are masked,
-stored 0600, and take effect immediately.
+First run opens the picker: **pick a provider → paste its key → pick a
+model from the live list.** No files to edit. Keys are masked and stored
+0600 in `auth.json`; the model choice is saved, so the next launch just
+works. Prefer a local server (Ollama) or have keys in the environment?
+They are picked up automatically.
+
+Prefer files, or scripting the setup?
+
+```sh
+mkdir -p ~/.tilde
+echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.tilde/config.json
+```
+
+`/login` re-runs the key step any time (`/login <provider>` skips the
+picker); `/models` re-runs the model pick. Keys take effect immediately.
 
 ## Providers
 

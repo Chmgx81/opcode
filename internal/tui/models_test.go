@@ -2,12 +2,17 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Chmgx81/tilde/internal/config"
 	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/tilde/internal/orchestrator"
+	"github.com/Chmgx81/tilde/internal/tools"
 )
 
 // modelPickerTestModel builds a Model with the catalog-picker seams
@@ -185,4 +190,122 @@ func swapFetch(fake func(ctx context.Context, api, baseURL, key string) ([]llm.M
 	orig := fetchModels
 	fetchModels = fake
 	return func() { fetchModels = orig }
+}
+
+// A model picked in the UI must survive a restart, exactly like a key
+// does: config.json keeps the model, models.json keeps the provider —
+// a model id alone is meaningless without the provider that serves it.
+func TestSwitchModelPersistsProviderAndModel(t *testing.T) {
+	m, switched := modelPickerTestModel(t)
+	// Pre-existing files with values a persistence rewrite must keep.
+	if err := os.WriteFile(filepath.Join(m.opt.TildeHome, "config.json"),
+		[]byte(`{"model":"old-model","theme":"green","future_key":[1,2]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.opt.TildeHome, "models.json"),
+		[]byte(`{"providers":{"fixture":{"base_url":"http://127.0.0.1:9/v1"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m.switchModel("mistral", "mistral-small-latest")
+
+	if got := *switched; len(got) != 1 || got[0] != "mistral/mistral-small-latest" {
+		t.Fatalf("switch callback saw %v", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(m.opt.TildeHome, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg["model"] != "mistral-small-latest" {
+		t.Errorf("config.json model = %v", cfg["model"])
+	}
+	if cfg["theme"] != "green" || cfg["future_key"] == nil {
+		t.Errorf("unrelated config keys lost: %v", cfg)
+	}
+	raw, err = os.ReadFile(filepath.Join(m.opt.TildeHome, "models.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var models map[string]any
+	if err := json.Unmarshal(raw, &models); err != nil {
+		t.Fatal(err)
+	}
+	if models["default_provider"] != "mistral" {
+		t.Errorf("models.json default_provider = %v", models["default_provider"])
+	}
+	if models["providers"] == nil {
+		t.Errorf("models.json providers lost: %v", models)
+	}
+}
+
+// A first run with no model anywhere: sending must not start a turn
+// that 400s at the provider — the picker opens instead, and the note
+// says why.
+func TestSendWithoutModelOpensPickerInsteadOfTurn(t *testing.T) {
+	m, _ := modelPickerTestModel(t)
+	m.opt.Model = ""
+	before := len(m.entries)
+
+	m.composer.SetValue("hello?")
+	m.submitInput(false)
+
+	if m.working {
+		t.Fatal("a turn started with no model configured")
+	}
+	if m.picker == nil || len(m.picker.items) == 0 {
+		t.Fatal("the model picker did not open")
+	}
+	found := false
+	for _, e := range m.entries[before:] {
+		if strings.Contains(e.text, "no model picked yet") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no explanation entry; entries after submit: %d", len(m.entries)-before)
+	}
+}
+
+// The onboarding itself: a Model built with no model shows the welcome
+// steps and already has the provider picker open, so step one is on
+// screen without reading any docs.
+func TestFirstRunOpensOnboardingPicker(t *testing.T) {
+	dir := t.TempDir()
+	fp := &scriptedProvider{}
+	var reg tools.Registry
+	reg.Register(tools.ReadFile{})
+	orch := orchestrator.New(fp, "", "sys", &reg, &tools.Gate{})
+	orch.SetMode(tools.ModeBuild)
+	m := New(Options{
+		Orch: orch, Model: "", Mode: tools.ModeBuild, Cwd: dir, TildeHome: dir,
+		ProviderName: "openrouter", BaseURL: "http://example.test/v1",
+		AuditPath: filepath.Join(dir, "audit.jsonl"), Animations: true,
+		Models: config.ModelsConfig{DefaultProvider: "openrouter"},
+	})
+	m.width, m.height = 80, 30
+
+	welcomed, pickerOpen := false, false
+	for _, e := range m.entries {
+		if strings.Contains(e.text, "welcome") {
+			welcomed = true
+		}
+	}
+	if m.picker != nil && len(m.picker.items) > 0 {
+		pickerOpen = true
+	}
+	if !welcomed {
+		t.Error("no welcome entries on a first run")
+	}
+	if !pickerOpen {
+		t.Error("the provider picker did not open on a first run")
+	}
+	// The header must not render an empty slot where the model goes.
+	m.View()
+	if strings.Contains(m.View(), " · build") && !strings.Contains(m.View(), "no model yet") {
+		t.Error("header shows an empty model slot")
+	}
 }
