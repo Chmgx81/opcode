@@ -1033,7 +1033,7 @@ func (m *Model) helpRows(w int) []string {
 		dimStyle.Render("  ctrl+e       open the prompt in $EDITOR"),
 		dimStyle.Render("  tab          cycle permission mode (shift+tab back)"),
 		dimStyle.Render("  alt+. / alt+, cycle reasoning effort (up / down)"),
-		dimStyle.Render("  ctrl+r       expand / collapse results & thinking"),
+		dimStyle.Render("  ctrl+r       expand / collapse results & thinking (idle: the transcript)"),
 		dimStyle.Render("  ctrl+o       transcript " + plainOr("—", "-") +
 			" scroll with " + plainOr("↑↓", "up/dn") + "/pgup/pgdn, esc closes"),
 		dimStyle.Render("  ! command    run a shell command directly (esc interrupts it)"),

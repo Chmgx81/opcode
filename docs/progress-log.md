@@ -3386,3 +3386,14 @@ the mechanics (rhythm, boundary renders, View skipping committed
 entries) and needed no timing changes.
 `TestFinishedTurnCommitsAtTheEnd` holds the new boundary;
 `TestTrimMarkerNamesTheEscape` holds the named escape.
+
+The ctrl+r half of Phase 49's tradeoff is addressed: committed text
+cannot re-render, so ctrl+r with an empty live region opens the
+transcript pager — the one view that expands everything — and
+closes it again (the pager's close keys gained ctrl+r; the key is a
+toggle everywhere it lands). The frozen "(ctrl+r to expand)" hints
+already sitting in scrollback stay true: the key still shows the
+expanded content, in the overlay instead of the frozen bytes. The
+theme-repaint half is physics and stays documented: printed bytes
+belong to the terminal, and the pager is where old turns wear a
+new palette. `TestCtrlRKeepsTheFrozenPromises` holds both paths.
