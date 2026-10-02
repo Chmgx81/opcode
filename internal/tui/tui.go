@@ -556,9 +556,13 @@ func New(opt Options) *Model {
 		// render an empty slot where the model goes.
 		modelLine = "no model yet"
 	}
-	// One identity line — this model, in this mode, in this
-	// directory — instead of a form's worth of rows beside the mark.
-	idLine := modelLine + " · " + opt.Mode
+	// One identity line — this model, in this directory. The mode is
+	// deliberately absent: the greeting is a frozen launch snapshot
+	// (committed scrollback cannot re-render), and the mode is a live
+	// dial that changes one keypress in — its one true home is the
+	// footer, always current. A snapshot showing mutable state is a
+	// contradiction a reader cannot resolve.
+	idLine := modelLine
 	if opt.Cwd != "" {
 		idLine += " · " + opt.Cwd
 	}

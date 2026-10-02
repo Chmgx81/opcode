@@ -142,7 +142,7 @@ cannot answer is the one failure a permission dialog may not have.
 
 ```
  ▄▄▄▄    ▄▄▄▄▄    ◈ opcode v0.5.0
-█▀  ▀█  █▀  ▀█    anthropic/claude-sonnet-4.5 · build · /home/you/project
+█▀  ▀█  █▀  ▀█    anthropic/claude-sonnet-4.5 · /home/you/project
 █▄  ▄█  █▄▄▄▀
  ▀▄▄▀   █
 sandbox: landlock v10 — reads anywhere, writes confined to this
@@ -150,8 +150,13 @@ directory, /tmp, and dev caches
 ```
 
 Logo left, one identity line beside it — this model, in this
-mode, in this directory — and the startup notes below (sandbox
-status, MCP states, warnings).
+directory — and the startup notes below (sandbox status, MCP
+states, warnings). The mode is deliberately absent from the
+identity line: the greeting is a frozen launch snapshot (committed
+scrollback cannot re-render), the mode is a live dial that changes
+one keypress in, and its one true home is the footer — always
+current. A snapshot showing mutable state is a contradiction a
+reader cannot resolve.
 
 ### 3.2 A turn
 
