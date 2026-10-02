@@ -172,8 +172,16 @@ reader cannot resolve.
 
 I'll add a token-bucket limiter on the route.               ← assistant prose (markdown)
 
-⠹ Editing… (12s • esc to interrupt • ↓ 1.8k tokens)      ← working line, live
+⠹ Editing… (12s • esc to interrupt • ↓ 1.8k tokens · context 62%)   ← working line, live
 ```
+
+The working line's parenthesized segment also carries context
+occupancy — `context 62%`, the most recent round's prompt tokens
+over the configured window — but only when `context_window` is set
+in config.json. Model windows vary; an unknown window shows no
+readout rather than a guess. The readout is the refinement of the
+segment: a narrow terminal drops it before it drops the elapsed
+time.
 
 ### 3.3 Composer + footer
 

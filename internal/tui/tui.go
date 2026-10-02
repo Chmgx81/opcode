@@ -114,6 +114,12 @@ type Options struct {
 	// picker needs it to fetch live model lists. Missing is fine:
 	// providers without keys are shown with a /login hint.
 	KeyFor func(provider string) (string, bool)
+	// ContextWindow is the model's context size in tokens — the
+	// working line's occupancy readout divides the most recent
+	// request's prompt tokens by it. 0 (the default) means unknown:
+	// model windows vary, and the readout would rather be silent
+	// than wrong. Same source of truth as the compaction trigger.
+	ContextWindow int
 	// SaveCurrentSession persists the current conversation tree;
 	// ResumeSession loads another session and re-seeds the orchestrator.
 	// /sessions owns only the interaction.
@@ -282,6 +288,11 @@ type Model struct {
 	imageSeq int
 
 	usage llm.Usage
+	// lastPrompt is the prompt-token count of the most recent model
+	// round — the context in play right now, the working line's
+	// occupancy numerator. It lags one round while a request is in
+	// flight, which is the honest precision of the data.
+	lastPrompt int
 
 	// entries is the structured transcript; View renders it.
 	// committed counts the entries already printed to native

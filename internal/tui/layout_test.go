@@ -8,6 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
 )
 
 // The frame is written one row at a time and bubbletea's inline
@@ -414,4 +417,47 @@ func itoa(n int) string {
 		d = append([]byte{byte('0' + n%10)}, d...)
 	}
 	return string(d)
+}
+
+// TestWorkingLineContextReadout: the working line carries the
+// occupancy of the most recent round — the context in play as a
+// share of the configured window — and never invents one. The
+// readout is the refinement: a narrow terminal drops it before it
+// drops the elapsed time.
+func TestWorkingLineContextReadout(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := newText(t, dir, nil)
+	m.working = true
+	m.workingVerb = "Thinking…"
+	m.workingSince = time.Now()
+
+	// No window configured (the default): no readout, nothing guessed.
+	m.handleEvent(orchestrator.Event{Kind: orchestrator.EventUsage,
+		Usage: llm.Usage{PromptTokens: 60000, CompletionTokens: 100}})
+	if s := stripANSI(m.composerView()[1]); strings.Contains(s, "context") {
+		t.Errorf("an unknown window still produced a readout: %q", s)
+	}
+
+	// Window known: the last round's prompt tokens over the window.
+	m.opt.ContextWindow = 200000
+	if s := stripANSI(m.composerView()[1]); !strings.Contains(s, "context 30%") {
+		t.Errorf("the occupancy readout is missing: %q", s)
+	}
+
+	// The refinement drops before the elapsed time: the full form
+	// no longer fits, the elapsed time stays, the occupancy goes.
+	resize(m, 60, 24)
+	m.workingSince = time.Now().Add(-3 * time.Minute)
+	for _, l := range m.composerView() {
+		if s := stripANSI(l); strings.Contains(s, "esc to interrupt") {
+			t.Errorf("at 60 cols the full segment should have reflowed: %q", s)
+		}
+	}
+	status := stripANSI(m.composerView()[1])
+	if !strings.Contains(status, "3m0s") {
+		t.Errorf("the narrow form lost the elapsed time: %q", status)
+	}
+	if strings.Contains(status, "context") {
+		t.Errorf("the narrow form kept the readout over the elapsed time: %q", status)
+	}
 }

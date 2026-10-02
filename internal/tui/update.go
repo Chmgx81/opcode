@@ -1409,6 +1409,7 @@ func (m *Model) handleEvent(ev orchestrator.Event) (tea.Model, tea.Cmd) {
 	case orchestrator.EventUsage:
 		m.usage.PromptTokens += ev.Usage.PromptTokens
 		m.usage.CompletionTokens += ev.Usage.CompletionTokens
+		m.lastPrompt = ev.Usage.PromptTokens
 
 	case orchestrator.EventCompaction:
 		m.finishStream()
@@ -1803,6 +1804,10 @@ func (m *Model) resumeSession(path, label string) {
 	m.stream.Reset()
 	m.queue = nil
 	m.usage = llm.Usage{}
+	// The resumed session's context is unknown until its next round
+	// reports — the occupancy readout waits for real data rather
+	// than guessing from the previous session.
+	m.lastPrompt = 0
 	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("opcode " + m.displayVersion())})
 	m.add(entry{kind: entryDim, text: dimStyle.Render(m.opt.Model + " · " + m.opt.Mode)})
 	m.add(entry{kind: entryOK, text: fmt.Sprintf("resumed %s — %d messages in context", label, n)})

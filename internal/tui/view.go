@@ -711,13 +711,21 @@ func (m *Model) composerView() []string {
 			sp = GlyphBullet
 		}
 		// Codex's status shape: verb, then one parenthesized segment
-		// with elapsed, interrupt, and token flow inside it. It
-		// reflows the way the mode line below does: the full form
-		// first, then the parts that must never be lost, then the
-		// verb alone. A status line wider than the terminal corrupts
-		// the frame and takes the composer down with it.
+		// with elapsed, interrupt, token flow, and — when the window
+		// is known — context occupancy inside it. It reflows the way
+		// the mode line below does: the full form first, then the
+		// parts that must never be lost, then the verb alone.
+		// Occupancy is the refinement: it drops before the elapsed
+		// time, and it never appears when the window is unknown —
+		// model windows vary, and a guessed readout is worse than
+		// none. A status line wider than the terminal corrupts the
+		// frame and takes the composer down with it.
 		seg := dimStyle.Render(fmt.Sprintf(" (%s %s esc to interrupt %s %s %s tokens)",
 			elapsed, GlyphSep, GlyphSep, plainOr("↓", "down"), humanCount(tokens)))
+		if ctx := m.contextSegment(); ctx != "" {
+			seg = dimStyle.Render(fmt.Sprintf(" (%s %s esc to interrupt %s %s %s tokens %s)",
+				elapsed, GlyphSep, GlyphSep, plainOr("↓", "down"), humanCount(tokens), ctx))
+		}
 		head := accentStyle.Render(verb)
 		// A shell command reads by its own name, not a gerund: what is
 		// running is the thing the user typed.
@@ -735,7 +743,6 @@ func (m *Model) composerView() []string {
 	} else {
 		out = append(out, "")
 	}
-
 	composer := m.composer.View()
 	if m.login != nil {
 		// textarea has no echo mode: render the value masked here.
@@ -847,6 +854,18 @@ func (m *Model) composerBox(composer string) []string {
 		lines[i] = clipCols(l, w-chrome)
 	}
 	return strings.Split(st.Width(w-2).Render(strings.Join(lines, "\n")), "\n")
+}
+
+// contextSegment is the working line's occupancy readout: the most
+// recent round's prompt tokens as a share of the configured window.
+// Empty when either side is unknown — model windows vary, and the
+// readout would rather be silent than guessed.
+func (m *Model) contextSegment() string {
+	if m.opt.ContextWindow <= 0 || m.lastPrompt <= 0 {
+		return ""
+	}
+	pct := 100 * m.lastPrompt / m.opt.ContextWindow
+	return fmt.Sprintf("%s context %d%%", GlyphSep, pct)
 }
 
 // paletteOpen reports whether the command palette should show: the

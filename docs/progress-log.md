@@ -9,7 +9,7 @@
 
 # Build log (archived)
 
-This is the full chronological build log, Phase 0 through Phase 47,
+This is the full chronological build log, Phase 0 through Phase 48,
 moved here verbatim from `PROGRESS.md`. It is the record of what each
 phase set out to do, what was verified live, and what was left
 unverified or deliberately deferred.
@@ -3326,3 +3326,33 @@ honestly say. The empty-model-slot check in
 (probing `View()` for a mode segment the frame may have trimmed
 away with the whole greeting to fit the open picker); it now reads
 the header entry and asserts the placeholder directly.
+
+# Phase 48 — the context readout (status: complete, verified)
+
+Phase 48 ([specs/phase48-context-readout.md](specs/phase48-context-readout.md)):
+the working line now shows how full the window is.
+
+- **The readout.** The parenthesized segment carries
+  `context 62%` — the most recent round's prompt tokens over the
+  configured window — so the approach to a compaction is visible
+  before the recap lands. The TUI tracks the last round's prompt
+  count (`lastPrompt`, persisted across turns, cleared on resume)
+  and reads `Options.ContextWindow`, wired from the same
+  `context_window` config the compaction trigger uses.
+- **Silent rather than guessed.** No window configured — the
+  default — no readout. Model windows vary and a number invented
+  for one would be a lie for another. The readout is also the
+  segment's refinement: a narrow terminal drops it before the
+  elapsed time.
+- **No compaction warning color, deliberately.** The trigger is
+  growth past 75% of the space above the session's baseline (Phase
+  41's window accounting), which raw occupancy does not predict; a
+  red number firing at the wrong moment would be a lie in accent
+  clothing. The number tells the story, the recap note tells the
+  ending.
+
+Verified: `go build`, `go vet`, `gofmt -l .` empty, and the full
+`go test -race -count=1 ./...` suite pass.
+`TestWorkingLineContextReadout` holds all three behaviors: no
+readout without a window, the percentage with one, and the reflow
+dropping occupancy before elapsed time.
