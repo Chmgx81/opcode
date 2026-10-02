@@ -99,8 +99,9 @@ func TestDoctorBrokenConfig(t *testing.T) {
 	}
 }
 
-// TestDoctorMissingModel: an empty model is the one hard failure — the
-// session cannot run, and the row says where to fix it.
+// TestDoctorMissingModel: an empty model is the one hard failure row —
+// nothing can run until one is picked — and the way out is the UI's own
+// picker, not a file path.
 func TestDoctorMissingModel(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
@@ -108,7 +109,7 @@ func TestDoctorMissingModel(t *testing.T) {
 	m.opt.ProviderName = ""
 
 	report := doctorText(t, m)
-	if !strings.Contains(report, `no model configured — set "model"`) {
+	if !strings.Contains(report, `no model picked yet — /models opens the picker`) {
 		t.Errorf("no-model row = %q", report)
 	}
 }

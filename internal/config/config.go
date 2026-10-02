@@ -112,11 +112,38 @@ func LoadConfig(dir string) (Config, error) {
 // created. The theme name itself is validated by the caller (the tui
 // package owns the list) — this function persists, it does not judge.
 func SaveTheme(dir, theme string) error {
+	return saveJSONKey(filepath.Join(dir, "config.json"), "theme", theme)
+}
+
+// SaveModel persists the picked model into dir/config.json, so a model
+// chosen in the UI (/model, /models) survives a restart instead of
+// silently reverting to whatever the config file named — a first-run
+// user who sets everything up in the UI must not find it gone. Same
+// raw-edit rules as SaveTheme: unknown keys survive, a missing file is
+// created, an existing file keeps its permissions.
+func SaveModel(dir, model string) error {
+	return saveJSONKey(filepath.Join(dir, "config.json"), "model", model)
+}
+
+// SaveDefaultProvider persists the picked provider into dir/models.json.
+// The provider cannot live in config.json: models.json owns provider
+// resolution (base URL, wire API, credential rule), and a model id alone
+// is meaningless without its provider — persisting only the model would
+// send, say, mistral's model id to openrouter on the next launch. The
+// raw edit preserves any providers the user configured by hand.
+func SaveDefaultProvider(dir, provider string) error {
+	return saveJSONKey(filepath.Join(dir, "models.json"), "default_provider", provider)
+}
+
+// saveJSONKey sets one top-level key in a JSON object file, creating a
+// missing file and preserving every other key, including ones tilde
+// does not model. An existing file keeps its permissions; a new one
+// starts private.
+func saveJSONKey(path, key, value string) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
-	path := filepath.Join(dir, "config.json")
-	// A config.json the user made shareable (0644) stays that way; a
-	// new one starts private.
+	// A file the user made shareable (0644) stays that way; a new one
+	// starts private.
 	mode := os.FileMode(0o600)
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
@@ -124,12 +151,12 @@ func SaveTheme(dir, theme string) error {
 	raw := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("parse config.json: %w", err)
+			return fmt.Errorf("parse %s: %w", filepath.Base(path), err)
 		}
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read config.json: %w", err)
+		return fmt.Errorf("read %s: %w", filepath.Base(path), err)
 	}
-	raw["theme"] = theme
+	raw[key] = value
 	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return err

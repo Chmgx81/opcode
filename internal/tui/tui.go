@@ -536,7 +536,13 @@ func New(opt Options) *Model {
 		logo = append(logo, accentStyle.Render(line))
 	}
 	info := []string{boldStyle.Render(GlyphBrand + " tilde " + m.displayVersion())}
-	info = append(info, dimStyle.Render(opt.Model+" · "+opt.Mode))
+	modelLine := opt.Model
+	if modelLine == "" {
+		// A first run with no config.json yet: the header must not
+		// render an empty slot where the model goes.
+		modelLine = "no model yet"
+	}
+	info = append(info, dimStyle.Render(modelLine+" · "+opt.Mode))
 	if opt.Cwd != "" {
 		info = append(info, dimStyle.Render(opt.Cwd))
 	}
@@ -549,6 +555,19 @@ func New(opt Options) *Model {
 	}
 	if len(opt.StartupNotes) > 0 {
 		m.entries = append(m.entries, entry{kind: entryDim, text: ""})
+	}
+	if opt.Model == "" {
+		// First run, no config.json: the UI is the onboarding. Three
+		// steps, all in here, no file editing — and the provider list
+		// is already open so the first one is visible without reading
+		// anything.
+		m.entries = append(m.entries,
+			entry{kind: entryDim, text: "welcome — three steps, all in here, no files to edit:"},
+			entry{kind: entryDim, text: "  1. pick a provider in the list below (or esc and /login later)"},
+			entry{kind: entryDim, text: "  2. paste its key when asked — masked, stored 0600 in auth.json"},
+			entry{kind: entryDim, text: "  3. pick a model from the live list — the choice is remembered"},
+			entry{kind: entryDim, text: ""})
+		m.openModelsPicker("")
 	}
 	m.awaitingTrust = opt.PendingTrust
 	return m

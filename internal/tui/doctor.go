@@ -34,7 +34,7 @@ func (m *Model) doctor() {
 	if m.opt.Model != "" {
 		ok("model " + m.opt.Model + dimStyle.Render("  via "+m.opt.ProviderName+" — "+m.opt.BaseURL))
 	} else {
-		fail(`no model configured — set "model" in ~/.tilde/config.json`)
+		fail(`no model picked yet — /models opens the picker; /login stores a key first if needed`)
 	}
 
 	// The key check reports presence only; the resolved key never

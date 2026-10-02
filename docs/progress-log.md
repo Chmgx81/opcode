@@ -3127,3 +3127,45 @@ the actual responses:
 Live check after the fix: the same gemma request that printed
 "Provider returned error" now prints the full upstream message naming
 the remedy. `gofmt`, `vet`, the full race suite, and staticcheck pass.
+
+## The UI is now the whole setup (2026-10-02)
+
+The UX question that prompted this pass: can someone who will never
+edit a JSON file configure tilde? Two answers were no, and both are
+fixed.
+
+- **First run used to be a dead end.** With no config.json, main
+  exited with "set \"model\" in ~/.tilde/config.json" — the one user
+  who most needs the UI never reached it. The interactive UI now
+  starts: a three-step welcome (provider, key, model) with the
+  provider picker already open — every catalog provider listed, each
+  row saying whether a key is needed. Headless keeps the error; a
+  script has nobody to answer a picker.
+- **A model picked in the UI used to evaporate on restart.** /model
+  and /models switched the session's provider and model in memory
+  only, while /login persisted its key — so a first-run user who set
+  everything up through the UI found the model silently reverted.
+  switchModel now writes config.json ("model") and models.json
+  ("default_provider") through the same raw-edit path as /theme:
+  unknown keys survive, symlinks and permissions are preserved, and a
+  missing models.json is created. A save failure never undoes the
+  switch; the note says the choice is for this session only.
+- Sending with no model no longer 400s at the provider: the send is
+  refused with the reason and the picker opens. The header shows
+  "no model yet" instead of an empty slot, and /doctor's row points at
+  the picker instead of the file.
+
+Verified live, end to end, with a real provider: first run shows the
+welcome and the picker; esc + a prompt hits the guard and reopens the
+picker; /models → openrouter → live list → pick writes both files;
+relaunch shows the model in the header with no welcome. Two existing
+tests had been building the TUI with no Model while the orchestrator
+had one — the guard caught the inconsistency, and the fixtures now
+agree.
+
+The scroll mechanism was examined and left alone by design: finished
+turns commit to the terminal's native scrollback (tea.Println, no
+mouse capture, no alt-screen), so wheel and shift+pgup are the
+terminal's own scrolling; ctrl+o opens the in-app transcript with
+↑↓/pgup/pgdn; overlays (help, sheets) each own their scroll keys. That
+is the right shape and changing it would be churn.
