@@ -16,9 +16,9 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | ba
 ```
 
 <p>
-<a href="https://github.com/Chmgx81/opcode/releases"><img src="https://img.shields.io/github/v/release/Chmgx81/opcode?color=2dd4bf" alt="release"></a>&nbsp;
+<a href="https://github.com/Chmgx81/opcode/releases"><img src="https://img.shields.io/github/v/release/Chmgx81/opcode?color=a78bfa" alt="release"></a>&nbsp;
 <a href="https://github.com/Chmgx81/opcode/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/opcode/ci.yml?label=ci" alt="ci"></a>&nbsp;
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2dd4bf.svg" alt="MIT"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a78bfa.svg" alt="MIT"></a>
 </p>
 
 ---

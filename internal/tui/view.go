@@ -890,19 +890,43 @@ func (m *Model) paletteRows(w int) []string {
 	}
 	var lines []string
 	for i, c := range matches {
-		marker := "  "
-		style := dimStyle
-		if i == m.paletteIdx {
-			marker = accentStyle.Render(GlyphCaret + " ")
-			style = toolNameStyle
-		}
-		// Name and description share the row, and the description takes
-		// what is left of the box's inner width: a name a user
-		// recognizes matters more than the rest of the sentence.
-		lines = append(lines, marker+style.Render(c.Name)+
-			dimStyle.Render("  "+truncate(c.Desc, maxInt(w-16, 8))))
+		lines = append(lines, menuRow(i == m.paletteIdx, c.Name, c.Desc, w))
 	}
 	return lines
+}
+
+// menuRow composes one item row for every list surface — the pickers,
+// the command palette, and the @-mention menu — so selection is one
+// language everywhere: the caret marks the row (the band is emphasis,
+// never the only signal) and an accent band fills the row behind it.
+// The label column is a fixed gutter, so the details read as a column
+// instead of a ragged second word. Rows are built to the box's inner
+// width before styling, so the band pads to the full width and never
+// leaves a wrapped row the budget did not count.
+func menuRow(selected bool, label, detail string, w int) string {
+	const chrome = 4 // the box border and padding every block spends
+	inner := maxInt(w-chrome, 2)
+	marker := strings.Repeat(" ", lipgloss.Width(GlyphCaret)+1)
+	if selected {
+		marker = GlyphCaret + " "
+	}
+	row := marker
+	const gutter = 14
+	if detail == "" || lipgloss.Width(marker)+gutter >= inner {
+		// No second column fits — a label-only row beats a wrapped
+		// one: the label is the choice, the detail is the refinement.
+		row += truncate(label, maxInt(inner-lipgloss.Width(marker), 1))
+	} else {
+		// The label keeps its own budget: a name a user recognizes
+		// outranks the rest of the sentence.
+		lab := truncate(label, gutter-2)
+		row += lab + strings.Repeat(" ", gutter-lipgloss.Width(lab))
+		row += truncate(detail, inner-lipgloss.Width(marker)-gutter)
+	}
+	if !selected {
+		return clipCols(dimStyle.Render(row), inner)
+	}
+	return clipCols(selectedStyle.Bold(true).Width(inner).Render(row), inner)
 }
 
 // pickerRows renders the /model and /sessions overlay: a filter line,
@@ -936,16 +960,7 @@ func (m *Model) pickerRows(w int) []string {
 	}
 	for i := lo; i < hi; i++ {
 		it := p.matched[i]
-		marker, style := "  ", dimStyle
-		if i == p.idx {
-			marker = accentStyle.Render(GlyphCaret + " ")
-			style = toolNameStyle
-		}
-		line := marker + style.Render(truncate(it.Label, maxInt(w-16, 12)))
-		if it.Detail != "" {
-			line += dimStyle.Render("  " + truncate(it.Detail, maxInt(w-len(it.Label)-20, 12)))
-		}
-		rows = append(rows, line)
+		rows = append(rows, menuRow(i == p.idx, it.Label, it.Detail, w))
 	}
 	if len(p.matched) > visible {
 		rows = append(rows, dimStyle.Render(
@@ -972,12 +987,7 @@ func (m *Model) atMenuRows(w int) []string {
 		return rows
 	}
 	for i, p := range m.atMenu {
-		marker, style := "  ", dimStyle
-		if i == m.atIdx {
-			marker = accentStyle.Render(GlyphCaret + " ")
-			style = toolNameStyle
-		}
-		rows = append(rows, marker+style.Render(truncate(p, maxInt(w-16, 12))))
+		rows = append(rows, menuRow(i == m.atIdx, p, "", w))
 	}
 	return rows
 }

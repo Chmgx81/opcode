@@ -868,7 +868,7 @@ func TestTranscriptHierarchy(t *testing.T) {
 	const subtleSGR = "38;2;139;147;160" // fg.subtle #8b93a0 (placeholder)
 	// The echoed query sits in the shaded panel (termenv renders
 	// #292929 one step down; the panel-fill SGR reflects that).
-	const panelFillSGR = "48;2;38;42;48" // surface.user #262a31 (rounds one step)
+	const panelFillSGR = "48;2;42;39;50" // surface.user #2a2732
 	// The cursor block overlays the placeholder's first character, so
 	// probe for a tail fragment rather than the whole string.
 	view := m.View()
@@ -1028,7 +1028,7 @@ func TestEditDiffHighlightsSyntax(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	// The keyword keeps its accent color even inside the removed line;
 	// the marker still carries the verdict.
-	if !strings.Contains(joined, "38;2;44;211;191") { // accent #2dd4bf
+	if !strings.Contains(joined, "38;2;167;139;250") { // accent #a78bfa
 		t.Errorf("keyword not highlighted in the diff:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "func main() {") {
@@ -1177,7 +1177,7 @@ func TestWorkingLineGerundAndUserPanel(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	panel := m.renderEntry(&entry{kind: entryUser, text: "hello"})
 	joined := strings.Join(panel, "\n")
-	if !strings.Contains(joined, "48;2;38;42;48") { // surface.user #262a31
+	if !strings.Contains(joined, "48;2;42;39;50") { // surface.user #2a2732
 		t.Errorf("user entry lacks the background panel:\n%q", joined)
 	}
 	if !strings.Contains(stripANSI(joined), "hello") {
@@ -1333,19 +1333,20 @@ func TestLightThemeAdaptation(t *testing.T) {
 	defer func() {
 		// The dark branch of adaptTheme is a no-op by design, so restore
 		// the dark values explicitly.
-		HexAccent, HexInfo = "#2dd4bf", "#60a5fa"
-		HexDeep, HexDeep2 = "#3f4650", "#262a31"
-		HexCode = "#1c2026"
+		HexAccent, HexInfo = "#a78bfa", "#7dd3fc"
+		HexDeep, HexDeep2 = "#6e7683", "#2a2732"
+		HexCode = "#1f1c26"
 		HexText, HexDim = "", "#9aa0a6"
-		HexSubtle = "#6b7280"
+		HexSubtle = "#8b93a0"
 		HexSuccess, HexDanger = "#4ade80", "#f87171"
 		HexWarning = "#fbbf24"
+		HexOnAccent = "#0d1117"
 		refreshTokens()
 	}()
 
 	adaptTheme(false)
 
-	if HexAccent != "#0f766e" || HexDeep2 != "#eef0f3" || HexCode != "#f5f6f8" {
+	if HexAccent != "#7c3aed" || HexDeep2 != "#ede9f5" || HexCode != "#f6f4fa" {
 		t.Errorf("light palette not applied: accent=%s fill=%s code=%s",
 			HexAccent, HexDeep2, HexCode)
 	}
@@ -1356,12 +1357,12 @@ func TestLightThemeAdaptation(t *testing.T) {
 	// The user panel renders with the LIGHT fill, and the body text is
 	// dark ink — the legibility failure class this exists to prevent.
 	panel := strings.Join(m_renderUserPanel("hello"), "\n")
-	if !strings.Contains(panel, "48;2;238;240;243") { // #eef0f3
+	if !strings.Contains(panel, "48;2;237;233;245") { // #ede9f5
 		t.Errorf("user panel lacks the light fill:\n%q", panel)
 	}
 	// The composer's accent prompt uses the deepened light accent.
 	prompt := accentStyle.Render(GlyphPrompt + " ")
-	if !strings.Contains(prompt, "38;2;15;118;110") { // #0f766e
+	if !strings.Contains(prompt, "38;2;124;58;237") { // #7c3aed
 		t.Errorf("accent not deepened for light background: %q", prompt)
 	}
 }

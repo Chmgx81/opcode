@@ -33,30 +33,30 @@ terminal's default foreground):
 
 | Token | Dark | Light | Used for |
 |---|---|---|---|
-| accent | `#2dd4bf` | `#0f766e` | brand, selection, prompt, spinner |
+| accent | `#a78bfa` | `#7c3aed` | brand, selection band, prompt, spinner |
+| on-accent | `#0d1117` | `#ffffff` | text on the selection band |
 | muted | `#9aa0a6` | `#5f6368` | metadata, tool results |
 | subtle | `#8b93a0` | `#666b70` | hints, placeholder, chrome |
 | success | `#4ade80` | `#15803d` | ok, added |
 | warning | `#fbbf24` | `#b45309` | caution, shell mode, dialog borders |
 | danger | `#f87171` | `#b91c1c` | errors, removed |
-| info | `#60a5fa` | `#1d4ed8` | notices, links |
+| info | `#7dd3fc` | `#1d4ed8` | notices, links |
 | border | `#6e7683` | `#7f858d` | panel rules |
-| surface.user | `#262a31` | `#eef0f3` | user-message block |
-| surface.code | `#1c2026` | `#f5f6f8` | code blocks |
+| surface.user | `#2a2732` | `#ede9f5` | user-message block |
+| surface.code | `#1f1c26` | `#f6f4fa` | code blocks |
 
 Dark/light adapts at startup (OSC 11 where available, else
 `OPCODE_THEME=light|dark`). Never color as the only signal — a glyph
-or word rides along. A third theme, `green`, is the original Phase 7
-brand stack.
+or word rides along. The violet `dark`/`light` pair is the Phase 46
+identity; `teal` is the Phase 34 default it replaced, and `green`
+the original Phase 7 brand stack, both kept as choices.
 
 **Contrast.** Every text token clears WCAG 4.5:1 against both
-surfaces it sits on — the terminal floor and the code panel — and the
-border token clears the 3:1 a non-text boundary needs. `subtle` and
-`border` were both under their bars (3.9:1 and 2.0:1): the
-placeholder and the hints were a squint, and the composer's own rules
-were a frame the eye could not find. `TestThemeContrastIsLegible` is
-the table, and a palette edit that drops below either bar fails there
-rather than in a bug report.
+surfaces it sits on — the terminal floor and the code panel — the
+border token clears the 3:1 a non-text boundary needs, and the
+on-accent token clears 4.5:1 against the selection band it rides.
+`TestThemeContrastIsLegible` is the table, and a palette edit that
+drops below any bar fails there rather than in a bug report.
 
 **Glyphs** (the whole vocabulary, every one with an ASCII form for
 `--plain`):
@@ -255,14 +255,21 @@ one thing this dialog may never do.
 
 ```
 ╭─ browse models — pick a provider ────────────────────────╮
-│ ❯ anthropic    enter to browse models                    │
-│   groq         no key — /login groq                      │
-│   ollama       enter to browse models                    │
-╰───────────────────────────────────────────────────────────╯
+│ ❯ anthropic     enter to browse models                  │  ← the accent band fills the row
+│   groq          no key — /login groq                    │
+│   ollama        enter to browse models                  │
+╰──────────────────────────────────────────────────────────╯
 ```
 
 One component: type to filter, arrows move, enter selects, esc
-closes, draft preserved. `/models` fetches the provider's real
+closes, draft preserved. Every list surface — the pickers, the
+command palette, the @-mention menu — draws its items through one
+row composer (`menuRow`): the selection is an accent band with the
+caret still on the row (the band is emphasis, never the only
+signal), the label column is a fixed gutter so the details read as
+a column, and a width with no room for the second column drops the
+detail rather than wrapping the row — a wrapped row is a row the
+frame's budget never counted. `/models` fetches the provider's real
 model list live; `/login` (bare) picks which provider's key to
 store. A filter matching nothing says so *and says how to widen it*,
 because "no matches" alone reads as a broken picker.
