@@ -3058,3 +3058,33 @@ dropped from history and the temporary script and CI step deleted, so
 main carries only the three real fix commits. The code was re-verified
 after the rewrite: gofmt, vet, the full race suite, the installer test,
 and the doc-link check all pass.
+
+## The real cause: socket.getfqdn, a reverse DNS lookup (2026-10-02)
+
+The macOS job's fake release server never wrote its port file. The
+earlier entry blamed `seq` and that was a real bug, but not this one —
+fixing it made the wait honest and the server still never appeared.
+
+Finding it took a step-marked copy of the server pushed to the runner,
+because the symptom was maddeningly quiet: the process stayed **alive**,
+wrote nothing to stdout or stderr, and the port file never appeared. The
+marks narrowed it precisely — `class ready` printed, `constructed` never
+did, so the stall was inside the `ThreadingHTTPServer(...)` constructor.
+
+That constructor calls `HTTPServer.server_bind`, whose last line is
+`self.server_name = socket.getfqdn(host)`. `getfqdn` is a **reverse DNS
+lookup**. On a machine with no resolver to answer it — which is what the
+macOS runner is — the constructor blocks for minutes, long past any
+startup wait, holding the port unwritten. Nothing raises, which is why
+the log was empty every time.
+
+Fixed by serving from a plain `ThreadingTCPServer`, which does the same
+socket setup without the reverse lookup. The only thing lost is
+`server_name`, which nothing in this test reads.
+
+Verified on Linux by making every reverse lookup hang, which is the
+macOS condition: the old server stalls with no port, the new one writes
+its port immediately and answers HTTP 200, and the full installer test
+passes 48/48 under that shim while the old code fails with exactly the
+message CI reported. The temporary probe script and its CI step are
+removed.

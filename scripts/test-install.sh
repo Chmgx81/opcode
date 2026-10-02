@@ -96,8 +96,15 @@ done; done
 make_sums "$S/nobinary"
 
 # ---- the server: static files + GitHub-style /latest redirect ----------
+# A ThreadingTCPServer, not http.server.ThreadingHTTPServer. The latter's
+# server_bind calls socket.getfqdn(host) to fill in server_name, and
+# getfqdn is a REVERSE DNS lookup: on a machine with no resolver to answer
+# it — which is what the macOS runner is — the constructor blocks on it for
+# minutes, past any sane startup wait, before the port is ever written. The
+# handler below serves the same static files either way; only the unused
+# server_name is lost, and nothing in this test reads it.
 cat >"$work/server.py" <<'PY'
-import http.server, os, sys
+import http.server, os, socketserver, sys
 
 root, tag, portfile = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -128,7 +135,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+srv = Server(("127.0.0.1", 0), Handler)
 with open(portfile, "w") as f:
     f.write(str(srv.server_address[1]))
 srv.serve_forever()
