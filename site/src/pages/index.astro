@@ -1,0 +1,185 @@
+---
+import Base from '../layouts/Base.astro';
+import Terminal from '../components/Terminal.astro';
+const base = import.meta.env.BASE_URL;
+
+const modes = [
+  { glyph: '\u23F8', name: 'plan', desc: 'Read-only tools; every write, command, or fetch proposes a plan you approve.', tone: 'text-accent2' },
+  { glyph: '\u203A', name: 'build', badge: 'default', desc: 'Sandboxed commands and in-tree writes run free; anything else asks.', tone: 'text-accent' },
+  { glyph: '\u23B5\u23B5', name: 'full-auto', desc: 'Everything proceeds without asking — the sandbox still confines writes to the project.', tone: 'text-warn' },
+];
+const cards = [
+  { title: 'A permission gate that shows its work', body: 'The literal command on the dialog, No never preselected, and “don’t ask again” grants never wider than what the dialog showed.' },
+  { title: 'Sessions that survive', body: 'The session file rewrites atomically at every turn boundary — a crash loses the turn in flight, never the conversation. Resume with --continue or /sessions.' },
+  { title: 'Live tasks & context readout', body: 'A todo panel tracks multi-step work, and the working line reads the context window when it is configured — context 62% before compaction ever surprises you.' },
+];
+const faqs = [
+  { q: 'Do I need an account or a subscription?', a: 'No. opcode talks to your provider with your key. There is nothing to sign up for and nothing to pay us — you pay your provider, as always.' },
+  { q: 'Does it phone home?', a: 'One update check at startup (at most daily, three-second cap, silent when offline) compares the running version against the latest release tag. OPCODE_NO_UPDATE_CHECK=1 or "update_checks": false turns it off. That is the only request opcode makes on its own.' },
+  { q: 'What happens if the model tries to run something dangerous?', a: 'In build mode (the default), sandboxed commands and in-tree writes run free; anything touching outside the project opens a permission dialog showing the literal command. Nothing is preselected, and grants are never wider than what the dialog showed.' },
+  { q: 'Which platforms?', a: 'Linux, macOS, and Windows binaries for every release. The kernel sandbox is Linux-only (Landlock 5.13+); elsewhere the file confinement applies and commands are gated by prompts.' },
+  { q: 'Can I use it in CI or scripts?', a: 'Yes — opcode -p "prompt" runs one headless turn; --json emits one JSON event per line. Use full-auto for unattended runs; permissions fail closed with nobody to ask.' },
+  { q: 'Where do my sessions and keys live?', a: '~/.opcode/ — sessions in sessions/, keys in auth.json (0600), config in config.json. Nothing is written to a project directory except the work you asked for.' },
+];
+---
+<Base title="opcode — a terminal coding agent, in one Go binary"
+  description="opcode is a terminal coding agent: 15 providers, a kernel sandbox, plan mode, subagents, per-turn session autosave — in one Go binary, under your permission system.">
+
+<section class="relative">
+  <div class="hero-backdrop"></div>
+  <div class="relative mx-auto max-w-6xl px-6 pt-24 pb-20 sm:pt-32">
+    <p data-reveal class="inline-flex items-center gap-2 rounded-full border border-line bg-white/[0.03] px-3.5 py-1.5 text-xs font-semibold text-accent tracking-wide uppercase">
+      Open source · MIT · one Go binary
+    </p>
+    <h1 data-reveal class="mt-7 text-[2.7rem] sm:text-6xl font-extrabold tracking-tight leading-[1.05] max-w-3xl">
+      A terminal coding agent,<br>in <span class="gradient-text">one Go binary</span>.
+    </h1>
+    <p data-reveal class="mt-6 text-lg text-mut max-w-2xl leading-relaxed">
+      Reads and writes files, runs commands, streams markdown — under your
+      permission system, not around it. Any provider, your key,
+      no subscription.
+    </p>
+
+    <div id="install" data-reveal class="mt-10 flex flex-col sm:flex-row gap-4 sm:items-center">
+      <div class="group flex-1 max-w-2xl rounded-xl border border-line bg-panel focus-within:border-accent/50 transition-colors">
+        <code class="flex items-center gap-3 px-5 py-4 font-mono text-[13px] sm:text-sm text-fg overflow-x-auto">
+          <span class="text-sub select-none">$</span>
+          curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash
+        </code>
+      </div>
+      <a href="https://github.com/Chmgx81/opcode/releases"
+        class="rounded-xl px-6 py-4 text-center font-semibold text-bg bg-gradient-to-r from-[#b4a7fa] to-accent hover:shadow-glow transition-shadow">
+        Get the latest release
+      </a>
+    </div>
+    <p data-reveal class="mt-4 text-sm text-sub">
+      or <code class="font-mono text-mut">go install github.com/Chmgx81/opcode/cmd/opcode@latest</code> · the installer verifies a sha256 before it installs anything
+    </p>
+
+    <div data-reveal class="mt-16 max-w-3xl mx-auto">
+      <Terminal title="opcode — first run">
+        <div class="text-sub">welcome to opcode — setup is three steps, all in this window:</div>
+        <div><span class="t-mut">  1. pick a provider below — each row says whether it needs a key</span></div>
+        <div><span class="t-mut">  2. paste its API key when asked — masked, stored 0600 in auth.json</span></div>
+        <div><span class="t-mut">  3. pick a model from the live list — the choice is remembered</span></div>
+        <div class="mt-3"><span class="t-err">&#10007;</span> no api key for mistral — <span class="t-mut">/login mistral stores one</span></div>
+        <div><span class="t-acc">&#10095;</span> anthropic <span class="t-mut">enter to browse models</span></div>
+        <div><span class="t-mut">  groq      no key — /login groq</span></div>
+        <div><span class="t-mut">  ollama    enter to browse models</span></div>
+      </Terminal>
+    </div>
+  </div>
+</section>
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Why opcode</p>
+  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Safe by default. Provider-agnostic. Honest about it.</h2>
+  <div class="mt-10 grid gap-5 sm:grid-cols-3">
+    <div data-reveal class="card p-6">
+      <h3 class="font-semibold text-lg">Sandboxed by default</h3>
+      <p class="mt-2 text-sm text-mut leading-relaxed">Shell commands run in a kernel sandbox — Landlock confines the filesystem, seccomp blocks network sockets. Writes outside the project ask first; reads of your credentials never run.</p>
+    </div>
+    <div data-reveal class="card p-6">
+      <h3 class="font-semibold text-lg">Any provider, your key</h3>
+      <p class="mt-2 text-sm text-mut leading-relaxed">Fifteen providers built in — OpenRouter, Anthropic, OpenAI, Mistral, Google, Groq, Ollama, and more — switched live at runtime. Keys are stored 0600 and never leave your machine.</p>
+    </div>
+    <div data-reveal class="card p-6">
+      <h3 class="font-semibold text-lg">One binary, no account</h3>
+      <p class="mt-2 text-sm text-mut leading-relaxed">No runtime, no plugin stack, no subscription, no telemetry. One optional update check you can turn off with one environment variable. Open source, MIT.</p>
+    </div>
+  </div>
+</section>
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Features</p>
+  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Plan the work, delegate it, watch it land.</h2>
+
+  <div class="mt-12 grid gap-12 lg:grid-cols-2 lg:gap-10 items-center">
+    <div data-reveal>
+      <h3 class="text-2xl font-bold">Plan mode</h3>
+      <p class="mt-3 text-mut leading-relaxed">Research first, act on approval. In <code class="text-accent2">plan</code> mode the agent works read-only; when a change is warranted it presents a plan and waits. One keypress switches the session into acting — <code class="text-accent2">y</code> to implement with every action still asking, <code class="text-accent2">a</code> to implement with auto-accept. The mode is visible on the footer at all times, colored by what it means.</p>
+    </div>
+    <div data-reveal>
+      <Terminal title="opcode — plan approval">
+        <div><span class="t-acc">&#9673;</span> plan</div>
+        <div><span class="t-mut">  &#9744; Explore the layout of internal/tui</span></div>
+        <div><span class="t-mut">  &#9678; Draft the picker extraction</span></div>
+        <div><span class="t-mut">  &#9744; Update the call sites</span></div>
+        <div class="mt-2"><span class="t-dim">&#9651; thought for 2.1s · 214 chars (ctrl+r to expand)</span></div>
+        <div class="mt-3 t-bold">proceed with this plan?</div>
+        <div><span class="t-mut">y implement (actions will ask) · a implement with</span></div>
+        <div><span class="t-mut">auto-accept · n/Esc keep planning</span></div>
+      </Terminal>
+    </div>
+  </div>
+
+  <div class="mt-16 grid gap-12 lg:grid-cols-2 lg:gap-10 items-center">
+    <div data-reveal class="lg:order-2">
+      <h3 class="text-2xl font-bold">Subagents</h3>
+      <p class="mt-3 text-mut leading-relaxed">Delegate a focused task — a bounded scope, its own rounds, its own budget — to a second agent running the same tools under the same permission gate. Progress renders as labeled lines in the transcript; the result comes back as one block. Subagents are bounded by round caps and a watchdog, inherit cancellation, and cannot recurse.</p>
+    </div>
+    <div data-reveal class="lg:order-1">
+      <Terminal title="opcode — subagent">
+        <div><span class="t-dim">[review-diff] &#9673; reading the changed files…</span></div>
+        <div><span class="t-dim">[review-diff] &#9881; internal/tui/view.go — 4 findings</span></div>
+        <div><span class="t-dim">[review-diff] &#10003; review complete (2m 6s)</span></div>
+        <div class="mt-3"><span class="t-ok">&#10003;</span> The diff is consistent and safe to merge:</div>
+        <div><span class="t-mut">three extraction sites updated, one signature renamed.</span></div>
+      </Terminal>
+    </div>
+  </div>
+
+  <div class="mt-16 grid gap-5 sm:grid-cols-3">
+    {cards.map((c) => (
+      <div data-reveal class="card p-6">
+        <h3 class="font-semibold">{c.title}</h3>
+        <p class="mt-2 text-sm text-mut leading-relaxed">{c.body}</p>
+      </div>
+    ))}
+  </div>
+</section>
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Three modes</p>
+  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Cycle it with Tab, or pick it.</h2>
+  <p data-reveal class="mt-4 text-mut max-w-2xl">The mode scopes every keystroke. It has its own glyph and color on the footer, and <code class="text-accent2">/mode</code> opens a picker that says what each posture runs without asking.</p>
+  <div class="mt-10 grid gap-5 sm:grid-cols-3">
+    {modes.map((m) => (
+      <div data-reveal class="card p-6">
+        <p class={`font-mono text-2xl ${m.tone}`}>{m.glyph} {m.name}{m.badge && <span class="ml-2 align-middle text-[10px] font-sans font-semibold uppercase tracking-wide text-sub border border-line rounded-full px-2 py-0.5">{m.badge}</span>}</p>
+        <p class="mt-3 text-sm text-mut leading-relaxed">{m.desc}</p>
+      </div>
+    ))}
+  </div>
+</section>
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">Providers</p>
+  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Fifteen built in, custom endpoints welcome.</h2>
+  <div data-reveal class="mt-8 max-w-3xl card overflow-hidden">
+    <table class="w-full text-sm">
+      <tbody>
+        <tr class="border-b border-line"><td class="px-5 py-3 font-mono text-accent2">openrouter <span class="text-sub">(default)</span></td><td class="px-5 py-3 text-mut">openrouter.ai/api/v1</td><td class="px-5 py-3 font-mono text-mut">OPENROUTER_API_KEY</td></tr>
+        <tr class="border-b border-line"><td class="px-5 py-3 font-mono text-accent2">anthropic</td><td class="px-5 py-3 text-mut">Messages API, native client</td><td class="px-5 py-3 font-mono text-mut">ANTHROPIC_API_KEY</td></tr>
+        <tr class="border-b border-line"><td class="px-5 py-3 font-mono text-accent2">mistral · google · groq · …</td><td class="px-5 py-3 text-mut">OpenAI-compatible</td><td class="px-5 py-3 font-mono text-mut">&lt;NAME&gt;_API_KEY</td></tr>
+        <tr><td class="px-5 py-3 font-mono text-accent2">ollama</td><td class="px-5 py-3 text-mut">localhost:11434</td><td class="px-5 py-3 font-mono text-mut">none</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p data-reveal class="mt-5 text-sm text-mut">Keys resolve from <code class="text-accent2">auth.json</code> (with <code class="text-accent2">!command</code> support for secret managers), then the environment. Credentials never load from a project directory. <a class="text-accent hover:underline" href={`${base}docs/providers/`}>Full table →</a></p>
+</section>
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <p data-reveal class="text-accent text-xs font-semibold uppercase tracking-[0.14em]">FAQ</p>
+  <h2 data-reveal class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Questions people actually ask.</h2>
+  <div class="mt-8 grid gap-3 max-w-3xl">
+    {faqs.map((f, i) => (
+      <details data-reveal class="faq" open={i === 0}>
+        <summary>{f.q}</summary>
+        <div class="body">{f.a}</div>
+      </details>
+    ))}
+  </div>
+</section>
+
+</Base>

@@ -1,8 +1,8 @@
 name: site
 
-# The website is a zero-dependency static site in site/ — no build
-# step, no generator. This workflow publishes it to GitHub Pages on
-# every push to main that touches it.
+# The site is an Astro project in site/: npm ci, build, publish dist/
+# to GitHub Pages. Astro's `base: /opcode/` in astro.config.mjs puts
+# every internal link under the Pages subpath.
 on:
   push:
     branches: [main]
@@ -21,16 +21,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+        working-directory: site
+      - run: npm run build
+        working-directory: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
       - id: deployment
         uses: actions/deploy-pages@v4

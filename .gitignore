@@ -16,3 +16,7 @@
 
 # local agent notes (never a project artifact)
 /.commandcode/
+
+# the site's build (Astro) — sources in site/src, output in site/dist
+/site/node_modules/
+/site/dist/

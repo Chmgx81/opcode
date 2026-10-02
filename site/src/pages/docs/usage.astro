@@ -1,0 +1,53 @@
+---
+import Docs from '../../layouts/Docs.astro';
+const keys = [
+  ['enter', 'Send — mid-turn, steers at the next round boundary'],
+  ['ctrl+j / shift+enter', 'Newline'],
+  ['alt+enter', 'Queue a follow-up while working'],
+  ['ctrl+r', 'Expand / collapse results &amp; thinking (idle: opens the transcript pager)'],
+  ['ctrl+o', 'Transcript pager — the whole conversation, expanded'],
+  ['ctrl+v', 'Attach the clipboard image (png/jpeg/gif/webp)'],
+  ['ctrl+e', 'Edit the draft in $VISUAL / $EDITOR'],
+  ['tab / shift+tab', 'Cycle permission mode'],
+  ['alt+. / alt+,', 'Reasoning effort up / down'],
+  ['esc', 'Interrupt the turn, stop a running command, or close exactly one open thing'],
+  ['ctrl+c', 'Press twice to exit — works inside dialogs and pickers too'],
+  ['?', 'Help sheet (empty, idle composer)'],
+  ['/', 'Command palette'],
+  ['@', 'File picker — attach a file\u2019s contents'],
+  ['!', 'Shell mode — Enter runs it directly, no model round trip'],
+];
+const commands = ['/help', '/models', '/model', '/mode', '/sessions', '/skills', '/mcp', '/theme', '/diff', '/login', '/logout', '/doctor', '/update', '/exit', '/quit'];
+---
+<Docs title="Usage" current="usage" source="https://github.com/Chmgx81/opcode/blob/main/docs/specs/tui-spec.md"
+  description="Modes, permission dialogs, slash commands, and every keybinding in opcode.">
+  <h1 class="!text-4xl font-bold tracking-tight">Usage</h1>
+
+  <h2>Modes</h2>
+  <p>Three permission postures, cycled with <kbd>tab</kbd> / <kbd>shift</kbd>+<kbd>tab</kbd>, or picked with <code>/mode</code>:</p>
+  <table>
+    <thead><tr><th>Mode</th><th>What runs without asking</th></tr></thead>
+    <tbody>
+      <tr><td><code>&#9109; plan</code></td><td>Read-only tools; every write, command, or fetch proposes a plan you approve.</td></tr>
+      <tr><td><code>&rsaquo; build</code> (default)</td><td>Sandboxed commands and in-tree writes run free; anything else asks.</td></tr>
+      <tr><td><code>&#9197;&#9197; full-auto</code></td><td>Everything proceeds without asking — the sandbox still confines writes to the project directory, /tmp, and dev caches.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Permission dialogs</h2>
+  <p>An action outside the mode's bounds opens a dialog: the literal command in plain words, the tier it belongs to, three options — <strong>Yes</strong>, <strong>Yes, and don't ask again for</strong> (a session-scoped prefix rule, never wider than what the dialog showed), and <strong>No</strong>. Nothing is preselected. For 400ms after a dialog opens, keystrokes are swallowed — a fast typist's stray "y" must not answer an approval they never read.</p>
+
+  <h2>Keys</h2>
+  <table>
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      {keys.map(([k, a]) => <tr><td><kbd>{k}</kbd></td><td set:html={a} /></tr>)}
+    </tbody>
+  </table>
+
+  <h2>Commands</h2>
+  <p>{commands.map((c, i) => <code class="mr-2">{c}</code>)} — an unknown command errors in place with the closest match; it never becomes a billed model turn.</p>
+
+  <h2>Sessions</h2>
+  <p>The session file rewrites atomically at every turn boundary, so a crash loses at most the turn in flight. <code>opcode --continue</code> resumes the newest readable session (a damaged newest file is skipped and named); <code>/sessions</code> lists them all. Resuming grows that session's own file. Compaction keeps the context bounded when <code>context_window</code> is configured — the working line reads it as <code>context 62%</code>.</p>
+</Docs>

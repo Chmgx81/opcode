@@ -1,0 +1,73 @@
+---
+import '@fontsource-variable/inter';
+import '@fontsource-variable/jetbrains-mono';
+import '../styles/global.css';
+
+// BASE_URL ends with a slash; every internal link joins through it so
+// the site works under the Pages subpath (/opcode/).
+const base = import.meta.env.BASE_URL;
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+const site = 'opcode';
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <meta name="description" content={description}>
+  <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml">
+</head>
+<body class="font-sans min-h-screen">
+<script>document.documentElement.classList.add('js');</script>
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:bg-accent focus:text-bg focus:px-4 focus:py-2 focus:rounded-lg focus:font-semibold">Skip to content</a>
+
+<header class="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur-md">
+  <nav class="mx-auto max-w-6xl px-6 h-16 flex items-center gap-8" aria-label="Site">
+    <a href={base} class="flex items-center gap-2.5 font-bold text-fg text-lg">
+      <span class="text-accent text-xl">&#9671;</span> opcode
+    </a>
+    <div class="ml-auto flex items-center gap-7 text-sm text-mut">
+      <a class="hover:text-fg transition-colors" href={`${base}docs/`}>Docs</a>
+      <a class="hover:text-fg transition-colors" href="https://github.com/Chmgx81/opcode">GitHub</a>
+      <a class="rounded-lg px-3.5 py-2 font-semibold text-bg
+        bg-gradient-to-r from-[#b4a7fa] to-accent
+        hover:shadow-glow transition-shadow" href={`${base}#install`}>Install</a>
+    </div>
+  </nav>
+</header>
+
+<main id="main">
+  <slot />
+</main>
+
+<footer class="border-t border-line mt-24">
+  <div class="mx-auto max-w-6xl px-6 py-10 flex flex-wrap items-center gap-x-8 gap-y-3 text-sm text-sub">
+    <span class="flex items-center gap-2"><span class="text-accent">&#9671;</span> opcode — MIT license</span>
+    <a class="hover:text-mut transition-colors" href="https://github.com/Chmgx81/opcode">GitHub</a>
+    <a class="hover:text-mut transition-colors" href={`${base}docs/security/`}>Security</a>
+    <a class="hover:text-mut transition-colors" href={`${base}docs/`}>Docs</a>
+    <span class="ml-auto">No cookies, no tracking. Fonts served from this site.</span>
+  </div>
+</footer>
+
+<script>
+  const els = document.querySelectorAll('[data-reveal]');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    els.forEach((e) => e.classList.add('revealed'));
+  } else {
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((en) => {
+        if (en.isIntersecting) { en.target.classList.add('revealed'); io.unobserve(en.target); }
+      }),
+      { threshold: 0.08 }
+    );
+    els.forEach((e) => io.observe(e));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-bg: #0b0d12;
+  --color-panel: #10131a;
+  --color-raise: #161b25;
+  --color-line: #1e2432;
+  --color-fg: #e7ebf3;
+  --color-mut: #9aa3b2;
+  --color-sub: #6b7688;
+  --color-accent: #a78bfa;
+  --color-accent2: #7dd3fc;
+  --color-ok: #4ade80;
+  --color-warn: #fbbf24;
+  --color-err: #f87171;
+
+  --shadow-glow: 0 0 48px -12px rgb(167 139 250 / 0.35);
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgb(167 139 250 / 0.3);
+}
+
+/* Hero backdrop: a violet bloom over a faint grid. */
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hero-backdrop::before {
+  content: "";
+  position: absolute;
+  top: -22rem;
+  left: 50%;
+  width: 70rem;
+  height: 46rem;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(closest-side, rgb(167 139 250 / 0.16), transparent 70%),
+    radial-gradient(60% 50% at 65% 40%, rgb(125 211 252 / 0.08), transparent 70%);
+  filter: blur(10px);
+}
+.hero-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(80% 60% at 50% 20%, black 30%, transparent 75%);
+}
+
+/* Scroll reveal: the hidden state exists only when JS is present,
+   so a script-disabled browser sees the full page immediately. */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.55s ease, transform 0.55s ease;
+}
+.js [data-reveal].revealed {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Terminal window mockups: hand-colored spans, no highlighter. */
+.t-dim  { color: var(--color-sub); }
+.t-mut  { color: var(--color-mut); }
+.t-acc  { color: var(--color-accent); }
+.t-sky  { color: var(--color-accent2); }
+.t-ok   { color: var(--color-ok); }
+.t-warn { color: var(--color-warn); }
+.t-err  { color: var(--color-err); }
+.t-bold { color: var(--color-fg); font-weight: 600; }
+
+.card {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.03), rgb(255 255 255 / 0.012));
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover {
+  border-color: rgb(167 139 250 / 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -18px rgb(167 139 250 / 0.25);
+}
+
+.gradient-text {
+  background: linear-gradient(92deg, #c4b5fd, #a78bfa 55%, #7dd3fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+kbd {
+  font: 600 0.82em var(--font-mono);
+  background: var(--color-raise);
+  border: 1px solid var(--color-line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 0.1em 0.45em;
+  color: var(--color-fg);
+}
+
+/* FAQ accordions */
+details.faq {
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.02);
+}
+details.faq summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 1rem 1.25rem;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary::after {
+  content: "+";
+  color: var(--color-accent);
+  font-weight: 400;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+details.faq[open] summary::after { content: "−"; }
+details.faq .body {
+  padding: 0 1.25rem 1.15rem;
+  color: var(--color-mut);
+  max-width: 62ch;
+}
+
+/* Docs prose */
+.prose-doc :where(p, li) { color: var(--color-mut); }
+.prose-doc :where(h2, h3) { color: var(--color-fg); }
+.prose-doc pre {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  font-size: 0.86rem;
+  overflow-x: auto;
+}
+.prose-doc code { color: var(--color-accent2); font-size: 0.9em; }
+.prose-doc pre code { color: var(--color-fg); }
+.prose-doc :where(table) { font-size: 0.92rem; }
+.prose-doc :where(th) { color: var(--color-sub); }
+.prose-doc :where(td, th) { border-color: var(--color-line); }
+.prose-doc :where(a) { color: var(--color-accent); text-decoration-color: rgb(167 139 250 / 0.4); }
+.prose-doc :where(strong) { color: var(--color-fg); }
+.prose-doc :where(ul > li::marker) { color: var(--color-accent); }

@@ -3515,3 +3515,31 @@ URLs — the wrong check, so a false green. All links are relative
 now, per-file, and the check resolves every href at its served URL
 under the base path, which is the check that actually models the
 deployment.
+
+# The site rebuilt on a real stack (2026-10-02)
+
+The hand-rolled site answered "does it work" but not "does it look
+like a product". Rebuilt as an **Astro + Tailwind CSS v4** project
+in `site/` — the current standard for dev-tool sites: component
+model (`Terminal`, layouts), Tailwind's token system for the visual
+language, self-hosted Inter and JetBrains Mono variable fonts via
+fontsource (no Google Fonts request — the no-tracking claim stays
+true), zero client JS except a 20-line reduced-motion-aware scroll
+reveal whose hidden state exists only when JS runs.
+
+Design: the violet identity carries over (#a78bfa accent on a
+deeper #0b0d12), gradient hero text, radial glow and grid backdrop,
+terminal-window components with traffic-light chrome rendering
+opcode's own output, cards with hover lift, native details/summary
+FAQ accordions, docs on the typography plugin with a sticky sidebar.
+
+Two build lessons recorded: npm writes dependencies to package.json
+only after a full install resolves, so the first attempt's 300s kill
+left an empty lockfile that every later "up to date in 189ms"
+faithfully installed as nothing; and Astro treats a literal `{` in
+the template as expression syntax, so JSON samples live in
+frontmatter strings. Verified: `astro build` produces 7
+directory-style pages with every internal link carrying the
+/opcode/ base, the served-URL link checker passes over `dist/`, and
+no page requests a third-party font or CDN. The deploy workflow
+does `npm ci && npm run build` on Node 22 and publishes `dist/`.

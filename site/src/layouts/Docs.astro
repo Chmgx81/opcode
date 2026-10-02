@@ -1,0 +1,36 @@
+---
+import Base from './Base.astro';
+const base = import.meta.env.BASE_URL;
+interface Props {
+  title: string;
+  description: string;
+  current: string;
+  source: string;
+}
+const { title, description, current, source } = Astro.props;
+const nav = [
+  { href: `${base}docs/`, label: 'Getting started', key: 'index' },
+  { href: `${base}docs/usage/`, label: 'Usage', key: 'usage' },
+  { href: `${base}docs/configuration/`, label: 'Configuration', key: 'configuration' },
+  { href: `${base}docs/providers/`, label: 'Providers', key: 'providers' },
+  { href: `${base}docs/security/`, label: 'Security', key: 'security' },
+  { href: `${base}docs/headless/`, label: 'Headless & CI', key: 'headless' },
+];
+---
+<Base title={`${title} — opcode`} description={description}>
+  <div class="mx-auto max-w-6xl px-6 pt-12 pb-8 grid gap-10 lg:grid-cols-[13rem_1fr]">
+    <aside>
+      <nav class="lg:sticky lg:top-24 flex flex-wrap gap-x-5 gap-y-1 lg:flex-col text-sm" aria-label="Docs">
+        {nav.map((n) => (
+          <a class={`py-1 transition-colors ${current === n.key ? 'text-accent font-semibold' : 'text-mut hover:text-fg'}`}
+            href={n.href} aria-current={current === n.key ? 'page' : undefined}>{n.label}</a>
+        ))}
+      </nav>
+    </aside>
+    <article class="prose-doc max-w-3xl">
+      <p class="!text-accent !text-xs !font-semibold uppercase tracking-[0.14em] !mb-2">Docs</p>
+      <slot />
+      <p class="editline">Source: <a class="text-accent hover:underline" href={source}>{source.replace('https://github.com/Chmgx81/opcode/blob/main/', '')}</a> — every claim on this page is checked against the code.</p>
+    </article>
+  </div>
+</Base>
