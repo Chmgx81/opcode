@@ -17,9 +17,9 @@ typed function: `decideInput` returns one of six outcomes, so
   is typing the decision, not re-deciding it. The existing
   steer/queue/start tests must pass untouched.
 - No optimistic-concurrency token (Codex's
-  `expected_previous_turn_id`): tilde's orchestrator is a
+  `expected_previous_turn_id`): opcode's orchestrator is a
   single-channel loop with no concurrent turn writers to race;
-  the token solves a problem tilde does not have.
+  the token solves a problem opcode does not have.
 - Command business rules (like /model's mid-turn refusal) stay
   in their commands — they are outcomes of a command, not of the
   input decision.

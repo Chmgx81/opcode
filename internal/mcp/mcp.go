@@ -1,5 +1,5 @@
 // Package mcp connects MCP servers (Section 3.5) over stdio and exposes
-// their tools as ordinary tilde tools. The model never learns that MCP
+// their tools as ordinary opcode tools. The model never learns that MCP
 // exists; it just sees more tools.
 //
 // Protocol: JSON-RPC 2.0, newline-delimited, per the MCP stdio
@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// protocolVersion is the MCP revision tilde speaks. 2024-11-05 is the
+// protocolVersion is the MCP revision opcode speaks. 2024-11-05 is the
 // broadly supported baseline.
 const protocolVersion = "2024-11-05"
 
@@ -347,7 +347,7 @@ func (c *Client) handshake(ctx context.Context) error {
 	params, _ := json.Marshal(initParams{
 		ProtocolVersion: protocolVersion,
 		Capabilities:    json.RawMessage(`{}`),
-		ClientInfo:      clientInfo{Name: "tilde", Version: "0.1"},
+		ClientInfo:      clientInfo{Name: "opcode", Version: "0.1"},
 	})
 	if _, err := c.roundtrip(ctx, "initialize", params); err != nil {
 		return fmt.Errorf("initialize: %w", err)

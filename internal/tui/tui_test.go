@@ -14,11 +14,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/session"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/session"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // scriptedProvider is an llm.Provider the tests control.
@@ -69,7 +69,7 @@ func newText(t *testing.T, dir string, rounds [][]llm.ChatEvent) (*Model, *scrip
 		Model:        "test-model",
 		Mode:         tools.ModeBuild,
 		Cwd:          dir,
-		TildeHome:    dir,
+		OpcodeHome:   dir,
 		ProviderName: "openrouter",
 		BaseURL:      "http://example.test/v1",
 		AuditPath:    filepath.Join(dir, "audit.jsonl"),
@@ -170,7 +170,7 @@ func TestEnterWhileWorkingSteers(t *testing.T) {
 	var reg tools.Registry
 	reg.Register(tools.ReadFile{})
 	orch := orchestrator.New(fp, "m", "s", &reg, &tools.Gate{})
-	m := New(Options{Orch: orch, Model: "m", TildeHome: dir, ProviderName: "openrouter",
+	m := New(Options{Orch: orch, Model: "m", OpcodeHome: dir, ProviderName: "openrouter",
 		BaseURL: "http://example.test/v1", AuditPath: filepath.Join(dir, "audit.jsonl")})
 
 	// Patch the provider to block round 1 until the test steers.
@@ -227,7 +227,7 @@ func TestAltEnterWhileWorkingQueuesFollowUp(t *testing.T) {
 	var reg tools.Registry
 	reg.Register(tools.ReadFile{})
 	orch := orchestrator.New(fp, "m", "s", &reg, &tools.Gate{})
-	m := New(Options{Orch: orch, Model: "m", TildeHome: dir, ProviderName: "openrouter",
+	m := New(Options{Orch: orch, Model: "m", OpcodeHome: dir, ProviderName: "openrouter",
 		BaseURL: "http://example.test/v1", AuditPath: filepath.Join(dir, "audit.jsonl")})
 
 	typeAndEnter(m, "first message")
@@ -703,7 +703,7 @@ func TestModeCommandAndTrustPrompt(t *testing.T) {
 	var answer *bool
 	m.opt.PendingTrust = &TrustDecision{
 		ProjectDir: "/tmp/some/project",
-		Approved:   []string{".tilde/skills/deploy/scripts/run.sh"},
+		Approved:   []string{".opcode/skills/deploy/scripts/run.sh"},
 		OnAnswer: func(trusted bool) {
 			v := trusted
 			answer = &v
@@ -784,7 +784,7 @@ func TestFreshViewShowsBannerAndBrand(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
 	view := stripANSI(m.View())
-	for _, want := range []string{"▄", "tilde " + version, "test-model", "? for shortcuts", "/ commands"} {
+	for _, want := range []string{"▄", "opcode " + version, "test-model", "? for shortcuts", "/ commands"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("fresh view missing %q:\n%s", want, view)
 		}
@@ -812,7 +812,7 @@ func TestComposerResizesWithTerminal(t *testing.T) {
 	}
 	view := stripANSI(m.View())
 	for _, l := range strings.Split(view, "\n") {
-		if strings.Contains(l, "ask tilde") && strings.Contains(l, "/ commands") {
+		if strings.Contains(l, "ask opcode") && strings.Contains(l, "/ commands") {
 			t.Errorf("hints leaked into the placeholder: %q", l)
 		}
 	}
@@ -871,12 +871,12 @@ func TestTranscriptHierarchy(t *testing.T) {
 	// The cursor block overlays the placeholder's first character, so
 	// probe for a tail fragment rather than the whole string.
 	view := m.View()
-	if !strings.Contains(view, "tilde anything") {
+	if !strings.Contains(view, "opcode anything") {
 		t.Fatalf("placeholder missing from view:\n%s", view)
 	}
 	placeholderLine := ""
 	for _, l := range strings.Split(view, "\n") {
-		if strings.Contains(l, "tilde anything") {
+		if strings.Contains(l, "opcode anything") {
 			placeholderLine = l
 		}
 	}
@@ -1389,7 +1389,7 @@ func TestFooterFitsNarrowTerminals(t *testing.T) {
 	footer := ""
 	for _, l := range m.composerView() {
 		p := stripANSI(l)
-		if strings.Contains(p, m.opt.Mode) && !strings.Contains(p, "ask tilde") {
+		if strings.Contains(p, m.opt.Mode) && !strings.Contains(p, "ask opcode") {
 			footer = p
 		}
 	}

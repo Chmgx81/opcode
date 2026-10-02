@@ -8,7 +8,7 @@ import (
 )
 
 // DefaultProviderName is used when models.json does not name one. Its
-// settings below are also the built-in fallbacks, so tilde talks to
+// settings below are also the built-in fallbacks, so opcode talks to
 // OpenRouter with zero configuration.
 const (
 	DefaultProviderName = "openrouter"

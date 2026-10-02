@@ -16,12 +16,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/safe"
-	"github.com/Chmgx81/tilde/internal/session"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/safe"
+	"github.com/Chmgx81/opcode/internal/session"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // Update implements tea.Model.
@@ -812,14 +812,14 @@ func (m *Model) runCommand(cmdName, arg string) tea.Cmd {
 }
 
 // updateRedirect handles a typed "/update". Every update surface
-// points at `tilde update`, so a user who types it as a slash command
+// points at `opcode update`, so a user who types it as a slash command
 // is doing the obvious thing — name the shell instead of answering
 // "unknown command", and say the quiet part: the install replaces the
 // binary this process is running, which is why it is not a slash
 // command.
 func (m *Model) updateRedirect() {
-	m.add(entry{kind: entryDim, text: "`tilde update` runs in a shell, not in this session: " +
-		"it replaces the running binary. Quit and run it — `tilde update --check` reports without installing."})
+	m.add(entry{kind: entryDim, text: "`opcode update` runs in a shell, not in this session: " +
+		"it replaces the running binary. Quit and run it — `opcode update --check` reports without installing."})
 }
 
 // deadPasteTokens returns the [paste N] tokens in text that have no
@@ -885,14 +885,14 @@ func (m *Model) expandHistoryPastes(text string) string {
 	return text
 }
 
-// saveHistory rewrites history.jsonl under TILDE_HOME (0600 —
+// saveHistory rewrites history.jsonl under OPCODE_HOME (0600 —
 // prompts can hold anything). Entries are redacted against the
 // session's secret list on the way out: a pasted key must not sit
 // in plaintext next to the credentials file. Recall shows the
 // redacted form, visibly so. Best-effort: a recall list that can't
 // be written is a nuisance, not a failure.
 func (m *Model) saveHistory() {
-	if m.opt.TildeHome == "" {
+	if m.opt.OpcodeHome == "" {
 		return
 	}
 	var b strings.Builder
@@ -907,7 +907,7 @@ func (m *Model) saveHistory() {
 		b.Write(line)
 		b.WriteByte('\n')
 	}
-	_ = os.WriteFile(filepath.Join(m.opt.TildeHome, "history.jsonl"), []byte(b.String()), 0o600)
+	_ = os.WriteFile(filepath.Join(m.opt.OpcodeHome, "history.jsonl"), []byte(b.String()), 0o600)
 }
 
 // loadHistory reads the persisted recall list. A missing file or a
@@ -1065,7 +1065,7 @@ func errorWithNextStep(provider, msg string) string {
 		strings.Contains(low, "dial tcp"), strings.Contains(low, "network is unreachable"),
 		strings.Contains(low, "i/o timeout"), strings.Contains(low, "context deadline"),
 		strings.Contains(low, "tls handshake"), strings.Contains(low, "eof"):
-		step = "tilde could not reach " + provider + " — check the network, and the base url in models.json if you changed it"
+		step = "opcode could not reach " + provider + " — check the network, and the base url in models.json if you changed it"
 	case strings.Contains(low, "certificate"), strings.Contains(low, "x509"):
 		step = "the provider's certificate did not verify — that is a machine trust problem; /doctor names the terminal's state"
 	default:
@@ -1163,7 +1163,7 @@ func (m *Model) listSkills() {
 		// wired": the advice is the same either way, and an empty
 		// state with a way forward beats a bare "none" (audit U10).
 		m.add(entry{kind: entryDim,
-			text: "no skills loaded — add one under ~/.tilde/skills/ or .tilde/skills/ (a folder with SKILL.md)"})
+			text: "no skills loaded — add one under ~/.opcode/skills/ or .opcode/skills/ (a folder with SKILL.md)"})
 		return
 	}
 	var rows []string
@@ -1186,9 +1186,9 @@ func (m *Model) listMcp() {
 	names := m.opt.MCPNames()
 	if len(names) == 0 {
 		// Same empty-state rule: where servers come from, and what
-		// picks them up (audit U10). mcp.json is read from ~/.tilde/.
+		// picks them up (audit U10). mcp.json is read from ~/.opcode/.
 		m.add(entry{kind: entryDim,
-			text: "no MCP servers connected — add one to ~/.tilde/mcp.json and restart tilde"})
+			text: "no MCP servers connected — add one to ~/.opcode/mcp.json and restart opcode"})
 		return
 	}
 	m.add(entry{kind: entryDim, text: strings.Join(names, "\n")})
@@ -1227,7 +1227,7 @@ func (m *Model) submitLogin() tea.Cmd {
 		m.add(entry{kind: entryDim, text: "login cancelled — no key entered, nothing stored"})
 		return nil
 	}
-	if err := config.WriteAuthKey(m.opt.TildeHome, provider, key); err != nil {
+	if err := config.WriteAuthKey(m.opt.OpcodeHome, provider, key); err != nil {
 		m.add(entry{kind: entryErr, text: "login failed: " + err.Error()})
 		return nil
 	}
@@ -1244,13 +1244,13 @@ func (m *Model) submitLogin() tea.Cmd {
 }
 
 // logout removes the stored key for a provider: bare /logout means the
-// active one, an argument names another. Only what tilde stored is
+// active one, an argument names another. Only what opcode stored is
 // touched — never environment variables, never the provider's side.
 func (m *Model) logout(provider string) {
 	if provider == "" {
 		provider = m.opt.ProviderName
 	}
-	removed, err := config.RemoveAuthKey(m.opt.TildeHome, provider)
+	removed, err := config.RemoveAuthKey(m.opt.OpcodeHome, provider)
 	if err != nil {
 		m.add(entry{kind: entryErr, text: "logout failed: " + err.Error()})
 		return
@@ -1537,7 +1537,7 @@ func (m *Model) openModelPicker() {
 	if len(items) == 0 {
 		m.add(entry{kind: entryDim,
 			text: "no providers or models configured in models.json — add one under " +
-				filepath.Join(m.opt.TildeHome, "models.json") + " or /models <provider> to browse a live list"})
+				filepath.Join(m.opt.OpcodeHome, "models.json") + " or /models <provider> to browse a live list"})
 		return
 	}
 	m.picker = newPicker(pickerModels, "switch model", items)
@@ -1574,9 +1574,9 @@ func (m *Model) switchModel(provider, model string) {
 	// config file's old value on the next launch. A save failure does
 	// not undo the switch; it just means the choice is for this
 	// session only, and the note says exactly that.
-	if err := config.SaveModel(m.opt.TildeHome, model); err != nil {
+	if err := config.SaveModel(m.opt.OpcodeHome, model); err != nil {
 		m.add(entry{kind: entryDim, text: "switched, but saving the model failed (this session only): " + err.Error()})
-	} else if err := config.SaveDefaultProvider(m.opt.TildeHome, provider); err != nil {
+	} else if err := config.SaveDefaultProvider(m.opt.OpcodeHome, provider); err != nil {
 		m.add(entry{kind: entryDim, text: "switched, but saving the provider failed (this session only): " + err.Error()})
 	}
 	note := "switched to " + m.opt.Model + " (provider " + m.opt.ProviderName + ") — the next request uses it"
@@ -1594,7 +1594,7 @@ func (m *Model) openSessionsPicker() {
 		m.add(entry{kind: entryErr, text: "session resume is not wired in this build"})
 		return
 	}
-	items, skipped, err := sessionItems(m.opt.TildeHome)
+	items, skipped, err := sessionItems(m.opt.OpcodeHome)
 	if err != nil {
 		m.add(entry{kind: entryErr, text: "could not read sessions: " + err.Error()})
 		return
@@ -1603,13 +1603,13 @@ func (m *Model) openSessionsPicker() {
 	// go?"); one line says what happened (audit U9).
 	if skipped > 0 {
 		m.add(entry{kind: entryDim,
-			text: fmt.Sprintf("skipped %d unreadable session file(s) — damaged or written by a newer tilde", skipped)})
+			text: fmt.Sprintf("skipped %d unreadable session file(s) — damaged or written by a newer opcode", skipped)})
 	}
 	if len(items) == 0 {
 		// An empty list needs a way forward, not just a path: say what
 		// saves a session (any completed turn) and where they land.
-		m.add(entry{kind: entryDim, text: "no saved sessions in " + session.Dir(m.opt.TildeHome) +
-			" — tilde saves a session when a turn ends, and /sessions lists them"})
+		m.add(entry{kind: entryDim, text: "no saved sessions in " + session.Dir(m.opt.OpcodeHome) +
+			" — opcode saves a session when a turn ends, and /sessions lists them"})
 		return
 	}
 	m.picker = newPicker(pickerSessions, "resume session", items)
@@ -1708,7 +1708,7 @@ func (m *Model) resumeSession(path, label string) {
 	m.stream.Reset()
 	m.queue = nil
 	m.usage = llm.Usage{}
-	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("tilde " + m.displayVersion())})
+	m.entries = append(m.entries, entry{kind: entryDim, text: boldStyle.Render("opcode " + m.displayVersion())})
 	m.add(entry{kind: entryDim, text: dimStyle.Render(m.opt.Model + " · " + m.opt.Mode)})
 	m.add(entry{kind: entryOK, text: fmt.Sprintf("resumed %s — %d messages in context", label, n)})
 	m.showToast("resumed " + label)
@@ -1761,7 +1761,7 @@ func (m *Model) openEditor() tea.Cmd {
 		m.showToast("no $VISUAL or $EDITOR set")
 		return nil
 	}
-	f, err := os.CreateTemp("", "tilde-composer-*.md")
+	f, err := os.CreateTemp("", "opcode-composer-*.md")
 	if err != nil {
 		m.showToast("could not create the editor file: " + err.Error())
 		return nil

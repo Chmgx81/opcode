@@ -1,10 +1,10 @@
 # Specs
 
-Every phase of tilde wrote its spec before the code. This index is
+Every phase of opcode wrote its spec before the code. This index is
 the map: what each file is, and whether it still describes the
 software or has been overtaken by a later phase.
 
-**The two living docs.** [tilde-architecture.md](tilde-architecture.md)
+**The two living docs.** [opcode-architecture.md](opcode-architecture.md)
 and [tui-spec.md](tui-spec.md) are kept current against the code —
 when one of them and the code disagree, the fix lands in the same
 change. Read those two first; they are what a new reader wants.
@@ -53,7 +53,7 @@ and its full chronological log,
 | 41 | [phase41-compaction-baseline.md](phase41-compaction-baseline.md) | Compaction: window-baseline accounting and the recap injection rule | shipped |
 | 42 | [phase42-typed-input.md](phase42-typed-input.md) | One typed decision for composer input (send / steer / queue / command / shell) | shipped |
 | 43 | [phase43-production-audit.md](phase43-production-audit.md) | Whole-codebase audit: security, concurrency, UX, slop — findings triaged | shipped |
-| 44 | [phase44-release-hardening.md](phase44-release-hardening.md) | Release hardening: races, CI/CD, `tilde update`, installer checksums | shipped |
+| 44 | [phase44-release-hardening.md](phase44-release-hardening.md) | Release hardening: races, CI/CD, `opcode update`, installer checksums | shipped |
 
 Phases 7–12, 14–17, 24, 27–29 and 31 have no spec file of their own;
 their work is recorded in the [build log](../progress-log.md) and
@@ -72,5 +72,5 @@ folded into [tui-spec.md](tui-spec.md).
 - [../releasing.md](../releasing.md) — cutting a release, and what the
   pipeline does and does not verify.
 - [../reference/codex-adoption.md](../reference/codex-adoption.md) —
-  the menu tilde picked from, and the reasoning, for features adopted
+  the menu opcode picked from, and the reasoning, for features adopted
   from the Codex CLI.

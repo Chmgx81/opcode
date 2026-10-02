@@ -119,7 +119,7 @@ func TestAskModeBoundedActions(t *testing.T) {
 
 	// A write outside every writable root is unbounded: it prompts.
 	promptCalled = false
-	args, _ = json.Marshal(map[string]string{"path": "/etc/tilde-should-not-write.txt"})
+	args, _ = json.Marshal(map[string]string{"path": "/etc/opcode-should-not-write.txt"})
 	if !decide(WriteFile{}, string(args)) || !promptCalled {
 		t.Error("out-of-root write must prompt in ask mode")
 	}
@@ -187,7 +187,7 @@ func rootSandbox(t *testing.T) (project, outside string) {
 	t.Setenv("HOME", newTmp)
 	t.Setenv("USERPROFILE", newTmp)
 	var err error
-	if outside, err = os.MkdirTemp(realTmp, "tilde-outside-"); err != nil {
+	if outside, err = os.MkdirTemp(realTmp, "opcode-outside-"); err != nil {
 		t.Fatalf("outside dir: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll(outside) })

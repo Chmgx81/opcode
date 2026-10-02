@@ -13,9 +13,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // TestFullSessionOverTeaProgram runs the real tea.Program (not just
@@ -61,7 +61,7 @@ func TestFullSessionOverTeaProgram(t *testing.T) {
 		Model:        "m",
 		Mode:         tools.ModeBuild,
 		Cwd:          dir,
-		TildeHome:    dir,
+		OpcodeHome:   dir,
 		ProviderName: "openrouter",
 		BaseURL:      srv.URL,
 		AuditPath:    filepath.Join(dir, "audit.jsonl"),

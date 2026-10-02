@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exercises install.sh against a FAKE release served from a local
-# http.server on 127.0.0.1 (TILDE_RELEASE_BASE_URL), under both `sh` and
+# http.server on 127.0.0.1 (OPCODE_RELEASE_BASE_URL), under both `sh` and
 # `bash`. Never touches the real network. Needs: python3, curl, tar, and
 # sha256sum or shasum.
 #
@@ -18,7 +18,7 @@ for tool in python3 curl tar; do
   command -v "$tool" >/dev/null 2>&1 || { echo "test-install: need $tool" >&2; exit 2; }
 done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/tilde-test-install.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/opcode-test-install.XXXXXX")
 server_pid=
 cleanup() {
   [ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true
@@ -42,9 +42,9 @@ make_archives() { # make_archives <dir> <body> : all four unix platforms
   mkdir -p "$dir/download/$TAG" "$work/stage"
   for os in linux darwin; do
     for arch in amd64 arm64; do
-      printf '#!/bin/sh\necho "%s"\n' "$body" >"$work/stage/tilde-$os-$arch"
-      chmod 755 "$work/stage/tilde-$os-$arch"
-      (cd "$work/stage" && tar czf "$dir/download/$TAG/tilde-$os-$arch.tar.gz" "tilde-$os-$arch")
+      printf '#!/bin/sh\necho "%s"\n' "$body" >"$work/stage/opcode-$os-$arch"
+      chmod 755 "$work/stage/opcode-$os-$arch"
+      (cd "$work/stage" && tar czf "$dir/download/$TAG/opcode-$os-$arch.tar.gz" "opcode-$os-$arch")
     done
   done
 }
@@ -58,7 +58,7 @@ make_sums() { # make_sums <dir> : checksums.txt in sha256sum format
 }
 
 S="$work/site"
-GOOD_OUT="tilde $TAG (fake)"
+GOOD_OUT="opcode $TAG (fake)"
 
 make_archives "$S/ok" "$GOOD_OUT"
 make_sums "$S/ok"
@@ -71,27 +71,27 @@ make_archives "$S/tampered" "pwned"
 make_archives "$S/nosums" "$GOOD_OUT"
 
 make_archives "$S/noentry" "$GOOD_OUT"
-printf '%s  %s\n' "$(sum_of "$S/noentry/download/$TAG/tilde-linux-amd64.tar.gz")" "other-file.tar.gz" \
+printf '%s  %s\n' "$(sum_of "$S/noentry/download/$TAG/opcode-linux-amd64.tar.gz")" "other-file.tar.gz" \
   >"$S/noentry/download/$TAG/checksums.txt"
 
 # an entry whose name merely contains the asset name must not match
 make_archives "$S/substring" "$GOOD_OUT"
 for os in linux darwin; do for arch in amd64 arm64; do
-  printf '%s  %s\n' "$(sum_of "$S/substring/download/$TAG/tilde-$os-$arch.tar.gz")" "x-tilde-$os-$arch.tar.gz.sig" \
+  printf '%s  %s\n' "$(sum_of "$S/substring/download/$TAG/opcode-$os-$arch.tar.gz")" "x-opcode-$os-$arch.tar.gz.sig" \
     >>"$S/substring/download/$TAG/checksums.txt"
 done; done
 
 make_archives "$S/conflict" "$GOOD_OUT"
 make_sums "$S/conflict"
 for os in linux darwin; do for arch in amd64 arm64; do
-  printf '%s  %s\n' "$(printf '%064d' 0 | tr 0 a)" "tilde-$os-$arch.tar.gz" \
+  printf '%s  %s\n' "$(printf '%064d' 0 | tr 0 a)" "opcode-$os-$arch.tar.gz" \
     >>"$S/conflict/download/$TAG/checksums.txt"
 done; done
 
 # correct checksum, but the archive has no binary in it
 make_archives "$S/nobinary" "$GOOD_OUT"
 for os in linux darwin; do for arch in amd64 arm64; do
-  (cd "$work/stage" && echo hi >README && tar czf "$S/nobinary/download/$TAG/tilde-$os-$arch.tar.gz" README)
+  (cd "$work/stage" && echo hi >README && tar czf "$S/nobinary/download/$TAG/opcode-$os-$arch.tar.gz" README)
 done; done
 make_sums "$S/nobinary"
 
@@ -183,20 +183,20 @@ run() {
   n=$((n + 1))
   DIR="$work/install-$n"
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" \
-    TILDE_RELEASE_BASE_URL="$BASE/$scen" "$@" "$shell_bin" "$INSTALLER" 2>&1 </dev/null)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" \
+    OPCODE_RELEASE_BASE_URL="$BASE/$scen" "$@" "$shell_bin" "$INSTALLER" 2>&1 </dev/null)
   RC=$?
   set -e
 }
 
-installed_clean() { # exactly one file, tilde, and it is executable
-  [ -x "$DIR/tilde" ] && [ "$(ls -A "$DIR" | wc -l | tr -d ' ')" = 1 ]
+installed_clean() { # exactly one file, opcode, and it is executable
+  [ -x "$DIR/opcode" ] && [ "$(ls -A "$DIR" | wc -l | tr -d ' ')" = 1 ]
 }
 nothing_installed() { [ ! -e "$DIR" ] || [ -z "$(ls -A "$DIR")" ]; }
 tmp_clean() { [ -z "$(ls -A "$work/tmp")" ]; }
 
 expect_installed() { # <name>
-  if [ "$RC" = 0 ] && installed_clean && [ "$("$DIR/tilde")" = "$GOOD_OUT" ] && tmp_clean; then ok "$1"; else bad "$1 (rc=$RC)"; fi
+  if [ "$RC" = 0 ] && installed_clean && [ "$("$DIR/opcode")" = "$GOOD_OUT" ] && tmp_clean; then ok "$1"; else bad "$1 (rc=$RC)"; fi
 }
 expect_refused() { # <name> <message fragment>
   if [ "$RC" != 0 ] && nothing_installed && tmp_clean && printf '%s' "$OUT" | grep -qF -- "$2"; then
@@ -210,7 +210,7 @@ suite() {
   local sh_bin=$1
   echo "== install.sh under $sh_bin"
 
-  run "$sh_bin" ok TILDE_VERSION=$TAG
+  run "$sh_bin" ok OPCODE_VERSION=$TAG
   expect_installed "happy path, pinned version"
 
   run "$sh_bin" ok
@@ -221,8 +221,8 @@ suite() {
   n=$((n + 1))
   DIR=$first_dir
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" \
-    TILDE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" "$INSTALLER" 2>&1 </dev/null)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" \
+    OPCODE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" "$INSTALLER" 2>&1 </dev/null)
   RC=$?
   set -e
   expect_installed "re-run over an existing install"
@@ -231,83 +231,83 @@ suite() {
   n=$((n + 1))
   DIR="$work/install-$n"
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" \
-    TILDE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" <"$INSTALLER" 2>&1)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" \
+    OPCODE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" <"$INSTALLER" 2>&1)
   RC=$?
   set -e
   expect_installed "script piped on stdin (curl | sh form)"
 
-  run "$sh_bin" tampered TILDE_VERSION=$TAG
+  run "$sh_bin" tampered OPCODE_VERSION=$TAG
   expect_refused "tampered archive is refused" "checksum mismatch"
 
-  run "$sh_bin" nosums TILDE_VERSION=$TAG
+  run "$sh_bin" nosums OPCODE_VERSION=$TAG
   expect_refused "missing checksums.txt is refused" "checksums.txt"
 
-  run "$sh_bin" noentry TILDE_VERSION=$TAG
+  run "$sh_bin" noentry OPCODE_VERSION=$TAG
   expect_refused "missing checksum entry is refused" "no checksum entry"
 
-  run "$sh_bin" substring TILDE_VERSION=$TAG
+  run "$sh_bin" substring OPCODE_VERSION=$TAG
   expect_refused "substring-only checksum entry is refused" "no checksum entry"
 
-  run "$sh_bin" conflict TILDE_VERSION=$TAG
+  run "$sh_bin" conflict OPCODE_VERSION=$TAG
   expect_refused "conflicting checksum entries are refused" "conflicting checksum"
 
-  run "$sh_bin" nobinary TILDE_VERSION=$TAG
+  run "$sh_bin" nobinary OPCODE_VERSION=$TAG
   expect_refused "archive without the binary is refused" "binary missing"
 
-  run "$sh_bin" tampered TILDE_VERSION=$TAG TILDE_SKIP_CHECKSUM=1
-  if [ "$RC" = 0 ] && [ -x "$DIR/tilde" ] && printf '%s' "$OUT" | grep -q "NOT being verified"; then
-    ok "TILDE_SKIP_CHECKSUM=1 bypasses verification (and says so)"
+  run "$sh_bin" tampered OPCODE_VERSION=$TAG OPCODE_SKIP_CHECKSUM=1
+  if [ "$RC" = 0 ] && [ -x "$DIR/opcode" ] && printf '%s' "$OUT" | grep -q "NOT being verified"; then
+    ok "OPCODE_SKIP_CHECKSUM=1 bypasses verification (and says so)"
   else
-    bad "TILDE_SKIP_CHECKSUM=1 bypass (rc=$RC)"
+    bad "OPCODE_SKIP_CHECKSUM=1 bypass (rc=$RC)"
   fi
 
-  run "$sh_bin" nosums TILDE_VERSION=$TAG TILDE_SKIP_CHECKSUM=1
-  if [ "$RC" = 0 ] && [ -x "$DIR/tilde" ]; then ok "skip flag installs without checksums.txt"; else bad "skip without checksums.txt (rc=$RC)"; fi
+  run "$sh_bin" nosums OPCODE_VERSION=$TAG OPCODE_SKIP_CHECKSUM=1
+  if [ "$RC" = 0 ] && [ -x "$DIR/opcode" ]; then ok "skip flag installs without checksums.txt"; else bad "skip without checksums.txt (rc=$RC)"; fi
 
   # an existing binary survives a refused install
   n=$((n + 1))
   DIR="$work/install-$n"
   mkdir -p "$DIR"
-  printf 'OLD' >"$DIR/tilde"
+  printf 'OLD' >"$DIR/opcode"
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" TILDE_VERSION=$TAG \
-    TILDE_RELEASE_BASE_URL="$BASE/tampered" "$sh_bin" "$INSTALLER" 2>&1 </dev/null)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" OPCODE_VERSION=$TAG \
+    OPCODE_RELEASE_BASE_URL="$BASE/tampered" "$sh_bin" "$INSTALLER" 2>&1 </dev/null)
   RC=$?
   set -e
-  if [ "$RC" != 0 ] && [ "$(cat "$DIR/tilde")" = OLD ] && [ "$(ls -A "$DIR" | wc -l | tr -d ' ')" = 1 ]; then
+  if [ "$RC" != 0 ] && [ "$(cat "$DIR/opcode")" = OLD ] && [ "$(ls -A "$DIR" | wc -l | tr -d ' ')" = 1 ]; then
     ok "refused install leaves the existing binary untouched"
   else
     bad "existing binary after refused install (rc=$RC)"
   fi
 
-  run "$sh_bin" ok TILDE_VERSION=v0.0.1
+  run "$sh_bin" ok OPCODE_VERSION=v0.0.1
   expect_refused "unknown version: download failure, nothing installed" "download failed"
 
   run "$sh_bin" missing
   expect_refused "latest cannot be resolved: clear error" "could not resolve the latest release"
 
-  run "$sh_bin" ok 'TILDE_VERSION=v1.0.0/../evil'
+  run "$sh_bin" ok 'OPCODE_VERSION=v1.0.0/../evil'
   expect_refused "tag with path characters is rejected" "unexpected"
 
-  run "$sh_bin" ok TILDE_VERSION=latest-ish
+  run "$sh_bin" ok OPCODE_VERSION=latest-ish
   expect_refused "non-version tag is rejected" "unexpected release tag"
 
-  run "$sh_bin" ok TILDE_VERSION=$TAG "PATH=$work/fakebin:$PATH" FAKE_UNAME_S=Plan9
-  expect_refused "unsupported OS message" "no prebuilt tilde for Plan9"
+  run "$sh_bin" ok OPCODE_VERSION=$TAG "PATH=$work/fakebin:$PATH" FAKE_UNAME_S=Plan9
+  expect_refused "unsupported OS message" "no prebuilt opcode for Plan9"
 
-  run "$sh_bin" ok TILDE_VERSION=$TAG "PATH=$work/fakebin:$PATH" FAKE_UNAME_M=riscv64
-  expect_refused "unsupported architecture message" "no prebuilt tilde for riscv64"
+  run "$sh_bin" ok OPCODE_VERSION=$TAG "PATH=$work/fakebin:$PATH" FAKE_UNAME_M=riscv64
+  expect_refused "unsupported architecture message" "no prebuilt opcode for riscv64"
 
-  run "$sh_bin" ok TILDE_VERSION=$TAG "PATH=$work/fakebin:$PATH" FAKE_UNAME_S=MINGW64_NT-10.0
+  run "$sh_bin" ok OPCODE_VERSION=$TAG "PATH=$work/fakebin:$PATH" FAKE_UNAME_S=MINGW64_NT-10.0
   expect_refused "windows shell gets a pointer, not a broken install" "does not support Windows"
 
   # --help answers without touching the network and installs nothing.
   n=$((n + 1))
   DIR="$work/install-$n"
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" \
-    TILDE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" "$INSTALLER" --help 2>&1 </dev/null)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" \
+    OPCODE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" "$INSTALLER" --help 2>&1 </dev/null)
   RC=$?
   set -e
   if [ "$RC" = 0 ] && nothing_installed && tmp_clean && printf '%s' "$OUT" | grep -q "Usage: install.sh"; then
@@ -320,8 +320,8 @@ suite() {
   n=$((n + 1))
   DIR="$work/install-$n"
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" \
-    TILDE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" "$INSTALLER" --bogus 2>&1 </dev/null)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" \
+    OPCODE_RELEASE_BASE_URL="$BASE/ok" "$sh_bin" "$INSTALLER" --bogus 2>&1 </dev/null)
   RC=$?
   set -e
   if [ "$RC" != 0 ] && nothing_installed && tmp_clean && printf '%s' "$OUT" | grep -q "takes no arguments"; then
@@ -336,8 +336,8 @@ suite() {
   n=$((n + 1))
   DIR="$work/install-$n"
   set +e
-  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" TILDE_INSTALL_DIR="$DIR" \
-    TILDE_RELEASE_BASE_URL="http://192.0.2.1/releases" "$sh_bin" "$INSTALLER" 2>&1 </dev/null)
+  OUT=$(env HOME="$work/home" TMPDIR="$work/tmp" OPCODE_INSTALL_DIR="$DIR" \
+    OPCODE_RELEASE_BASE_URL="http://192.0.2.1/releases" "$sh_bin" "$INSTALLER" 2>&1 </dev/null)
   RC=$?
   set -e
   if [ "$RC" != 0 ] && nothing_installed && tmp_clean && printf '%s' "$OUT" | grep -q "refusing plaintext"; then
@@ -361,7 +361,7 @@ chmod 755 "$work/fakebin/uname"
 
 case "$("$real_uname" -s)/$("$real_uname" -m)" in
   Linux/x86_64|Linux/aarch64|Linux/amd64|Darwin/x86_64|Darwin/arm64) ;;
-  *) echo "test-install: host platform has no prebuilt tilde; cannot run" >&2; exit 2 ;;
+  *) echo "test-install: host platform has no prebuilt opcode; cannot run" >&2; exit 2 ;;
 esac
 
 echo "== syntax"

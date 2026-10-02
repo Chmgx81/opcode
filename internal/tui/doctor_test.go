@@ -33,7 +33,7 @@ func TestDoctorHealthyReport(t *testing.T) {
 
 	report := doctorText(t, m)
 	for _, want := range []string{
-		"tilde " + version,
+		"opcode " + version,
 		"model test-model",
 		"api key resolved for openrouter",
 		"sandbox:",
@@ -94,7 +94,7 @@ func TestDoctorBrokenConfig(t *testing.T) {
 	if !strings.Contains(report, "parse config.json") {
 		t.Errorf("broken-config row = %q", report)
 	}
-	if !strings.Contains(report, "tilde "+version) {
+	if !strings.Contains(report, "opcode "+version) {
 		t.Errorf("the version row vanished under the failure:\n%s", report)
 	}
 }

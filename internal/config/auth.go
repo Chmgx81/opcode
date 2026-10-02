@@ -70,7 +70,7 @@ func checkAuthPerms(dir, path string, warnings *[]string) {
 //     to the user's own secret manager — never honored from anywhere else)
 //  2. the provider's environment variable
 //
-// Resolution never reads a project-level .tilde/ directory. RefusesToLoad
+// Resolution never reads a project-level .opcode/ directory. RefusesToLoad
 // reports whether one was found so the caller can say so: a project
 // directory is exactly where a key gets committed by accident.
 type Resolver struct {
@@ -92,12 +92,12 @@ func NewResolver(auth AuthConfig, provider ProviderConfig) *Resolver {
 }
 
 // RefusesToLoad returns the path of a project-level credential file found
-// under projectDir, if any. tilde refuses to load it; the caller warns.
+// under projectDir, if any. opcode refuses to load it; the caller warns.
 func RefusesToLoad(projectDir string) (string, bool) {
 	if projectDir == "" {
 		return "", false
 	}
-	path := filepath.Join(projectDir, ".tilde", "auth.json")
+	path := filepath.Join(projectDir, ".opcode", "auth.json")
 	if _, err := os.Stat(path); err == nil {
 		return path, true
 	}
@@ -201,7 +201,7 @@ func WriteAuthKey(dir, provider, key string) error {
 
 // RemoveAuthKey deletes one provider's stored credential. It reports
 // whether anything was actually there, so /logout can say so plainly
-// instead of pretending. This only touches what tilde stored: it does
+// instead of pretending. This only touches what opcode stored: it does
 // not unset environment variables or revoke anything at the provider.
 func RemoveAuthKey(dir, provider string) (bool, error) {
 	writeMu.Lock()

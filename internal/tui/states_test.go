@@ -7,8 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // The states a user lands in and cannot get out of by reading the
@@ -19,7 +19,7 @@ import (
 // TestCommandsHelpAndSwitchAgree: the palette list, the help overlay
 // and the dispatch switch are three copies of one truth. A command
 // handled but unlisted is invisible; a listed but unhandled command
-// answers "unknown command" to a name tilde just used in its own copy.
+// answers "unknown command" to a name opcode just used in its own copy.
 func TestCommandsHelpAndSwitchAgree(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := newText(t, dir, nil)
@@ -90,7 +90,7 @@ func TestSpecCommandListMatchesCode(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("the TUI spec's command list names %s, which tilde does not implement", name)
+			t.Errorf("the TUI spec's command list names %s, which opcode does not implement", name)
 		}
 	}
 }
@@ -171,7 +171,7 @@ func TestEmptyStatesNameAWayForward(t *testing.T) {
 		m.entries = nil
 		m.openSessionsPicker()
 		got := m.entries[len(m.entries)-1].text
-		if !strings.Contains(got, "tilde saves a session when a turn ends") {
+		if !strings.Contains(got, "opcode saves a session when a turn ends") {
 			t.Errorf("empty /sessions says nothing about how to get one: %q", got)
 		}
 	})
@@ -181,7 +181,7 @@ func TestEmptyStatesNameAWayForward(t *testing.T) {
 		m.entries = nil
 		m.listSkills()
 		got := m.entries[len(m.entries)-1].text
-		if !strings.Contains(got, ".tilde/skills/") {
+		if !strings.Contains(got, ".opcode/skills/") {
 			t.Errorf("empty /skills does not say where skills live: %q", got)
 		}
 		// There is no view to close: this is a transcript entry.

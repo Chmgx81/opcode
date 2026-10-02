@@ -15,14 +15,14 @@ import (
 )
 
 // TestMain implements the re-exec child: the test binary runs itself
-// with TILDE_SANDBOX_CHILD set; the child applies the real Landlock
+// with OPCODE_SANDBOX_CHILD set; the child applies the real Landlock
 // ruleset (env names the writable root and the write target) and
 // reports whether the write went through. This exercises the real
 // syscalls, not a mock — the enforcement claim rests on it.
 func TestMain(m *testing.M) {
-	if os.Getenv("TILDE_SANDBOX_CHILD") == "1" {
-		writable := os.Getenv("TILDE_SANDBOX_WRITABLE")
-		target := os.Getenv("TILDE_SANDBOX_TARGET")
+	if os.Getenv("OPCODE_SANDBOX_CHILD") == "1" {
+		writable := os.Getenv("OPCODE_SANDBOX_WRITABLE")
+		target := os.Getenv("OPCODE_SANDBOX_TARGET")
 		if err := Apply([]string{writable}); err != nil {
 			os.Stdout.WriteString("APPLY-ERR:" + err.Error())
 			os.Exit(2)
@@ -36,8 +36,8 @@ func TestMain(m *testing.M) {
 	}
 	// Network child: after the full confinement, an AF_INET socket
 	// must be denied and an AF_UNIX one must not.
-	if os.Getenv("TILDE_SANDBOX_NET") == "1" {
-		writable := os.Getenv("TILDE_SANDBOX_WRITABLE")
+	if os.Getenv("OPCODE_SANDBOX_NET") == "1" {
+		writable := os.Getenv("OPCODE_SANDBOX_WRITABLE")
 		if err := Apply([]string{writable}); err != nil {
 			os.Stdout.WriteString("APPLY-ERR:" + err.Error())
 			os.Exit(2)
@@ -62,8 +62,8 @@ func TestMain(m *testing.M) {
 	}
 	// Exec child: the full confinement, then a real command — the
 	// filter must not break plain commands.
-	if os.Getenv("TILDE_SANDBOX_EXEC") == "1" {
-		writable := os.Getenv("TILDE_SANDBOX_WRITABLE")
+	if os.Getenv("OPCODE_SANDBOX_EXEC") == "1" {
+		writable := os.Getenv("OPCODE_SANDBOX_WRITABLE")
 		if err := Apply([]string{writable}); err != nil {
 			os.Stdout.WriteString("APPLY-ERR:" + err.Error())
 			os.Exit(2)
@@ -81,9 +81,9 @@ func childWrite(t *testing.T, writable, target string) string {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run", "TestMain")
 	cmd.Env = append(os.Environ(),
-		"TILDE_SANDBOX_CHILD=1",
-		"TILDE_SANDBOX_WRITABLE="+writable,
-		"TILDE_SANDBOX_TARGET="+target)
+		"OPCODE_SANDBOX_CHILD=1",
+		"OPCODE_SANDBOX_WRITABLE="+writable,
+		"OPCODE_SANDBOX_TARGET="+target)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -121,8 +121,8 @@ func childRun(t *testing.T, mode, writable string) (string, error) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run", "TestMain")
 	cmd.Env = append(os.Environ(),
-		"TILDE_SANDBOX_"+mode+"=1",
-		"TILDE_SANDBOX_WRITABLE="+writable)
+		"OPCODE_SANDBOX_"+mode+"=1",
+		"OPCODE_SANDBOX_WRITABLE="+writable)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out

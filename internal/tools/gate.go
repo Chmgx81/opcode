@@ -12,7 +12,7 @@ import (
 
 // Redactor replaces known credential values with a placeholder before
 // anything is written to the audit log or a session file (Section
-// 3.10: credentials never leak out through tilde's own records).
+// 3.10: credentials never leak out through opcode's own records).
 //
 // It is the ONE list of what counts as a secret: the audit log and
 // the session save both read it, and /login adds to it live — a key

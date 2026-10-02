@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/safe"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/safe"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // TestAlwaysScopePrecision: the grant must be exactly as wide as what

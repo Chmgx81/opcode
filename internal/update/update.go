@@ -1,8 +1,8 @@
-// Package update implements `tilde update`: fetch the latest GitHub
+// Package update implements `opcode update`: fetch the latest GitHub
 // release, verify its sha256 against the release's checksums.txt, and
 // atomically replace the running binary.
 //
-// It only ever downloads on explicit user action (`tilde update`).
+// It only ever downloads on explicit user action (`opcode update`).
 // Separately, the startup notice (cache.go) reads a cached latest-tag
 // at launch and refreshes it at most once a day — the way a user on a
 // stale binary learns an update exists. Standard library only.
@@ -31,15 +31,15 @@ import (
 const (
 	// DefaultAPIURL resolves the latest non-prerelease, non-draft
 	// release; its JSON carries the tag in "tag_name".
-	DefaultAPIURL = "https://api.github.com/repos/Chmgx81/tilde/releases/latest"
+	DefaultAPIURL = "https://api.github.com/repos/Chmgx81/opcode/releases/latest"
 	// DefaultDownloadBase is the release-asset prefix: <base>/<tag>/<asset>.
-	DefaultDownloadBase = "https://github.com/Chmgx81/tilde/releases/download"
+	DefaultDownloadBase = "https://github.com/Chmgx81/opcode/releases/download"
 
 	// InstallOneLiner is the manual fallback when an in-place update is
 	// not possible.
-	InstallOneLiner = "curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bash"
-	releasesPage    = "https://github.com/Chmgx81/tilde/releases/latest"
-	goInstall       = "go install github.com/Chmgx81/tilde/cmd/tilde@latest"
+	InstallOneLiner = "curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash"
+	releasesPage    = "https://github.com/Chmgx81/opcode/releases/latest"
+	goInstall       = "go install github.com/Chmgx81/opcode/cmd/opcode@latest"
 
 	maxAPIBody       = 1 << 20   // the release JSON is a few KB
 	maxChecksumsBody = 1 << 20   // five lines
@@ -82,7 +82,7 @@ type Options struct {
 	Current   string    // running version, e.g. "v0.2.0" or "(devel)"
 	CheckOnly bool      // report only; download nothing, change nothing
 	Out       io.Writer // human-readable progress; nil discards
-	// CacheHome, when non-empty, is the tilde home dir whose
+	// CacheHome, when non-empty, is the opcode home dir whose
 	// .update-cache.json records the latest tag this run saw — so
 	// the startup notice stays fresh after an explicit check.
 	CacheHome string
@@ -140,12 +140,12 @@ func Run(ctx context.Context, o Options) error {
 
 	cur, ok := parseRelease(o.Current)
 	if !ok {
-		return fmt.Errorf("%w: this build reports version %q, so tilde cannot tell whether it is out of date — install a release with: %s",
+		return fmt.Errorf("%w: this build reports version %q, so opcode cannot tell whether it is out of date — install a release with: %s",
 			ErrDevBuild, o.Current, InstallOneLiner)
 	}
 	platform := o.GOOS + "/" + o.GOARCH
 	if !prebuilt[platform] {
-		return fmt.Errorf("%w: no prebuilt tilde for %s — install with: %s", ErrUnsupported, platform, goInstall)
+		return fmt.Errorf("%w: no prebuilt opcode for %s — install with: %s", ErrUnsupported, platform, goInstall)
 	}
 
 	tag, err := latestTag(ctx, o)
@@ -167,15 +167,15 @@ func Run(ctx context.Context, o Options) error {
 
 	switch c := compare(cur, latest); {
 	case c == 0:
-		fmt.Fprintf(o.Out, "tilde %s is up to date.\n", o.Current)
+		fmt.Fprintf(o.Out, "opcode %s is up to date.\n", o.Current)
 		return nil
 	case c > 0:
-		fmt.Fprintf(o.Out, "tilde %s is newer than the latest release (%s); not downgrading.\n", o.Current, tag)
+		fmt.Fprintf(o.Out, "opcode %s is newer than the latest release (%s); not downgrading.\n", o.Current, tag)
 		return nil
 	}
 
 	if o.CheckOnly {
-		fmt.Fprintf(o.Out, "Update available: %s -> %s. Run `tilde update` to install it.\n", o.Current, tag)
+		fmt.Fprintf(o.Out, "Update available: %s -> %s. Run `opcode update` to install it.\n", o.Current, tag)
 		return nil
 	}
 
@@ -188,7 +188,7 @@ func Run(ctx context.Context, o Options) error {
 
 	asset := assetName(o.GOOS, o.GOARCH)
 	base := strings.TrimRight(o.DownloadBase, "/") + "/" + tag + "/"
-	fmt.Fprintf(o.Out, "Updating tilde %s -> %s (%s)...\n", o.Current, tag, platform)
+	fmt.Fprintf(o.Out, "Updating opcode %s -> %s (%s)...\n", o.Current, tag, platform)
 
 	archive, err := o.get(ctx, base+asset, maxArchiveBytes, "")
 	if err != nil {
@@ -210,7 +210,7 @@ func Run(ctx context.Context, o Options) error {
 	if err := install(target, archive, o); err != nil {
 		return err
 	}
-	fmt.Fprintf(o.Out, "✓ tilde updated to %s (%s)\n", tag, target)
+	fmt.Fprintf(o.Out, "✓ opcode updated to %s (%s)\n", tag, target)
 	return nil
 }
 
@@ -219,7 +219,7 @@ func assetName(goos, goarch string) string {
 	if goos == "windows" {
 		ext = ".zip"
 	}
-	return "tilde-" + goos + "-" + goarch + ext
+	return "opcode-" + goos + "-" + goarch + ext
 }
 
 // binaryNames are the archive entries accepted as the binary: what the
@@ -229,7 +229,7 @@ func binaryNames(goos, goarch string) []string {
 	if goos == "windows" {
 		ext = ".exe"
 	}
-	return []string{"tilde-" + goos + "-" + goarch + ext, "tilde" + ext}
+	return []string{"opcode-" + goos + "-" + goarch + ext, "opcode" + ext}
 }
 
 func currentExecutable() (string, error) {
@@ -263,7 +263,7 @@ func (o Options) get(ctx context.Context, url string, limit int64, accept string
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "tilde-update")
+	req.Header.Set("User-Agent", "opcode-update")
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
@@ -332,7 +332,7 @@ func checksumFor(sums []byte, asset string) (string, error) {
 // is atomic (same filesystem); on any failure it is removed and the
 // old binary is untouched.
 func install(target string, archive []byte, o Options) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(target), ".tilde-update-*")
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".opcode-update-*")
 	if err != nil {
 		return replaceError(target, err, o.GOOS)
 	}
@@ -364,7 +364,7 @@ func replaceError(target string, err error, goos string) error {
 	if goos == "windows" {
 		how = "download the .zip from " + releasesPage + " and replace the .exe by hand"
 	}
-	return fmt.Errorf("%w: %v\n%s was left unchanged. To update manually, %s (if it is in a protected directory, use sudo or set TILDE_INSTALL_DIR)",
+	return fmt.Errorf("%w: %v\n%s was left unchanged. To update manually, %s (if it is in a protected directory, use sudo or set OPCODE_INSTALL_DIR)",
 		ErrReplace, err, target, how)
 }
 

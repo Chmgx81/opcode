@@ -1,3 +1,12 @@
+# Progress log — the full build history
+
+> **Renamed 2026-10-02:** the project was **tilde** through v0.4.0 and is
+> now **opcode** from v0.5.0. Entries before the rename say "tilde" because that is
+> what it was called then; only the name changed — the architecture,
+> codebase, and history are the same. `~/.opcode` replaced `~/.tilde`,
+> `OPCODE_*` replaced `TILDE_*`, and the repo moved from
+> Chmgx81/tilde to Chmgx81/opcode (old links redirect).
+
 # Build log (archived)
 
 This is the full chronological build log, Phase 0 through Phase 44,
@@ -12,7 +21,7 @@ the code is right and the section is history. Read
 
 ---
 
-# PROGRESS.md — tilde build log
+# PROGRESS.md — opcode build log
 
 Phase 0 status: **complete and verified as far as possible without a real
 OpenRouter key.** Stop point for user review.
@@ -21,7 +30,7 @@ OpenRouter key.** Stop point for user review.
 
 | Package | What it does |
 |---|---|
-| `cmd/tilde` | Bare terminal input/output loop. Thin: wiring only, all logic lives below. No TUI framework. |
+| `cmd/opcode` | Bare terminal input/output loop. Thin: wiring only, all logic lives below. No TUI framework. |
 | `internal/orchestrator` | The agent loop (spec §6): send → stream → dispatch completed tool calls → feed results back → repeat until the model stops. Emits typed events on a channel; knows nothing about any UI. |
 | `internal/tools` | 4 built-ins (`read_file`, `write_file`, `edit_file`, `run_shell`), the `Registry`, the single permission `Gate`, the JSONL audit log, and the `Redactor`. |
 | `internal/llm` | `Provider` interface + `OpenAICompat` client: OpenAI-compatible `chat/completions`, SSE streaming, tool-call fragment reassembly keyed by index. |
@@ -51,11 +60,11 @@ OpenRouter key.** Stop point for user review.
   user message → streamed text → `write_file` with arguments split across
   two SSE chunks → tool really executed → result fed back → model
   confirmed it saw the real result → turn completed. Also verified the
-  startup warning when a project-level `.tilde/auth.json` exists (and
+  startup warning when a project-level `.opcode/auth.json` exists (and
   that its key was ignored).
 - **Live OpenRouter run (2026-09-28, model `inclusionai/ling-3.0-flash-fin:free`)**:
   the same binary against the real `https://openrouter.ai/api/v1` with the
-  user's key in `~/.tilde/auth.json`. Two turns exercised all four
+  user's key in `~/.opcode/auth.json`. Two turns exercised all four
   built-ins for real: `write_file` (file created with the requested
   content), `read_file` (contents fed back, model quoted them), `edit_file`
   (word replaced), `run_shell` (`cat report.txt`, output quoted by the
@@ -68,8 +77,8 @@ OpenRouter key.** Stop point for user review.
 - **A real OpenRouter call.** No API key in this environment. The loop is
   proven end to end against a local OpenAI-compatible server; the only
   unproven step is OpenRouter's own endpoint behavior. To verify: set
-  `model` in `~/.tilde/config.json`, put a key in `~/.tilde/auth.json` (or
-  `OPENROUTER_API_KEY`), and run `tilde` in a test directory.
+  `model` in `~/.opcode/config.json`, put a key in `~/.opcode/auth.json` (or
+  `OPENROUTER_API_KEY`), and run `opcode` in a test directory.
 
 ## Phase 0 assumptions (spec didn't pin these down)
 
@@ -78,7 +87,7 @@ OpenRouter key.** Stop point for user review.
    `OPENROUTER_API_KEY` for the built-in openrouter entry). Empty means
    "needs no key" (local servers).
 2. `auth.json` is a flat map: `{"openrouter": "<key-or-!command>"}`.
-3. If `config.json` has no `model`, tilde refuses to start with
+3. If `config.json` has no `model`, opcode refuses to start with
    instructions rather than guessing a default model (a wrong default
    costs real money).
 4. Tool calls are emitted to the orchestrator when the model's
@@ -93,7 +102,7 @@ OpenRouter key.** Stop point for user review.
 
 - Permission gate always allows (Phase 0 requirement); `permission_mode`
   is loaded and validated but not yet enforced — that's Phase 2.
-- Audit log lives at `~/.tilde/audit.jsonl`; rotation can come later.
+- Audit log lives at `~/.opcode/audit.jsonl`; rotation can come later.
 - No session persistence, compaction, project trust, skills, MCP,
   subagents, streaming cancel — all per the build order (spec §8).
 
@@ -225,7 +234,7 @@ Spec: [docs/specs/phase3-skills-trust.md](specs/phase3-skills-trust.md)
 ## Built
 
 - `internal/trust` — the Section 7 trust gate: executable-surface
-  fingerprint (skill scripts, `.tilde/config.json`, `.tilde/mcp.json`),
+  fingerprint (skill scripts, `.opcode/config.json`, `.opcode/mcp.json`),
   `trusted-projects.json` persistence, trusted/untrusted/changed
   status. A project with nothing executable is trusted by default.
 - `internal/skills` — SKILL.md discovery and parsing (flat frontmatter),
@@ -239,7 +248,7 @@ Spec: [docs/specs/phase3-skills-trust.md](specs/phase3-skills-trust.md)
   request.
 - `internal/tui` — startup trust prompt showing the literal runnable
   files; y persists + re-discovers, n continues user-level only.
-- `cmd/tilde` — `--trust` / `TILDE_TRUST=1` pre-approval (CI posture).
+- `cmd/opcode` — `--trust` / `OPCODE_TRUST=1` pre-approval (CI posture).
 
 ## Verified for real
 
@@ -278,7 +287,7 @@ Spec: [docs/specs/phase3-skills-trust.md](specs/phase3-skills-trust.md)
 
 ## Next (Phase 4, only after user review)
 
-- MCP Manager — project `.tilde/mcp.json` only after trust (the
+- MCP Manager — project `.opcode/mcp.json` only after trust (the
   fingerprint already covers it).
 
 ---
@@ -406,7 +415,7 @@ Spec: [docs/specs/phase6-polish.md](specs/phase6-polish.md)
 
 ## Built
 
-- `internal/headless` — `tilde -p "prompt"` one-shot mode, plain text
+- `internal/headless` — `opcode -p "prompt"` one-shot mode, plain text
   or `--json` (one event object per line). Permissions fail closed
   (nobody to ask); `--trust` keeps Section 7's headless posture.
 - `internal/config` — hierarchical AGENTS.md context (Section 5 step 3,
@@ -417,7 +426,7 @@ Spec: [docs/specs/phase6-polish.md](specs/phase6-polish.md)
 - `internal/session` — tree-structured session storage (Section 3.7's
   resolved decision): every message a node with a parent so rewind
   branches instead of overwriting, one JSON file per session under
-  ~/.tilde/sessions/, 0600, credentials redacted on write; saved on
+  ~/.opcode/sessions/, 0600, credentials redacted on write; saved on
   exit in every mode; `--resume` / `--continue` seed the orchestrator.
 - Compaction (Section 3.2) — opt-in via `context_window`
   (0 = disabled; model windows vary and a wrong default would silently
@@ -425,7 +434,7 @@ Spec: [docs/specs/phase6-polish.md](specs/phase6-polish.md)
   size, summarizer round through the same Provider interface
   (optional cheaper `compaction_model`), failure skips compaction and
   the turn continues.
-- Packaging — module path is now `github.com/Chmgx81/tilde` so
+- Packaging — module path is now `github.com/Chmgx81/opcode` so
   `go install` works; README documents install, headless, sessions,
   compaction, and AGENTS.md behavior.
 
@@ -463,7 +472,7 @@ Every phase of Section 8 is now built and live-verified: 0 loop,
 
 ## Built
 
-- **Design tokens** (`internal/tui/style.go`): tilde's own identity —
+- **Design tokens** (`internal/tui/style.go`): opcode's own identity —
   the green stack (16DB65 / 058C42 / 04471C / 0D2818 / 020202) plus
   danger/warning/info/dim semantics, a fixed glyph vocabulary (● └ ▹ ✓
   ! − +), and one place to reskin the whole product.
@@ -523,7 +532,7 @@ streaming markdown beyond fence-boxing, kitty keyboard protocol
 
 Markdown streaming polish (glamour or hand-rolled), syntax
 highlighting (chroma), models picker over models.json, session
-browser over ~/.tilde/sessions, kitty protocol for shift+enter.
+browser over ~/.opcode/sessions, kitty protocol for shift+enter.
 
 ---
 
@@ -548,11 +557,11 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
 - **/model picker**: lists every provider and model from models.json
   (the active one marked), or `/model <name>` switches directly when the
   name is configured. Selecting runs the injected SwitchModel callback,
-  which (in cmd/tilde) resolves the new provider's key exactly as startup
+  which (in cmd/opcode) resolves the new provider's key exactly as startup
   does, rebuilds the OpenAI-compatible client, re-points the
   orchestrator AND the subagent runner, and swaps the audit redactor for
   the new key. Refused mid-turn (finish or interrupt first).
-- **/sessions browser**: lists ~/.tilde/sessions newest-first with
+- **/sessions browser**: lists ~/.opcode/sessions newest-first with
   message count, model, and a preview of the first user message;
   corrupt files are skipped, not fatal. Selecting saves the current
   conversation, re-seeds the orchestrator from the chosen session, and
@@ -596,7 +605,7 @@ browser over ~/.tilde/sessions, kitty protocol for shift+enter.
   (user-reported, second pass): the placeholder had become a keymap
   ("/ commands · ! shell · @ files · ? help") crammed into the input,
   and the fixed 3-line textarea showed two empty prompt rows below it.
-  Now: a one-line composer with a real placeholder ("ask tilde
+  Now: a one-line composer with a real placeholder ("ask opcode
   anything…") that grows with content (one row per typed or wrapped
   line, capped at 6) and shrinks on submit; the hints moved to the dim
   footer line under the box ("? help · / commands · ! shell · @
@@ -720,7 +729,7 @@ persistent left-column session sidebar.
   locally; tag re-pointed, second run green. The release carries all
   five binaries: darwin amd64/arm64, linux amd64/arm64, windows amd64.
 - **go install from the public module**: `go install
-  github.com/Chmgx81/tilde/cmd/tilde@latest` in a clean GOPATH
+  github.com/Chmgx81/opcode/cmd/opcode@latest` in a clean GOPATH
   resolved v0.2.0 through the Go proxy (checksummed), built, and the
   binary runs (verified: the honest "no model configured" startup
   error).
@@ -740,7 +749,7 @@ persistent left-column session sidebar.
   ~/.local/bin (overridable), prints the version/location/next block,
   and warns when the install dir is not on PATH. Unknown platforms are
   pointed at go install instead of failing obscurely.
-- **`tilde --version`**: linked version from the release pipeline
+- **`opcode --version`**: linked version from the release pipeline
   (-X main.version), then the module version go install recorded,
   then (devel). The release workflow now injects the tag.
 - **Verified live**: ran install.sh in a clean temp dir — resolved
@@ -751,7 +760,7 @@ persistent left-column session sidebar.
 
   Verified live, second pass with v0.2.1: the one-liner against
   raw.githubusercontent resolved v0.2.1, downloaded, installed, and
-  the installed release binary printed "tilde v0.2.1" — the
+  the installed release binary printed "opcode v0.2.1" — the
   -X main.version injection works in the real pipeline. Release
   v0.2.1 carries all five binaries.
 
@@ -783,7 +792,7 @@ persistent left-column session sidebar.
   +0 −0 for a same-line-count replacement; diffCounts now counts
   replaced lines as one − and one + plus the growth tail.
 - **Accessibility / ease of use**: NO_COLOR is now honored (the
-  termenv fallback used to resurrect color over it), tilde has a real
+  termenv fallback used to resurrect color over it), opcode has a real
   --help (usage, flags, and a first-run pointer), and --version
   already existed from Phase 9.
 - **README rewritten**: the banner was broken HTML (pre inside p —
@@ -979,7 +988,7 @@ Spec: [docs/specs/phase13-plan-mode.md](specs/phase13-plan-mode.md)
 
 ## Phase 13 assumptions
 
-1. `a` (auto-accept) maps to full-auto — tilde has no
+1. `a` (auto-accept) maps to full-auto — opcode has no
   "auto-accept-edits-only" mode; the mapping is stated in the prompt
   text, not hidden.
 2. The plan lives in the conversation and transcript; persisting a
@@ -996,7 +1005,7 @@ Spec: [docs/specs/phase13-plan-mode.md](specs/phase13-plan-mode.md)
 - **`safe_commands`** (config.json): shell command prefixes that run
   without prompting in ask mode — the biggest usability gap vs. both
   reference products ("read-only has no shell at all; ask prompts for
-  `ls`"). Borrowed from Codex's execpolicy at tilde's scale: a flat
+  `ls`"). Borrowed from Codex's execpolicy at opcode's scale: a flat
   token-prefix list instead of a Starlark rule engine.
 - **Matching is token-wise and fails closed** (`tools.ShellAllowlist`):
   quote-aware tokenization ("git status" matches "git status --short"
@@ -1033,7 +1042,7 @@ Spec: [docs/specs/phase13-plan-mode.md](specs/phase13-plan-mode.md)
 
 1. Prefix semantics over Codex's full rule language (no per-command
    rationale fields, no Starlark) — a flat list is auditable and
-   matches tilde's config style.
+   matches opcode's config style.
 2. Metacharacter conservatism: a quoted metachar also denies —
    untolerable ambiguity beats convenience.
 3. The allowlist applies to subagents too (shared gate), which is
@@ -1058,12 +1067,12 @@ order — items 1, 2, and half of 4 of the borrow list.
   conclusion. renderAssistant and its fence-box renderer are deleted —
   the plain fallback for a glamour failure is now wrapAll.
 - **Reduced motion** (config.json `"animations": false`): Codex's
-  MotionMode at tilde's scale. The spinner becomes a static ●, the
+  MotionMode at opcode's scale. The spinner becomes a static ●, the
   mode toast appears without the glyph burst and schedules no ticks.
   Information is preserved; only motion is removed. Their
   screen-reader probe that seeds and persists this default is noted as
   a future item.
-- **Terminal title** (tea.SetWindowTitle "tilde — <cwd>"): OSC 2 in
+- **Terminal title** (tea.SetWindowTitle "opcode — <cwd>"): OSC 2 in
   Init, like the reference apps' window titles.
 
 ## Verified for real
@@ -1073,7 +1082,7 @@ order — items 1, 2, and half of 4 of the borrow list.
   cache populating on render and invalidating on width change, and
   reduced motion (no tick cmd, toastAnim 0, toast still set, zero
   spinner frames on the working line).
-- **PTY**: terminal title escape observed live (OSC 2 "tilde — /tmp/
+- **PTY**: terminal title escape observed live (OSC 2 "opcode — /tmp/
   feelproj"); streamed text visible mid-turn against the slow fixture
   (rendered as it arrives); a second session with animations:false
   showed the static working line `● Thinking… (esc to interrupt · 0s
@@ -1092,7 +1101,7 @@ order — items 1, 2, and half of 4 of the borrow list.
 
 Borrow list item 3 from the Codex audit: their TUI probes the
 terminal's actual background and adapts — light text on a white
-terminal is invisible, and tilde's hardcoded dark palette had exactly
+terminal is invisible, and opcode's hardcoded dark palette had exactly
 that failure class.
 
 ## Built
@@ -1110,7 +1119,7 @@ that failure class.
   darker danger/warning/info).
 - **Detection in Run()**: termenv.HasDarkBackground() (the same OSC
   exchange as the profile probe), skipped under Ascii/NO_COLOR;
-  TILDE_THEME=light|dark overrides the probe. Glamour renderers embed
+  OPCODE_THEME=light|dark overrides the probe. Glamour renderers embed
   their style config at creation, so adaptTheme drops the renderer
   cache — post-adapt renders pick up the swapped palette.
 
@@ -1120,7 +1129,7 @@ that failure class.
   assertions), the user panel rendering with the light fill under
   forced truecolor, and the deepened accent — with an explicit dark
   restore (adaptTheme's dark branch is a deliberate no-op).
-- **PTY with TILDE_THEME=light on xterm-256color**: the user panel
+- **PTY with OPCODE_THEME=light on xterm-256color**: the user panel
   rendered with the light fill (48;5;195 = #E4EDF1) and a dark accent
   prompt on it; the dark fill was provably absent; light borders on
   the boxes; the query echoed normally.
@@ -1151,14 +1160,14 @@ Borrow list items 4 and the accessibility seed, from the Codex audit.
   keyboard). The editor's edit wins even on nonzero exit — half the
   editors in the wild exit nonzero — but an unreadable file leaves the
   composer untouched.
-- **Screen-reader seeding** (Codex's probe, tilde-sized):
+- **Screen-reader seeding** (Codex's probe, opcode-sized):
   config.ScreenReaderActive() checks the conventional signals
   (SCREEN_READER, atk-bridge in GTK_MODULES, ACCESSIBILITY_ENABLED) —
   deliberately conservative, because a false positive removes
   animation someone may want. When the user has not chosen
   explicitly, a detected reader turns animations off for the session
   with a visible startup note. Nothing is persisted silently (Codex
-  writes the preference; tilde lets the config key win).
+  writes the preference; opcode lets the config key win).
 
 ## Verified for real
 
@@ -1297,7 +1306,7 @@ Spec: [docs/specs/phase20-codex-restyle.md](specs/phase20-codex-restyle.md)
 - **Light theme** mirrors Codex's light values: `#1C64C8` accent
   (their `LIGHT_BG_ACCENT_RGB`), `#F2F2F2` fill (their 4% black
   blend), `#8B6214` amber.
-- **Kept tilde's own**: the `~` brand glyph, the gerund pool
+- **Kept opcode's own**: the `~` brand glyph, the gerund pool
   (Codex says plain "Working"), tab cycling, ctrl+r. A design-language
   adoption, not a clone — no behavior changed.
 
@@ -1307,7 +1316,7 @@ Spec: [docs/specs/phase20-codex-restyle.md](specs/phase20-codex-restyle.md)
   moved to the new values (moved, not deleted — the placeholder-dim,
   no-background-highlight, panel-fill, light-fill, and
   accent-deepening assertions all still assert).
-- **PTY, live**: dark and `TILDE_THEME=light` sessions against the
+- **PTY, live**: dark and `OPCODE_THEME=light` sessions against the
   scripted fixture — the user block renders shaded with `›`, the
   working line shows the parenthesized segment, hints show accent
   keys, the write diff shows green `+1`; light shows dark ink on the
@@ -1318,7 +1327,7 @@ Spec: [docs/specs/phase20-codex-restyle.md](specs/phase20-codex-restyle.md)
 1. Termenv quantizes truecolor one step in this environment
    (`#292929` renders as 40;40;40) — the pinned SGRs assert what
    actually renders.
-2. ChatGPT blue as accent is "match Codex" done honestly; tilde's
+2. ChatGPT blue as accent is "match Codex" done honestly; opcode's
    name and `~` glyph keep it a distinct product.
 
 # Phase 21 — Landlock sandbox (status: complete, live-verified)
@@ -1335,7 +1344,7 @@ Spec: [docs/specs/phase21-landlock.md](specs/phase21-landlock.md)
   `landlock_restrict_self`.
 - **The Go constraint, honestly solved**: Landlock confines the
   calling *thread* and Go's runtime has several threads before main —
-  so commands run through a self re-exec, `tilde __sandbox
+  so commands run through a self re-exec, `opcode __sandbox
   <writable…> -- cmd`: a fresh single-threaded child applies the
   ruleset and immediately execs, which inherits it process-wide.
   Intercepted at the very top of `main`, before anything spawns.
@@ -1356,7 +1365,7 @@ Spec: [docs/specs/phase21-landlock.md](specs/phase21-landlock.md)
   as a sandbox child that applies the actual ruleset and attempts
   writes — inside the root succeeds, outside is denied by the
   kernel (exit status + missing file both checked), no mocks.
-- **Real binary, real kernel**: `tilde __sandbox` directly — an
+- **Real binary, real kernel**: `opcode __sandbox` directly — an
   inside write succeeded, a home write failed `Permission denied`.
 - **PTY, live**: a scripted model called run_shell writing both
   inside the project and to `$HOME`; the startup note showed
@@ -1414,7 +1423,7 @@ Spec: [docs/specs/phase22-image-paste.md](specs/phase22-image-paste.md)
   answered "saw a png image" — the data-URL part was on the real
   wire.
 - **Live provider**: the migrated config's model answered a real
-  turn (`tilde -p`).
+  turn (`opcode -p`).
 
 ## Phase 22 assumptions
 
@@ -1457,7 +1466,7 @@ Spec: [docs/specs/phase23-provider-auth.md](specs/phase23-provider-auth.md)
 ## Phase 23 assumptions
 
 1. OAuth/device flows stay out of scope: they need per-provider
-   client IDs and callback servers, and tilde's API-key chain is
+   client IDs and callback servers, and opcode's API-key chain is
    complete for every OpenAI-compatible endpoint.
 2. The conventional `<PROVIDER>_API_KEY` names match what users
    already export for other tools (the same names the reference
@@ -1469,7 +1478,7 @@ Spec: [docs/specs/tui-ux-spec.md](specs/tui-spec.md) (merged into
 tui-spec.md — see "Spec consolidation" below) — the
 new source of truth for everything visual or interactive. By its own
 precedence rule it overrides earlier direction where they conflict
-(including the Phase 20 Codex restyle: the spec's accent is tilde's
+(including the Phase 20 Codex restyle: the spec's accent is opcode's
 own teal `#2dd4bf`, and it forbids cloning reference identities).
 
 ## Built — the first convergence step (Section 2)
@@ -1657,7 +1666,7 @@ A full-tree audit: every file read, every symbol grepped for usage.
 - README: a missing blank line from a Phase 26 edit, badges still in
   the retired Codex blue (now the teal accent), and pre-Phase-24 todo
   glyphs in the feature text.
-- `docs/specs/tilde-architecture.md` §4: the directory layout
+- `docs/specs/opcode-architecture.md` §4: the directory layout
   predated five packages (session, trust, sandbox, headless; and the
   llm/config descriptions were stale). Now matches the tree.
 - `docs/specs/tui-design.md`: marked as a historical reference for
@@ -1704,7 +1713,7 @@ built to the tui-ux-spec's Section 9.
 - **decide() fails closed** when no UI is running (nil program):
   nothing can be approved, so the action is denied — the same
   nil-guard posture startTurn already had.
-- **install.sh**: "Next: Run tilde --help to get started", matching
+- **install.sh**: "Next: Run opcode --help to get started", matching
   the reference's completion screen.
 
 ## Verified for real
@@ -1737,7 +1746,7 @@ The reference screenshot's layout, applied literally.
 ## Built
 
 - **The header**: the banner block on the left, the identity block
-  beside it — `~ tilde v0.2.1`, model · mode, cwd — joined
+  beside it — `~ opcode v0.2.1`, model · mode, cwd — joined
   horizontally (lipgloss.JoinHorizontal, top-aligned), then startup
   notes below. Previously the logo and identity stacked vertically;
   the reference puts them side by side.
@@ -1754,7 +1763,7 @@ The reference screenshot's layout, applied literally.
 - All twelve packages; the pins moved to the new contract (bare
   composer width, `!`/`~` prompt glyphs). **PTY, live**: the frame
   shows the banner with model/mode/cwd beside it and a bare
-  `~ ask tilde anything…` line — zero box borders in the whole
+  `~ ask opcode anything…` line — zero box borders in the whole
   frame.
 
 ## Phase 28 assumptions
@@ -1785,7 +1794,7 @@ preserved as reference docs:
   restricted token, network policy proxy with MITM), MCP+OAuth,
   app-server protocol, hooks, skills/plugins, Guardian, the
   daemon, and the CLI surface.
-- docs/reference/codex-adoption.md — the synthesis: what tilde
+- docs/reference/codex-adoption.md — the synthesis: what opcode
   adopts (prioritized, honest scoping), what it deliberately
   does not, and a sequencing suggestion. Top of the list:
   canonicalized approval matching, sandbox-denial readability,
@@ -1798,7 +1807,7 @@ preserved as reference docs:
 docs/specs/tui-design.md (the historical Python+Rich reference)
 and docs/specs/tui-ux-spec.md (the v0.1 Go spec) are merged into
 one dead-simple spec: docs/specs/tui-spec.md. It describes what
-tilde actually is as of Phase 28 — tokens, glyphs, every screen
+opcode actually is as of Phase 28 — tokens, glyphs, every screen
 with a mockup, keys, behavior rules — plus the short honest
 "not yet built" list. Earlier log entries above still cite the
 old filenames; both point there now. Codex's handling of every
@@ -1864,7 +1873,7 @@ LineCount — bubbles v1.0.0 has no CursorOn* helpers), so inside a
 multiline draft the arrows still move the cursor. The live draft is
 saved on first recall and restored walking past the newest; typing
 resets the recall position. Prompts persist to history.jsonl under
-tilde's home — one JSON line each, 0600, capped at 500, consecutive
+opcode's home — one JSON line each, 0600, capped at 500, consecutive
 duplicates collapse. Login keys bypass submitInput entirely, so
 secrets never enter history. Known edge: a recalled [paste N] token
 from an earlier session no longer expands — the typed form is what
@@ -1905,7 +1914,7 @@ included) with no prompt, no mode-logic changes. It lists one
 directory's entries one per line, directories marked with a trailing
 slash, sorted, capped at 500 entries with a count note so a huge
 directory can't dump its whole index into context. Registered in
-cmd/tilde's registry (subagents inherit it through subset()); the
+cmd/opcode's registry (subagents inherit it through subset()); the
 gate, audit log, and headless wiring needed no changes.
 
 Verified live in a PTY: read-only mode, a fixture that calls
@@ -1965,9 +1974,9 @@ across all 12 packages.
 
 # Move to top + the brand says its name (status: complete, live-verified)
 
-Two asks from a live session: tilde should start at the top of the
+Two asks from a live session: opcode should start at the top of the
 terminal, and — like Codex, which names itself in everything it
-shows — tilde's copy should say tilde.
+shows — opcode's copy should say opcode.
 
 Move to top: Run clears the visible screen and homes the cursor
 (ESC[H ESC[2J) before the program takes over, so the frame always
@@ -1978,8 +1987,8 @@ still land in the terminal's own history. Maximize-the-window
 itself is the window manager's job; no terminal app can do it
 (that's ptyxis' maximize button).
 
-Brand: the approval dialog now reads "tilde needs your approval to
-run this" and the trust dialog "tilde would be able to run: ..." —
+Brand: the approval dialog now reads "opcode needs your approval to
+run this" and the trust dialog "opcode would be able to run: ..." —
 the two surfaces where Codex says "Codex". The greeting, window
 title, and composer placeholder already carried the name; the ~ in
 the footer stays reserved to the composer per the earlier glyph
@@ -1992,7 +2001,7 @@ suite green.
 # Graceful exits (status: complete, live-verified)
 
 Codex's exit posture, adopted: ctrl+c (and ctrl+d, Codex parity) no
-longer kill tilde on first press. The first press arms a 4-second
+longer kill opcode on first press. The first press arms a 4-second
 window — interrupting a running turn, with the toast saying
 "interrupted — ctrl+c again to exit" (or just "ctrl+c again to
 exit" when idle) — and only a second press inside the window exits.
@@ -2002,7 +2011,7 @@ the plain interrupt. The help overlay and the spec/README key
 tables carry the new rows.
 
 Feedback on the way out: after the program stops, main saves the
-session and prints one line — "~ tilde — session saved · resume it
+session and prints one line — "~ opcode — session saved · resume it
 with /sessions" — the goodbye that says what happened and the way
 back in.
 
@@ -2032,7 +2041,7 @@ scrolled into native scrollback), results and thinking expanded,
 it owns the keyboard: typing goes nowhere until it closes (spec §6
 item 4 retired).
 
---plain / TILDE_PLAIN / detected screen reader: the glyph vocabulary
+--plain / OPCODE_PLAIN / detected screen reader: the glyph vocabulary
 becomes vars, adaptGlyphs swaps every one for ASCII — ✓→[ok], ⎿→\-,
 ○⏸›⏵⏵→o=>>> — no glyph disappears (spec §6 item 6 retired). The
 composer prompt re-reads the glyph after the swap (the textarea
@@ -2044,7 +2053,7 @@ overrides are stripped and the title capped at 240 runes before it
 reaches the OSC surface — a crafted directory name can no longer
 hijack the terminal window title (tui-audit notable 13).
 
-Verified live in a PTY under TILDE_PLAIN: zero Unicode glyphs remain
+Verified live in a PTY under OPCODE_PLAIN: zero Unicode glyphs remain
 in the log (mode line "> ask", composer ">", pager header rendered
 after ctrl+O), clean double-press exit. Pinned by TestTypeAheadGuard,
 TestPlanTypeAheadGuard, TestTranscriptPager, TestAdaptGlyphs,
@@ -2055,7 +2064,7 @@ TestSanitizeTitle. The spec's not-yet list is down to two items.
 Against Codex's tool inventory (shell, apply_patch, view_image,
 update_plan, current_time, get_context_remaining, request_*, MCP)
 and the agent-definition tool lists (Bash, Glob, Grep, Read,
-WebFetch, TodoWrite), tilde had three real gaps. Filled:
+WebFetch, TodoWrite), opcode had three real gaps. Filled:
 
 - search_files (Grep): regex content search over a tree —
   path:line:text matches, binary/.git skipped, 50-match cap with a
@@ -2084,8 +2093,8 @@ boundedness are unit-pinned (7 new tests; the boundedness test
 proved its worth by catching a test that chdir'd the package and
 poisoned the writable-roots check for the tests after it).
 Deliberately not built: WebFetch/WebSearch (network egress needs
-its own policy conversation), view_image (tilde attaches images on
-input), request_user_input (tilde asks through the plan and
+its own policy conversation), view_image (opcode attaches images on
+input), request_user_input (opcode asks through the plan and
 permission surfaces). Agent definitions with named tool subsets —
 the codex screenshot's pattern — are a possible later phase on top
 of subagents.
@@ -2107,7 +2116,7 @@ the old names.
 
 The user's instinct matched both references: Codex ships three
 presets (Read Only / Default / Full Access), Claude Code's working
-triad is plan/default/bypass. tilde's four collapsed into three —
+triad is plan/default/bypass. opcode's four collapsed into three —
 and the collapse was nearly free, because read-only and plan were
 already the same posture in the gate (every action prompts); only
 the instruction differed. read-only folded into plan; ask became
@@ -2127,7 +2136,7 @@ trust boundary the sandbox does not cover (Codex's sandbox denies
 network by default), so it asks in plan and build and runs free
 only in full-auto. Deliberately not built: web_search (needs a
 provider key and its own policy talk) and browser automation (MCP
-territory — point tilde's MCP config at a Playwright server).
+territory — point opcode's MCP config at a Playwright server).
 
 Verified live: a PTY session cycled build -> full-auto -> plan and
 back, all three glyphs on the mode line. Full suite green across
@@ -2141,7 +2150,7 @@ The last naming wart. An audit of the whole vocabulary against the
 references: grep/glob/apply_patch/current_time match their
 Claude/Codex counterparts exactly (the names models emit fluently
 from training data), todo_write matches Claude's TodoWrite, and
-read_file/write_file/edit_file/list_dir/present_plan are tilde's
+read_file/write_file/edit_file/list_dir/present_plan are opcode's
 own self-describing verb_noun school — clearer than Claude's bare
 Read/Write/Edit. The one name diverging from every reference was
 run_shell. Renamed to bash — Claude Code's name, and the name the
@@ -2190,7 +2199,7 @@ live sequence.
 Verified live in a PTY: a fixture model read a poisoned file
 (title grab, screen clear, keyboard remap, lone trailing ESC) and
 the rendered result line showed the readable text "prepostend" —
-the 29 escape bytes in the capture were all tilde's own UI styling
+the 29 escape bytes in the capture were all opcode's own UI styling
 and cursor addressing, "pwned" never reached the terminal, and the
 window title survived. Full suite green across all 13 packages;
 unit tests cover every sequence form, the UTF-8 continuation-byte
@@ -2222,7 +2231,7 @@ setup broke.")
 - `GlyphInfo` ("·" / "-") added to the shared glyph vocabulary so
   neutral rows degrade in the plain posture like every other glyph.
 - Palette entry and command dispatch; no new Options fields — the
-  checks read what was already wired (KeyFor, TildeHome, AuditPath,
+  checks read what was already wired (KeyFor, OpcodeHome, AuditPath,
   Skills, MCPNames, Cwd).
 
 ## Design choices
@@ -2278,8 +2287,8 @@ Spec: [docs/specs/phase34-themes.md](specs/phase34-themes.md)
   edits the file as a raw JSON object, so unknown sibling keys
   survive; a missing file is created (0600). An explicit config
   theme wins over the background probe at startup; empty keeps the
-  probe (TILDE_THEME=light|dark still forces the posture). Unknown
-  names fail loudly at startup in cmd/tilde via `tui.ValidTheme`.
+  probe (OPCODE_THEME=light|dark still forces the posture). Unknown
+  names fail loudly at startup in cmd/opcode via `tui.ValidTheme`.
 - **Render-cache discipline**: applying a theme clears the per-entry
   markdown caches and the in-flight stream cache — both embed the
   old palette's ANSI codes. Committed native scrollback keeps its
@@ -2352,7 +2361,7 @@ Spec: [docs/specs/phase35-diff.md](specs/phase35-diff.md)
 - git itself C-style-quotes control characters in porcelain
   output, so a hostile filename arrives as inert printable text
   (`"\033]0;..."` with literal backslashes) — visible and named,
-  incapable of driving the terminal, on top of tilde's own
+  incapable of driving the terminal, on top of opcode's own
   safe.Text pass. The test pins that no live OSC sequence can
   reach the entry.
 - lipgloss gamut-shifts hex colors slightly when rendering
@@ -2370,7 +2379,7 @@ Spec: [docs/specs/phase35-diff.md](specs/phase35-diff.md)
   file — /diff rendered the `diff --git` header (bold), the removed
   line in danger, the added line in success, the `@@` hunk in info,
   and "1 untracked: fresh.txt" as a dim row. The only BEL in the
-  capture is tilde's own window-title OSC. Clean /exit.
+  capture is opcode's own window-title OSC. Clean /exit.
 
 # Phase 36 — LaTeX conversion (status: complete, live-verified)
 
@@ -2551,7 +2560,7 @@ Spec: [docs/specs/phase39-effort-knob.md](specs/phase39-effort-knob.md)
 - **The wire**: `ChatRequest.ReasoningEffort` ("" = provider
   default). OpenAI-compatible requests carry `reasoning_effort`,
   omitted when unset; Anthropic requests carry
-  `thinking: {type: enabled, budget_tokens: N}` with tilde's
+  `thinking: {type: enabled, budget_tokens: N}` with opcode's
   mapping (low 1024 — the documented minimum, medium 8192, high
   16384), also omitted when unset — a model without extended
   thinking never sees the field.
@@ -2604,11 +2613,11 @@ Spec: [docs/specs/phase40-highlight-guardrails.md](specs/phase40-highlight-guard
 
 - **Sanitized terminal title** — already adopted (sanitizeTitle
   strips control and bidi characters and caps at 240 runes).
-- **Turn diff budget** — no-op for tilde: edit results render the
+- **Turn diff budget** — no-op for opcode: edit results render the
   tool's before/after strings directly; there is no diff
   computation to cap.
 - **One-shot screen-reader probe with a persisted marker** —
-  skipped: tilde's detection reads environment variables, no
+  skipped: opcode's detection reads environment variables, no
   terminal query; nothing expensive to remember.
 - **Session-log recording behind an env var** — deferred: a
   development harness, not a product surface.
@@ -2631,7 +2640,7 @@ host, not in the sandbox. The push therefore fails from the
 sandbox itself ("No such file or directory"). The fix, found
 2026-09-29: run it on the host through the flatpak portal:
 
-    flatpak-spawn --host bash -c "cd /home/chmgx81/Desktop/tilde && git push origin main"
+    flatpak-spawn --host bash -c "cd /home/chmgx81/Desktop/opcode && git push origin main"
 
 The host's gh is authenticated; the same call also works for
 `gh run list` to watch CI.
@@ -2711,7 +2720,7 @@ submitInput and turnEnded.)
   comment: a steered draft cannot alter the active round (its
   request is on the wire); it applies at the orchestrator's
   round checkpoint. Deliberately NOT adopted: Codex's
-  `expected_previous_turn_id` concurrency token — tilde's
+  `expected_previous_turn_id` concurrency token — opcode's
   orchestrator has a single event loop with no concurrent turn
   writers to race.
 - Documented in the spec: an unknown "/xyz" falls through to the
@@ -2736,7 +2745,7 @@ growth-based compaction with the injection rule, and the typed
 input decision. CI green on the bump commit; the release pipeline
 built all five platform binaries (1m14s); the raw.githubusercontent
 install one-liner resolved v0.3.0 in a clean temp dir and the
-installed release binary prints "tilde v0.3.0" — the -X
+installed release binary prints "opcode v0.3.0" — the -X
 main.version injection verified in the real pipeline.
 
 ## Phase 43: production audit (2026-09-29)
@@ -2758,7 +2767,7 @@ buildVersion feeds.
 
 ### Shipped — security + concurrency
 - S3/S9: web_fetch refuses loopback/link-local targets and
-  revalidates every redirect hop (TILDE_ALLOW_LOCAL_FETCH opts out);
+  revalidates every redirect hop (OPCODE_ALLOW_LOCAL_FETCH opts out);
   config.IsLocalBaseURL parses the URL host instead of
   substring-matching "localhost".
 - S4/S5/X21/X22: one shared mutex-guarded Redactor holds every
@@ -2784,7 +2793,7 @@ buildVersion feeds.
   401 round-trip.
 
 ### Shipped — UX
-U1 mkdir ~/.tilde before any error references it; U2/U3/U4/U5/U6
+U1 mkdir ~/.opcode before any error references it; U2/U3/U4/U5/U6
 startup, key, config, resume, and provider errors now name the
 next step (key note rides in StartupNotes instead of stderr);
 U7 "exited with status N" instead of the doubled "exit status:
@@ -2836,7 +2845,7 @@ Full suite, vet, and gofmt green.
 # Phase 44 shipped + full production review (2026-09-29)
 
 Phase 44 (release hardening: races, CI/CD, updates) is committed in
-full: the uncommitted work — `tilde update` with checksum
+full: the uncommitted work — `opcode update` with checksum
 verification, the installer hardening, LLM timeouts, the MCP wedge
 fix, seccomp network block, credential-file deny, `!` audit entries,
 atomic config/session/trust writes, and the C7 process-group kill —
@@ -2853,10 +2862,10 @@ disposition — fixed below, or named as deferred. No silent drops.
   in-product way to learn a release exists. Now: at most one cached,
   throttled (24h), silent-on-failure HTTPS check per day at startup;
   one startup note when a newer release is out (`Update available:
-  vX → vY. Run `tilde update` to install it.`); the same cached
-  check as a `/doctor` row; `tilde update [--check]` refreshes the
+  vX → vY. Run `opcode update` to install it.`); the same cached
+  check as a `/doctor` row; `opcode update [--check]` refreshes the
   cache; opt out with `"update_checks": false` or
-  `TILDE_NO_UPDATE_CHECK=1`; dev builds and platforms without
+  `OPCODE_NO_UPDATE_CHECK=1`; dev builds and platforms without
   prebuilt binaries never check. Tests: cache roundtrip/stale/
   silent-failure/dev-skip, doctor rows.
 - **Trust-prompt type-ahead guard was dead** (OpenedAt never set):
@@ -2876,7 +2885,7 @@ disposition — fixed below, or named as deferred. No silent drops.
   refuses traversal and absolute-outside-roots paths (absolute
   in-roots paths still work — the end-to-end test proves it).
 - **web_fetch SSRF**: private LAN ranges blocked; DNS-TOCTOU stated
-  as the approval gate's job; TILDE_ALLOW_LOCAL_FETCH documented in
+  as the approval gate's job; OPCODE_ALLOW_LOCAL_FETCH documented in
   SECURITY.md.
 - **Trust fingerprint missed the instruction surface**: SKILL.md,
   references/, assets/ are trust-visible now (test updated).
@@ -2887,7 +2896,7 @@ disposition — fixed below, or named as deferred. No silent drops.
   longer report as the 5-minute timeout.
 - **install.sh**: --help/no-args guard; plaintext bases refused
   except loopback (test mirror keeps working); success screen names
-  `tilde update`.
+  `opcode update`.
 - **UX copy**: /doctor skills+MCP rows name the next step; empty
   login/logout are dim notes, not errors/successes; bare `!`
   explains itself; dead paste tokens warn visibly; help overlay
@@ -2895,7 +2904,7 @@ disposition — fixed below, or named as deferred. No silent drops.
   fit narrow terminals; plain posture forces the static spinner.
 - **Docs**: README modes table is plan/build/full-auto with legacy
   mapping, tool list gains web_fetch, Also block gains
-  `tilde update` + env table; architecture §4 lists safe/update,
+  `opcode update` + env table; architecture §4 lists safe/update,
   modes fixed, project-config promise corrected (fingerprinted,
   never loaded); tui-spec keys/slashes/behavior current, v0.3.0
   figure; releasing.md documents the notice; .gitignore covers
@@ -2940,9 +2949,9 @@ provider that is down, 500s, sends HTML, or cuts the stream.
 
 Found and fixed:
 
-- `tilde -p ""` fell through and opened the interactive UI. It is now
+- `opcode -p ""` fell through and opened the interactive UI. It is now
   a usage error.
-- `tilde` with stdin or stdout not a terminal painted escape codes into
+- `opcode` with stdin or stdout not a terminal painted escape codes into
   the pipe and died on `/dev/tty`. It now says the UI needs a terminal
   and points at `-p`. (`checkLaunchMode`, tested.)
 - A model reply with no text and no tool calls ended the turn silently
@@ -2992,7 +3001,7 @@ the macOS runner or under a resolver that is not glibc's.
 - **`internal/tools`: the web_fetch opt-in test needed the machine's
   resolver.** It fetched `http://127.1:<port>/`, a valid IPv4 form
   that glibc resolves and the macOS runner does not, so the test
-  failed there for a reason that had nothing to do with tilde. The
+  failed there for a reason that had nothing to do with opcode. The
   address and `localhost` still cover the opt-in; a new test checks
   that the flag opens both the literal-host and the dial-time check.
 - **`TestWritableRoots` compared a path to its real path.** macOS
@@ -3019,11 +3028,11 @@ Two documentation bugs, both found by an audit pass:
 govulncheck findings that made CI red were standard-library bugs fixed
 in 1.25.13 — GO-2026-6218 (quadratic `net/url` resolvePath), GO-2026-6090
 (post-handshake TLS messages) and GO-2026-6088 (encoding/xml decode
-depth) — and tilde reaches all three: every provider request, the update
+depth) — and opcode reaches all three: every provider request, the update
 check, and markdown rendering through glamour's XML lexer. There is no
 code change that fixes them; the patch release is the fix.
 
-This is a build-floor change with a real cost: anyone building tilde from
+This is a build-floor change with a real cost: anyone building opcode from
 source now needs Go 1.25.13 or newer. That is the intended trade — a
 vulnerable dependency floor is not a floor. CI reads the version from
 `go.mod`, so every job, including the cross-builds, moves with it.
@@ -3106,9 +3115,9 @@ before a release:
   1-2s each.
 - **Nvidia** (catalog provider): plain and tool turns on
   `meta/llama-3.2-90b-vision-instruct`. Several other model ids 404 with
-  a per-account catalog error; tilde surfaced it honestly.
+  a per-account catalog error; opcode surfaced it honestly.
 - **Secrets**: after real turns, the raw key appears in **zero** files
-  under `~/.tilde` — session saves and the audit log are redacted with
+  under `~/.opcode` — session saves and the audit log are redacted with
   real credentials, not just in tests.
 - **Anthropic native client**: still no key in this file for it, so it
   remains covered by unit tests only, not a live call. Stated plainly.
@@ -3131,11 +3140,11 @@ the remedy. `gofmt`, `vet`, the full race suite, and staticcheck pass.
 ## The UI is now the whole setup (2026-10-02)
 
 The UX question that prompted this pass: can someone who will never
-edit a JSON file configure tilde? Two answers were no, and both are
+edit a JSON file configure opcode? Two answers were no, and both are
 fixed.
 
 - **First run used to be a dead end.** With no config.json, main
-  exited with "set \"model\" in ~/.tilde/config.json" — the one user
+  exited with "set \"model\" in ~/.opcode/config.json" — the one user
   who most needs the UI never reached it. The interactive UI now
   starts: a three-step welcome (provider, key, model) with the
   provider picker already open — every catalog provider listed, each

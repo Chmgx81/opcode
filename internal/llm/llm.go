@@ -1,4 +1,4 @@
-// Package llm defines tilde's own conversation types and the Provider
+// Package llm defines opcode's own conversation types and the Provider
 // interface, plus the OpenAI-compatible streaming client (used for
 // OpenRouter and any local server speaking the same schema).
 //

@@ -1,4 +1,4 @@
-// Package tui is tilde's Bubble Tea front end: a streaming transcript
+// Package tui is opcode's Bubble Tea front end: a streaming transcript
 // with a collapsible tool timeline, a multiline composer with paste
 // collapsing and a command palette, mode cycling, and headless-friendly
 // wiring — the orchestrator stays UI-independent.
@@ -23,12 +23,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/safe"
-	"github.com/Chmgx81/tilde/internal/skills"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/safe"
+	"github.com/Chmgx81/opcode/internal/skills"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // version is the fallback shown when Options.Version is empty (tests
@@ -37,7 +37,7 @@ import (
 // and the fetch UA agree.
 const version = "v0.3.0"
 
-// The tilde logo, shown at the top of a fresh session; it scrolls away
+// The opcode logo, shown at the top of a fresh session; it scrolls away
 // with the transcript.
 //
 //go:embed banner.txt
@@ -46,17 +46,17 @@ var banner string
 // composerPlaceholder is the idle composer's hint. It is dropped
 // whole rather than clipped on a pane too narrow for it
 // (syncComposerPlaceholder).
-const composerPlaceholder = "ask tilde anything…"
+const composerPlaceholder = "ask opcode anything…"
 
 // Options wires the TUI to the rest of the system. Everything here is
 // injected; the package never loads config itself.
 type Options struct {
-	Orch      *orchestrator.Orchestrator
-	Model     string
-	Mode      string
-	Cwd       string
-	TildeHome string
-	// Version is the running binary's version (cmd/tilde's
+	Orch       *orchestrator.Orchestrator
+	Model      string
+	Mode       string
+	Cwd        string
+	OpcodeHome string
+	// Version is the running binary's version (cmd/opcode's
 	// buildVersion: ldflags tag, module version, or (devel)). It
 	// renders in the greeting, /doctor, and the resume banner.
 	// Empty falls back to the version const above.
@@ -65,7 +65,7 @@ type Options struct {
 	// about, or "" when there is nothing to offer. It renders as the
 	// footer badge and the /help line: the durable half of the
 	// update signal, which the startup note alone is not — that note
-	// scrolls away within a screenful. cmd/tilde derives it from
+	// scrolls away within a screenful. cmd/opcode derives it from
 	// update.LatestKnown, so the note, this badge, --version,
 	// /doctor, and the exit line all name the same release.
 	UpdateTag string
@@ -78,11 +78,11 @@ type Options struct {
 
 	// Animations turns off the spinner and toast glyph burst when
 	// false (config.json "animations": false) — the reduced-motion
-	// posture, Codex's MotionMode at tilde's scale.
+	// posture, Codex's MotionMode at opcode's scale.
 	Animations bool
 
 	// Plain is the ASCII/screen-reader posture: --plain,
-	// TILDE_PLAIN, or a detected screen reader swap the glyph
+	// OPCODE_PLAIN, or a detected screen reader swap the glyph
 	// vocabulary for ASCII (adaptGlyphs). Color still follows the
 	// theme and NO_COLOR; the point is that no glyph disappears,
 	// every one degrades.
@@ -293,7 +293,7 @@ type Model struct {
 	login     *loginFlow
 
 	// Composer recall history: submitted prompts, persisted to
-	// history.jsonl under TILDE_HOME. histIdx is the recall
+	// history.jsonl under OPCODE_HOME. histIdx is the recall
 	// position (len(hist) means the live draft); draftSave holds
 	// the in-progress draft while a recall is active.
 	hist      []string
@@ -458,8 +458,8 @@ type command struct {
 }
 
 var commands = []command{
-	{"/exit", "quit tilde"},
-	{"/quit", "quit tilde"},
+	{"/exit", "quit opcode"},
+	{"/quit", "quit opcode"},
 	{"/help", "show keys and commands"},
 	{"/doctor", "diagnose the setup: config, key, sandbox, trust, mcp"},
 	{"/theme", "pick the palette — live preview, esc restores"},
@@ -472,7 +472,7 @@ var commands = []command{
 	{"/models", "browse every provider's models, fetched live"},
 	{"/login", "store an API key (masked; bare form picks a provider)"},
 	{"/logout", "remove the stored key (/logout <provider>)"},
-	{"/update", "point at `tilde update` — it runs in a shell, not here"},
+	{"/update", "point at `opcode update` — it runs in a shell, not here"},
 }
 
 // displayVersion reports the running binary's version: the injected
@@ -485,6 +485,12 @@ func (m *Model) displayVersion() string {
 }
 
 func New(opt Options) *Model {
+	// The glyph posture must be installed before anything reads it: the
+	// composer prompt and the header bake in GlyphPrompt/GlyphBrand at
+	// construction. Run() applies it again (it also owns the theme
+	// probe), which is idempotent — this call is what keeps a --plain
+	// header and composer from flashing the Unicode forms first.
+	adaptGlyphs(opt.Plain)
 	ta := textarea.New()
 	ta.Placeholder = composerPlaceholder
 	// Strip the textarea's stock look, which reads as a highlight: the
@@ -526,7 +532,7 @@ func New(opt Options) *Model {
 	}
 	// Prompt recall history: loaded once at startup, appended per
 	// submit. A corrupt line is skipped, never fatal.
-	m.hist = loadHistory(filepath.Join(opt.TildeHome, "history.jsonl"))
+	m.hist = loadHistory(filepath.Join(opt.OpcodeHome, "history.jsonl"))
 	m.histIdx = len(m.hist)
 	// The reference header: the logo at the left, the identity block
 	// beside it — version, model and mode, working directory — then
@@ -535,7 +541,7 @@ func New(opt Options) *Model {
 	for _, line := range strings.Split(strings.TrimRight(banner, "\n"), "\n") {
 		logo = append(logo, accentStyle.Render(line))
 	}
-	info := []string{boldStyle.Render(GlyphBrand + " tilde " + m.displayVersion())}
+	info := []string{boldStyle.Render(GlyphBrand + " opcode " + m.displayVersion())}
 	modelLine := opt.Model
 	if modelLine == "" {
 		// A first run with no config.json yet: the header must not
@@ -582,7 +588,7 @@ func (m *Model) Init() tea.Cmd {
 		// window title); the cwd is user-controlled text, so it
 		// is sanitized before it reaches the terminal.
 		return tea.Batch(textarea.Blink,
-			tea.SetWindowTitle(sanitizeTitle("tilde — "+m.opt.Cwd)))
+			tea.SetWindowTitle(sanitizeTitle("opcode — "+m.opt.Cwd)))
 	}
 	return textarea.Blink
 }
@@ -615,11 +621,11 @@ func Run(m *Model) error {
 	// asked for its background (the same OSC exchange as the
 	// profile probe) — a light background re-skins the tokens for
 	// legibility, because light text on a white terminal is
-	// invisible. TILDE_THEME=light|dark forces the probe posture;
+	// invisible. OPCODE_THEME=light|dark forces the probe posture;
 	// NO_COLOR keeps Ascii and the tokens' uncolored forms.
 	if m.opt.Theme == "" || !applyThemeName(m.opt.Theme) {
 		dark := true
-		switch strings.ToLower(os.Getenv("TILDE_THEME")) {
+		switch strings.ToLower(os.Getenv("OPCODE_THEME")) {
 		case "light":
 			dark = false
 		case "dark":
@@ -840,7 +846,7 @@ func (m *Model) grantAlways(req *permRequest) {
 		}
 		// No rule, and specifically none for the per-tool allow: the
 		// dialog said one command, so one command is what runs.
-		m.showToast("allowed once — tilde cannot remember a rule for a command that chains or spans lines")
+		m.showToast("allowed once — opcode cannot remember a rule for a command that chains or spans lines")
 		return
 	}
 	if m.toolAllows == nil {

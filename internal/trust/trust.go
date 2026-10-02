@@ -1,5 +1,5 @@
 // Package trust implements the project-trust gate (Section 7): a
-// separate, earlier decision than per-action permissions. Before tilde
+// separate, earlier decision than per-action permissions. Before opcode
 // runs anything a project brought with it — a skill's script, an MCP
 // server — the user must have approved that project's executable
 // surface, and the approval is tied to a fingerprint of exactly that
@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/config"
+	"github.com/Chmgx81/opcode/internal/config"
 )
 
 // Status of a project directory.
@@ -27,7 +27,7 @@ type Status int
 const (
 	// Trusted: previously approved, fingerprint unchanged — or no
 	// executable surface at all, which is the same thing in practice:
-	// there is nothing the project can make tilde run.
+	// there is nothing the project can make opcode run.
 	Trusted Status = iota
 	// Untrusted: never approved.
 	Untrusted
@@ -52,13 +52,13 @@ func (s Status) String() string {
 // executable surface. mcp.json is included from day one (Phase 4) so
 // adding servers later is a trust-visible change, not a silent one.
 var surfaceFiles = []string{
-	".tilde/config.json",
-	".tilde/mcp.json",
+	".opcode/config.json",
+	".opcode/mcp.json",
 }
 
 // Surface lists a project's executable surface: the config/mcp files and
 // every skill script, SKILL.md body, and bundled reference/asset under
-// .tilde/skills/, relative to the project root, sorted. mcp.json and
+// .opcode/skills/, relative to the project root, sorted. mcp.json and
 // skills/config files that don't exist are simply absent from the list.
 func Surface(projectDir string) ([]string, error) {
 	var files []string
@@ -68,7 +68,7 @@ func Surface(projectDir string) ([]string, error) {
 		}
 	}
 	w := &surfaceWalk{projectDir: projectDir, ancestors: map[string]bool{}}
-	if err := w.walk(filepath.Join(projectDir, ".tilde", "skills")); err != nil {
+	if err := w.walk(filepath.Join(projectDir, ".opcode", "skills")); err != nil {
 		return nil, err
 	}
 	files = append(files, w.files...)
@@ -81,7 +81,7 @@ func Surface(projectDir string) ([]string, error) {
 // is an error, which every caller treats as "cannot verify".
 const maxSurfaceEntries = 20000
 
-// surfaceWalk collects the script files under .tilde/skills, following
+// surfaceWalk collects the script files under .opcode/skills, following
 // directory symlinks. The skill loader lists and runs whatever a
 // symlinked scripts/ directory points at, so a walker that stops at
 // the link would hide those scripts from both the approval prompt and
@@ -164,7 +164,7 @@ func Fingerprint(projectDir string) (string, []string, error) {
 	return hex.EncodeToString(h.Sum(nil)), files, nil
 }
 
-// Store persists trust decisions in ~/.tilde/trusted-projects.json.
+// Store persists trust decisions in ~/.opcode/trusted-projects.json.
 type Store struct {
 	path string
 	mu   sync.Mutex

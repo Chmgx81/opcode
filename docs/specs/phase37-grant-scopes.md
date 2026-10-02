@@ -3,7 +3,7 @@
 ## Goal
 
 The adoption doc's #1 (Codex's approval cache keyed by canonicalized
-command). tilde's "always allow" grant is built from the command's
+command). opcode's "always allow" grant is built from the command's
 first two whitespace fields — program and subcommand. When the second
 field is a flag (`git -C /tmp push`, `sudo -u root systemctl …`), the
 grant becomes `<program> <flag>:*` — which auto-approves every other
@@ -14,7 +14,7 @@ than what the user read on the dialog.
 ## Non-Goals
 
 - No full command canonicalization engine (Codex's
-  `command_canonicalization.rs` is a parser). tilde's grants are
+  `command_canonicalization.rs` is a parser). opcode's grants are
   token-prefix rules; this phase fixes their precision and adds a
   small synonym pass, nothing more.
 - No persistent approval store — grants stay session-scoped (the

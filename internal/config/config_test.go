@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 func writeFile(t *testing.T, path, content string, mode os.FileMode) {

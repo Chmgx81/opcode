@@ -18,10 +18,10 @@ func write(t *testing.T, path, content string) {
 
 func TestSurfaceListsExecutableFiles(t *testing.T) {
 	project := t.TempDir()
-	write(t, filepath.Join(project, ".tilde/skills/deploy/scripts/run.sh"), "echo hi")
-	write(t, filepath.Join(project, ".tilde/skills/deploy/SKILL.md"), "body")
-	write(t, filepath.Join(project, ".tilde/skills/deploy/references/api.md"), "docs")
-	write(t, filepath.Join(project, ".tilde/config.json"), `{}`)
+	write(t, filepath.Join(project, ".opcode/skills/deploy/scripts/run.sh"), "echo hi")
+	write(t, filepath.Join(project, ".opcode/skills/deploy/SKILL.md"), "body")
+	write(t, filepath.Join(project, ".opcode/skills/deploy/references/api.md"), "docs")
+	write(t, filepath.Join(project, ".opcode/config.json"), `{}`)
 	write(t, filepath.Join(project, "notes.txt"), "not executable surface")
 
 	files, err := Surface(project)
@@ -31,10 +31,10 @@ func TestSurfaceListsExecutableFiles(t *testing.T) {
 	// Scripts AND the instruction surface: SKILL.md bodies and their
 	// references load with no re-prompt, so they are trust-visible.
 	want := []string{
-		".tilde/config.json",
-		".tilde/skills/deploy/SKILL.md",
-		".tilde/skills/deploy/references/api.md",
-		".tilde/skills/deploy/scripts/run.sh",
+		".opcode/config.json",
+		".opcode/skills/deploy/SKILL.md",
+		".opcode/skills/deploy/references/api.md",
+		".opcode/skills/deploy/scripts/run.sh",
 	}
 	if len(files) != len(want) {
 		t.Fatalf("surface = %v, want %v", files, want)
@@ -66,7 +66,7 @@ func TestSurfaceEmptyProjectIsTrustedByDefault(t *testing.T) {
 
 func TestTrustLifecycle(t *testing.T) {
 	project := t.TempDir()
-	write(t, filepath.Join(project, ".tilde/skills/x/scripts/go.sh"), "echo one")
+	write(t, filepath.Join(project, ".opcode/skills/x/scripts/go.sh"), "echo one")
 	userDir := t.TempDir()
 
 	store, err := LoadStore(userDir)
@@ -80,7 +80,7 @@ func TestTrustLifecycle(t *testing.T) {
 	if err != nil || status != Untrusted {
 		t.Fatalf("status = %v err = %v, want Untrusted", status, err)
 	}
-	if len(files) != 1 || files[0] != ".tilde/skills/x/scripts/go.sh" {
+	if len(files) != 1 || files[0] != ".opcode/skills/x/scripts/go.sh" {
 		t.Errorf("files = %v", files)
 	}
 
@@ -102,7 +102,7 @@ func TestTrustLifecycle(t *testing.T) {
 
 	// Change the script: the fingerprint no longer matches, so the
 	// project asks again rather than inheriting old trust.
-	write(t, filepath.Join(project, ".tilde/skills/x/scripts/go.sh"), "echo two")
+	write(t, filepath.Join(project, ".opcode/skills/x/scripts/go.sh"), "echo two")
 	if status, _, _ := reloaded.Status(project); status != Changed {
 		t.Errorf("status after surface change = %v, want Changed", status)
 	}
@@ -111,7 +111,7 @@ func TestTrustLifecycle(t *testing.T) {
 	if err := reloaded.Trust(project); err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(project, ".tilde/skills/x/scripts/new.sh"), "echo new")
+	write(t, filepath.Join(project, ".opcode/skills/x/scripts/new.sh"), "echo new")
 	if status, _, _ := reloaded.Status(project); status != Changed {
 		t.Errorf("status after new script = %v, want Changed", status)
 	}
@@ -119,8 +119,8 @@ func TestTrustLifecycle(t *testing.T) {
 
 func TestFingerprintStableAcrossRuns(t *testing.T) {
 	project := t.TempDir()
-	write(t, filepath.Join(project, ".tilde/skills/a/scripts/1.sh"), "x")
-	write(t, filepath.Join(project, ".tilde/skills/b/scripts/2.sh"), "y")
+	write(t, filepath.Join(project, ".opcode/skills/a/scripts/1.sh"), "x")
+	write(t, filepath.Join(project, ".opcode/skills/b/scripts/2.sh"), "y")
 
 	f1, _, err := Fingerprint(project)
 	if err != nil {
@@ -138,8 +138,8 @@ func TestFingerprintStableAcrossRuns(t *testing.T) {
 	// nothing (paths are relative), so identical trees share a
 	// fingerprint — that is fine: the store keys by path.
 	other := t.TempDir()
-	write(t, filepath.Join(other, ".tilde/skills/a/scripts/1.sh"), "x")
-	write(t, filepath.Join(other, ".tilde/skills/b/scripts/2.sh"), "y")
+	write(t, filepath.Join(other, ".opcode/skills/a/scripts/1.sh"), "x")
+	write(t, filepath.Join(other, ".opcode/skills/b/scripts/2.sh"), "y")
 	f3, _, _ := Fingerprint(other)
 	if f1 != f3 {
 		t.Log("note: identical trees share a fingerprint; the store keys by path")
@@ -148,7 +148,7 @@ func TestFingerprintStableAcrossRuns(t *testing.T) {
 
 func TestUntrust(t *testing.T) {
 	project := t.TempDir()
-	write(t, filepath.Join(project, ".tilde/skills/x/scripts/go.sh"), "echo one")
+	write(t, filepath.Join(project, ".opcode/skills/x/scripts/go.sh"), "echo one")
 	userDir := t.TempDir()
 	store, _ := LoadStore(userDir)
 	if err := store.Trust(project); err != nil {

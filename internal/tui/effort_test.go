@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 // TestCycleEffort: alt+. climbs unset → low → medium → high → unset,

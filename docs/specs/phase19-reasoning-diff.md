@@ -5,7 +5,7 @@
 Two render-layer gaps closed in one pass:
 
 1. Reasoning models (DeepSeek R1-style) stream `reasoning` deltas that
-   tilde silently dropped — the user saw nothing while the model
+   opcode silently dropped — the user saw nothing while the model
    "thought".
 2. `write_file` results rendered as raw text, while `edit_file` already
    had a highlighted diff. Writes should read the same way.

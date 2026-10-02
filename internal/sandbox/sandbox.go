@@ -7,7 +7,7 @@
 //
 // Landlock applies to the calling thread, and Go's runtime has
 // several threads before main — so commands run through a self
-// re-exec (`tilde __sandbox <writable…> -- cmd`): a fresh
+// re-exec (`opcode __sandbox <writable…> -- cmd`): a fresh
 // single-threaded child applies the ruleset and immediately execs
 // the command, which inherits the rules process-wide.
 package sandbox
@@ -204,7 +204,7 @@ func dedup(dirs []string) []string {
 	return out
 }
 
-// Child is the `tilde __sandbox` entry: args are writable roots, a
+// Child is the `opcode __sandbox` entry: args are writable roots, a
 // "--" separator, then the command. It applies the ruleset and
 // replaces this process with the command — success never returns.
 func Child(args []string) error {
@@ -216,7 +216,7 @@ func Child(args []string) error {
 		}
 	}
 	if sep < 1 || sep == len(args)-1 {
-		return errors.New("__sandbox: usage: tilde __sandbox <writable-dir>… -- <command> [args…]")
+		return errors.New("__sandbox: usage: opcode __sandbox <writable-dir>… -- <command> [args…]")
 	}
 	writable, argv := args[:sep], args[sep+1:]
 	// Landlock and seccomp attach to the calling thread only, and the

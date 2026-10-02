@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 // imageBytesCap rejects absurd clipboard payloads loudly instead of

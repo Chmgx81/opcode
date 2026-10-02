@@ -1,11 +1,10 @@
-# tilde
+# opcode
 
 ```text
-   ▄▄▄▄▄▄▄
-▄▄█▀▀▀▀▀▀▀█▄
-▀▀         ▀███▄         ▄
-               ▀█▄▄▄▄▄▄▄█▀
-                 ▀▀▀▀▀▀▀
+ ▄▄▄▄    ▄▄▄▄▄
+█▀  ▀█  █▀  ▀█
+█▄  ▄█  █▄▄▄▀
+ ▀▄▄▀   █
 ```
 
 **A terminal coding agent, in one Go binary.**
@@ -13,18 +12,18 @@ Reads and writes files, runs commands, streams markdown — under your
 permission system, not around it.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash
 ```
 
 <p>
-<a href="https://github.com/Chmgx81/tilde/releases"><img src="https://img.shields.io/github/v/release/Chmgx81/tilde?color=2dd4bf" alt="release"></a>&nbsp;
-<a href="https://github.com/Chmgx81/tilde/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/tilde/ci.yml?label=ci" alt="ci"></a>&nbsp;
+<a href="https://github.com/Chmgx81/opcode/releases"><img src="https://img.shields.io/github/v/release/Chmgx81/opcode?color=2dd4bf" alt="release"></a>&nbsp;
+<a href="https://github.com/Chmgx81/opcode/actions"><img src="https://img.shields.io/github/actions/workflow/status/Chmgx81/opcode/ci.yml?label=ci" alt="ci"></a>&nbsp;
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2dd4bf.svg" alt="MIT"></a>
 </p>
 
 ---
 
-## Why tilde
+## Why opcode
 
 - **Safe by default** — shell commands run in a kernel sandbox; writes,
   commands, and fetches ask before they touch anything outside the project.
@@ -36,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/Chmgx81/tilde/main/install.sh | bas
 ## Quick start
 
 ```sh
-tilde        # in a project directory — that's the whole setup
+opcode        # in a project directory — that's the whole setup
 ```
 
 First run opens the picker: **pick a provider → paste its key → pick a
@@ -46,8 +45,8 @@ model from the live list.** No files to edit. Keys are masked and stored
 Prefer files, or scripting the setup?
 
 ```sh
-mkdir -p ~/.tilde
-echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.tilde/config.json
+mkdir -p ~/.opcode
+echo '{"model": "anthropic/claude-sonnet-4.5"}' > ~/.opcode/config.json
 ```
 
 ## Providers
@@ -87,9 +86,9 @@ metacharacters). **No is preselected.**
 
 On Linux, commands run under a kernel **Landlock** ruleset: reads and
 execution anywhere, writes confined to the project, `$TMPDIR`, and dev
-caches — enforced by the kernel, not by tilde. On x86_64 a seccomp filter
+caches — enforced by the kernel, not by opcode. On x86_64 a seccomp filter
 also blocks network sockets. In-process writes are bounded by the same
-roots, with symlinks resolved first. Where the kernel can't confine, tilde
+roots, with symlinks resolved first. Where the kernel can't confine, opcode
 asks instead of pretending. Details and the threat model:
 [SECURITY.md](SECURITY.md).
 
@@ -121,18 +120,18 @@ Built-in tools: `read_file` `list_dir` `grep` `glob` `current_time`
 `run_skill_script` `spawn_subagent` `todo_write` `present_plan` — plus
 your MCP servers'.
 
-**Skills** — a `SKILL.md` folder in `~/.tilde/skills/`; the model loads
+**Skills** — a `SKILL.md` folder in `~/.opcode/skills/`; the model loads
 the body only when it matches. **MCP** — stdio servers in
-`~/.tilde/mcp.json`. **Subagents** — the model delegates; same gate, no
+`~/.opcode/mcp.json`. **Subagents** — the model delegates; same gate, no
 recursion.
 
 ## Scripting and CI
 
 ```sh
-tilde -p "run the tests"               # one turn, plain text
-tilde -p "summarize the diff" --json   # one JSON event per line
-tilde --continue                       # resume the latest session
-tilde update                           # checksum-verified self-update
+opcode -p "run the tests"               # one turn, plain text
+opcode -p "summarize the diff" --json   # one JSON event per line
+opcode --continue                       # resume the latest session
+opcode update                           # checksum-verified self-update
 ```
 
 | Flag | |
@@ -143,14 +142,14 @@ tilde update                           # checksum-verified self-update
 
 | Env | |
 |---|---|
-| `TILDE_HOME` | tilde home (default `~/.tilde`) |
-| `TILDE_THEME=light\|dark` | force the palette posture |
-| `TILDE_NO_UPDATE_CHECK=1` | skip the daily update check |
-| `TILDE_ALLOW_LOCAL_FETCH=1` | let `web_fetch` reach loopback/private |
-| `TILDE_INSTALL_DIR` | install.sh destination |
-| `TILDE_VERSION` | install.sh: pin a release |
+| `OPCODE_HOME` | opcode home (default `~/.opcode`) |
+| `OPCODE_THEME=light\|dark` | force the palette posture |
+| `OPCODE_NO_UPDATE_CHECK=1` | skip the daily update check |
+| `OPCODE_ALLOW_LOCAL_FETCH=1` | let `web_fetch` reach loopback/private |
+| `OPCODE_INSTALL_DIR` | install.sh destination |
+| `OPCODE_VERSION` | install.sh: pin a release |
 
-The update check runs once a day, cached and silent offline; `tilde
+The update check runs once a day, cached and silent offline; `opcode
 update` replaces the binary from a shell and verifies checksums. Source
 builds are never offered updates.
 

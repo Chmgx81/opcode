@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/sandbox"
-	"github.com/Chmgx81/tilde/internal/skills"
+	"github.com/Chmgx81/opcode/internal/sandbox"
+	"github.com/Chmgx81/opcode/internal/skills"
 )
 
 // LoadSkill returns a skill's full instructions — tier 2 of progressive

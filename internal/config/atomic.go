@@ -7,10 +7,10 @@ import (
 	"sync"
 )
 
-// writeMu serializes tilde's own read-modify-write cycles on the user
+// writeMu serializes opcode's own read-modify-write cycles on the user
 // config files (auth.json, config.json) so two concurrent /login or
 // /theme calls in one process cannot lose each other's update. It does
-// not coordinate separate tilde processes; the atomic rename below
+// not coordinate separate opcode processes; the atomic rename below
 // keeps each file whole in that case, but the last writer still wins.
 var writeMu sync.Mutex
 

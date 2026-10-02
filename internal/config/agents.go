@@ -13,7 +13,7 @@ import (
 const agentsFileCap = 32 * 1024
 
 // AgentsContext composes the hierarchical instruction files
-// (architecture doc Section 5, step 3): the user's ~/.tilde/AGENTS.md,
+// (architecture doc Section 5, step 3): the user's ~/.opcode/AGENTS.md,
 // then every directory from the filesystem root down to the working
 // directory, one file per directory — AGENTS.override.md beats
 // AGENTS.md, which beats CLAUDE.md. The text loads regardless of

@@ -3,25 +3,25 @@
 ## Reporting a vulnerability
 
 Please report security issues **privately** through GitHub's security
-advisories: <https://github.com/Chmgx81/tilde/security/advisories/new>
+advisories: <https://github.com/Chmgx81/opcode/security/advisories/new>
 ("Report a vulnerability" on the repository's Security tab). Do not open
 a public issue for something exploitable.
 
-Include what you can: the tilde version (`tilde --version`), your OS and
+Include what you can: the opcode version (`opcode --version`), your OS and
 architecture, and steps to reproduce. You will get an acknowledgement
 through the advisory thread; fixes ship as a new patch release.
 
 ## Supported versions
 
-Only the **latest release** receives security fixes. `tilde update`
-moves you to it. tilde checks once a day at startup (cached, silent
+Only the **latest release** receives security fixes. `opcode update`
+moves you to it. opcode checks once a day at startup (cached, silent
 when offline) and tells you when a newer release exists — `/doctor`
 shows the same check. Opt out with `"update_checks": false` in
-config.json or `TILDE_NO_UPDATE_CHECK=1`.
+config.json or `OPCODE_NO_UPDATE_CHECK=1`.
 
 ## Threat model
 
-tilde is a coding agent: by design it reads files and runs shell
+opcode is a coding agent: by design it reads files and runs shell
 commands on your machine at a model's request, under a permission
 system you control. What that does and does not protect:
 
@@ -39,17 +39,17 @@ system you control. What that does and does not protect:
   can still read your files. A model can also request `{"sandbox":
   false}`; in `plan` and `build` mode that goes through the approval
   dialog, in `full-auto` it does not. Where the kernel lacks Landlock, or on
-  macOS and Windows, there is no sandbox and tilde says so.
+  macOS and Windows, there is no sandbox and opcode says so.
 - **Network blocking is narrower still.** The seccomp filter that
   denies `AF_INET`, `AF_INET6` and `AF_PACKET` sockets to sandboxed
   commands is written for **x86_64 Linux only**. On Linux arm64 the
   file confinement applies but the network stays open, and the
   startup status line does not claim otherwise. It does not stop
-  unsandboxed commands, tilde's own connection to your model provider,
+  unsandboxed commands, opcode's own connection to your model provider,
   or MCP servers you configure.
-- **API keys** live in `~/.tilde/auth.json`, created with mode 0600
+- **API keys** live in `~/.opcode/auth.json`, created with mode 0600
   inside a 0700 directory, and are never read from a project
-  directory. tilde's file tools refuse to read that file in any
+  directory. opcode's file tools refuse to read that file in any
   permission mode, and known keys are redacted from the audit log and
   saved sessions. A shell command you approve can still read it, and
   any process running as your user can too.
@@ -64,8 +64,8 @@ system you control. What that does and does not protect:
   `plan` and `build` modes. Hostnames that resolve into those ranges
   are not resolved by the check (DNS-rebinding TOCTOU) — the approval
   dialog is the control there, not the address filter.
-  `TILDE_ALLOW_LOCAL_FETCH=1` opts out for local dev servers.
-- **Downloads are verified.** `install.sh` and `tilde update` check the
+  `OPCODE_ALLOW_LOCAL_FETCH=1` opts out for local dev servers.
+- **Downloads are verified.** `install.sh` and `opcode update` check the
   archive's sha256 against the release's `checksums.txt` before
   running or installing anything, and refuse on mismatch. The checksum
   file comes from the same GitHub release as the archive, so this

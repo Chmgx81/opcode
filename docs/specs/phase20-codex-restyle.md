@@ -6,14 +6,14 @@ Restyle the TUI to closely match Codex's design language, studied
 from its source (`codex-rs/tui`): a ChatGPT-blue accent, neutral
 measured grays for secondary text and borders, background-shaded user
 message blocks, muted-amber warnings, and Codex's status/hint
-phrasing. tilde keeps its own glyphs and personality where Codex has
+phrasing. opcode keeps its own glyphs and personality where Codex has
 no equivalent (the `~` brand, the gerund pool).
 
 ## Non-Goals
 
 - Cloning Codex pixel-for-pixel — ratatui and lipgloss render
   differently; this is a design-language adoption, not a port.
-- Copying Codex keybindings (tilde's stay: tab cycles, ctrl+r expands).
+- Copying Codex keybindings (opcode's stay: tab cycles, ctrl+r expands).
 - New features — colors, glyphs, and wording only. No behavior change.
 
 ## Approach — what Codex does (from source)
@@ -68,5 +68,5 @@ key glyphs in accent.
 - Existing render tests updated to the new SGR codes (they pin exact
   colors — a restyle must move them, not break them).
 - Theme-adaptation test updated for the new light values.
-- PTY: dark and `TILDE_THEME=light` frames checked by eye for the
+- PTY: dark and `OPCODE_THEME=light` frames checked by eye for the
   greeting, a user message, the working line, and the composer.

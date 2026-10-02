@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Chmgx81/tilde/internal/llm"
+	"github.com/Chmgx81/opcode/internal/llm"
 )
 
 // pngMagic is a minimal valid PNG signature; jpegMagic a JPEG one.

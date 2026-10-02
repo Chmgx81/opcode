@@ -1,4 +1,4 @@
-# tilde TUI Spec
+# opcode TUI Spec
 
 > The one spec for everything the user sees. Replaces tui-ux-spec.md
 > and tui-design.md. What's here reflects **what is built today**;
@@ -21,7 +21,7 @@ feature that does not exist.
    native scrollback, state restored on exit).
 5. Degrade, don't break: truecolor → 256 → 16 → none; unicode → ASCII.
 6. Colors and glyphs come from one place (`internal/tui/style.go`).
-7. tilde's identity is the `~`. No emoji. Every glyph has a fixed
+7. opcode's identity is the `~`. No emoji. Every glyph has a fixed
    meaning.
 
 ---
@@ -45,7 +45,7 @@ terminal's default foreground):
 | surface.code | `#1c2026` | `#f5f6f8` | code blocks |
 
 Dark/light adapts at startup (OSC 11 where available, else
-`TILDE_THEME=light|dark`). Never color as the only signal — a glyph
+`OPCODE_THEME=light|dark`). Never color as the only signal — a glyph
 or word rides along. A third theme, `green`, is the original Phase 7
 brand stack.
 
@@ -98,7 +98,7 @@ uses `-` where the arrow was.
 
 At launch the frame moves to the terminal's top: the visible
 screen is cleared and the cursor homed before the program starts,
-so tilde always begins at row one regardless of where the shell
+so opcode always begins at row one regardless of where the shell
 prompt left the cursor (scrollback above survives; only the
 visible screen is erased). Maximizing the window itself is the
 window manager's job — a terminal app cannot do it.
@@ -142,7 +142,7 @@ cannot answer is the one failure a permission dialog may not have.
 ### 3.1 Greeting (once, scrolls away)
 
 ```
-   ▄▄▄▄▄▄▄      ~ tilde v0.3.0
+   ▄▄▄▄▄▄▄      ~ opcode v0.3.0
  ▄▄█▀▀▀▀▀▀▀█▄     anthropic/claude-sonnet-4.5 · build
 ▀▀         ▀███▄  /home/you/project
                ▀█▄▄▄▄▄▄▄█▀
@@ -175,7 +175,7 @@ I'll add a token-bucket limiter on the route.               ← assistant prose 
 
 ```
 ──────────────────────────────────────────────────────────  ← rule, border color (amber in shell mode)
-~ ask tilde anything…                                        ← the input, brand ~ prompt
+~ ask opcode anything…                                        ← the input, brand ~ prompt
 ──────────────────────────────────────────────────────────  ← rule
 › build (tab to cycle)   ? for shortcuts · / commands
 ```
@@ -202,7 +202,7 @@ set it and `/help` both name.
 ╭─ Bash command · Runs a command ───────────────────────────╮
 │ npm init -y                                               │
 │                                                           │
-│ tilde needs your approval to run this. Do you want to proceed? │
+│ opcode needs your approval to run this. Do you want to proceed? │
 │                                                           │
 │ ❯ 1. Yes                                                  │
 │   2. Yes, and don't ask again for: npm init:*             │
@@ -280,7 +280,7 @@ because "no matches" alone reads as a broken picker.
   whole command list. It is longer than a normal terminal, so it
   **scrolls** (↑↓, pgup/pgdn, home/end) with the header, the update
   badge, and the two most important bindings pinned. It does not
-  truncate: a silently shortened help sheet is a lie about what tilde
+  truncate: a silently shortened help sheet is a lie about what opcode
   can do. Any other key closes it.
 
 ### 3.7 Todos (live panel at the transcript tail)
@@ -310,7 +310,7 @@ because "no matches" alone reads as a broken picker.
 | Alt+. / Alt+, | reasoning effort up / down (unset → low → medium → high → unset) |
 | Esc | stop the turn, stop a running `!command`, or close exactly one open thing — and with nothing open, do nothing (it never eats a draft) |
 | Ctrl+C / Ctrl+D | press twice to exit — the first press arms a short window and interrupts whatever is running (a turn, or a `!command`); `/exit` quits immediately |
-| Exit line | on a clean exit tilde prints `~ tilde — session saved · resume it with /sessions` |
+| Exit line | on a clean exit opcode prints `~ opcode — session saved · resume it with /sessions` |
 | `?` | help sheet (empty, idle composer) — scrolls with ↑↓ / pgup / pgdn, any other key closes |
 | `/` | command palette (type to filter, arrows or ctrl+n/p, enter selects) |
 | `@` | file picker (live filter over the project tree, capped at 1000 files / 6 levels deep; `.git`, `node_modules`, `vendor`, `dist` and friends are skipped) |
@@ -328,7 +328,7 @@ Slash commands: `/help /models /model /mode /skills /mcp
 /sessions /login /logout /theme /diff /doctor /update /exit /quit`.
 An unknown `/command` errors in place with the closest match —
 it never becomes a model turn. `/update` does not update in place: it
-points at `tilde update`, which runs in a shell, not in the TUI.
+points at `opcode update`, which runs in a shell, not in the TUI.
 
 ---
 
@@ -351,7 +351,7 @@ doubles, so entries can be appended freely.
   trust dialog opens, keystrokes are swallowed — a fast typist's
   stray "y" must not answer an approval they never read (Codex
   blocks input the same way).
-- **Plain posture** (`--plain`, `TILDE_PLAIN`, or a detected screen
+- **Plain posture** (`--plain`, `OPCODE_PLAIN`, or a detected screen
   reader): the glyph vocabulary degrades to ASCII (Section 2's table),
   animations off; no glyph disappears. The dialog boxes follow
   (`dialogBorder`: `+-|`), the composer's rules follow (`-`), and the
@@ -364,7 +364,7 @@ doubles, so entries can be appended freely.
   The window title is sanitized (control and bidi characters
   stripped, 240-rune cap) — OSC titles are an untrusted text surface.
 - **Prompt history** (↑ recall) persists to `history.jsonl` under
-  tilde's home (global, 500 entries, consecutive duplicates
+  opcode's home (global, 500 entries, consecutive duplicates
   collapse, 0600, redacted against the session's secrets).
   Login keys never enter it. The stored form is
   what recall should put back: `[paste N]` tokens expand into
@@ -435,7 +435,7 @@ doubles, so entries can be appended freely.
   too: ctrl+c's second press quits, and quitting mid-command used to
   leave the process group running with nobody left to reap it
   (`TestCtrlCExitDoesNotStrandTheCommand`).
-- **Headless** (`tilde -p`) imports no TUI package (CI-enforced),
+- **Headless** (`opcode -p`) imports no TUI package (CI-enforced),
   prompts never, fails closed.
 - **`/theme`** (Phase 34): the palette as a user choice — `dark`
   (teal default), `light`, `green` (the original Phase 7 brand
@@ -444,7 +444,7 @@ doubles, so entries can be appended freely.
   opened, Enter persists to config.json's `theme` key (raw-object
   edit, unknown keys preserved). An explicit config theme wins over
   the background probe; empty keeps the probe with
-  TILDE_THEME=light|dark forcing the posture. Applying clears every
+  OPCODE_THEME=light|dark forcing the posture. Applying clears every
   render cache that embeds the old palette (glamour renderers,
   per-entry markdown, the live stream); committed scrollback keeps
   its original colors — the one stated residual.
@@ -502,13 +502,13 @@ doubles, so entries can be appended freely.
   unset); Anthropic gets a `thinking` budget (low 1024, medium
   8192, high 16384). Subagents inherit the parent's live posture
   at spawn time — deliberately no independent knob.
-- **Update notice**: at startup tilde compares the running version
+- **Update notice**: at startup opcode compares the running version
   against the cached latest release (refreshed at most once a day
   over HTTPS, silent when offline) and adds one startup note when a
   newer release exists — `Update available: vX → vY. Run
-  \`tilde update\` to install it.` Only the latest release gets
+  \`opcode update\` to install it.` Only the latest release gets
   security fixes, so a stale binary is a finding, not trivia. Opt
-  out with `"update_checks": false` or `TILDE_NO_UPDATE_CHECK=1`;
+  out with `"update_checks": false` or `OPCODE_NO_UPDATE_CHECK=1`;
   dev builds and platforms without prebuilt binaries never check. The
   footer's badge is explained in the help sheet, pinned at its top so
   a long sheet cannot scroll the news off the bottom of the screen.

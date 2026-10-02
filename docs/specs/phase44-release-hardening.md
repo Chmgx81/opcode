@@ -11,13 +11,13 @@ path a maintainer can trust.
 
 Audience: developers who run a terminal coding agent on Linux and
 macOS (Windows best-effort), install with `curl | bash`, and keep
-provider API keys on the same machine tilde runs shell commands on.
+provider API keys on the same machine opcode runs shell commands on.
 The threats that matter to them are key leakage, a hung agent, and a
 tampered or broken update.
 
 ## Non-Goals
 
-- No new user-facing features beyond `tilde update`.
+- No new user-facing features beyond `opcode update`.
 - No seccomp on architectures other than x86_64 (documented, not
   faked); no Windows sandbox.
 - No package-manager formulas (brew/apt) — a follow-up once releases
@@ -34,7 +34,7 @@ Five parallel workstreams with disjoint write sets:
 3. **orchestrator + tui** — make conversation history race-free.
 4. **CI/CD + install + update** — ci.yml (race, gofmt, cross-build,
    vulncheck), release.yml (test gate, checksums, pinned actions),
-   dependabot, SECURITY.md, `tilde update` with checksum
+   dependabot, SECURITY.md, `opcode update` with checksum
    verification, installer tests.
 5. **QA** — black-box end-to-end run of the built binary against a
    fake provider; MCP change review with `-race`.

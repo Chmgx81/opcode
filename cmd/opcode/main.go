@@ -1,4 +1,4 @@
-// Command tilde runs the terminal coding agent. Phase 1: a Bubble Tea
+// Command opcode runs the terminal coding agent. Phase 1: a Bubble Tea
 // TUI over the UI-independent orchestrator (the same loop the Phase 0
 // bare loop proved). main is wiring only.
 package main
@@ -17,19 +17,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/headless"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/mcp"
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/sandbox"
-	"github.com/Chmgx81/tilde/internal/session"
-	"github.com/Chmgx81/tilde/internal/skills"
-	"github.com/Chmgx81/tilde/internal/subagent"
-	"github.com/Chmgx81/tilde/internal/tools"
-	"github.com/Chmgx81/tilde/internal/trust"
-	"github.com/Chmgx81/tilde/internal/tui"
-	"github.com/Chmgx81/tilde/internal/update"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/headless"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/mcp"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/sandbox"
+	"github.com/Chmgx81/opcode/internal/session"
+	"github.com/Chmgx81/opcode/internal/skills"
+	"github.com/Chmgx81/opcode/internal/subagent"
+	"github.com/Chmgx81/opcode/internal/tools"
+	"github.com/Chmgx81/opcode/internal/trust"
+	"github.com/Chmgx81/opcode/internal/tui"
+	"github.com/Chmgx81/opcode/internal/update"
 )
 
 func main() {
@@ -38,28 +38,28 @@ func main() {
 	// single-threaded when it applies the ruleset (Phase 21 spec).
 	if len(os.Args) > 1 && os.Args[1] == "__sandbox" {
 		if err := sandbox.Child(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "tilde __sandbox: %v\n", err)
+			fmt.Fprintf(os.Stderr, "opcode __sandbox: %v\n", err)
 			os.Exit(1)
 		}
 		return // Child replaced the process on success
 	}
-	// `tilde update` is an explicit user action and needs none of the
+	// `opcode update` is an explicit user action and needs none of the
 	// config/model/TUI setup below, so it is dispatched first.
 	if len(os.Args) > 1 && os.Args[1] == "update" {
 		if err := runUpdate(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "tilde: %v\n", err)
+			fmt.Fprintf(os.Stderr, "opcode: %v\n", err)
 			os.Exit(1)
 		}
 		return
 	}
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "tilde: %v\n", err)
+		fmt.Fprintf(os.Stderr, "opcode: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	// --trust (or TILDE_TRUST=1) pre-approves the project's executable
+	// --trust (or OPCODE_TRUST=1) pre-approves the project's executable
 	// surface without prompting: the CI/headless posture (Section 7).
 	preTrust := flag.Bool("trust", false, "trust the current project's executable surface without prompting")
 	prompt := flag.String("p", "", "headless: run one turn with this prompt and exit")
@@ -70,12 +70,12 @@ func run() error {
 	plain := flag.Bool("plain", false, "ASCII glyphs and no animation — the screen-reader posture")
 	showHelp := flag.Bool("help", false, "show usage and exit")
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, `tilde — a terminal coding agent
+		fmt.Fprint(os.Stderr, `opcode — a terminal coding agent
 
 Usage:
-  tilde [flags]              start the interactive TUI in this directory
-  tilde -p "prompt"          run one headless turn and exit
-  tilde update [--check]     update to the latest release (checksum-verified)
+  opcode [flags]              start the interactive TUI in this directory
+  opcode -p "prompt"          run one headless turn and exit
+  opcode update [--check]     update to the latest release (checksum-verified)
 
 Flags:
   -p <prompt>    headless: run one turn with this prompt
@@ -87,9 +87,9 @@ Flags:
   --version      print the version and exit
   --help         show this help and exit
 
-Everything is configured in ~/.tilde/ (config.json, models.json,
-auth.json). First run? Set a model, then start tilde in a project
-directory — see https://github.com/Chmgx81/tilde#quick-start
+Everything is configured in ~/.opcode/ (config.json, models.json,
+auth.json). First run? Set a model, then start opcode in a project
+directory — see https://github.com/Chmgx81/opcode#quick-start
 `)
 	}
 	flag.Parse()
@@ -119,8 +119,8 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	if err != nil {
 		return err
 	}
-	// Create ~/.tilde on the very first run: every error below names
-	// a file inside it, and a "set model in ~/.tilde/config.json"
+	// Create ~/.opcode on the very first run: every error below names
+	// a file inside it, and a "set model in ~/.opcode/config.json"
 	// that points at a directory that does not exist yet is a dead
 	// end for a new user.
 	if err := os.MkdirAll(userDir, 0o700); err != nil {
@@ -130,7 +130,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// the hint names the way out instead of leaving the user at a
 	// bare parse error.
 	loadErr := func(err error) error {
-		return fmt.Errorf("%w — fix or delete the file and start tilde again", err)
+		return fmt.Errorf("%w — fix or delete the file and start opcode again", err)
 	}
 	cfg, err := config.LoadConfig(userDir)
 	if err != nil {
@@ -158,7 +158,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	cwd, _ := os.Getwd()
 	if path, found := config.RefusesToLoad(cwd); found {
 		fmt.Fprintf(os.Stderr,
-			"warning: ignoring credentials at %s — tilde never loads credentials from a project directory\n", path)
+			"warning: ignoring credentials at %s — opcode never loads credentials from a project directory\n", path)
 	}
 
 	// An empty model is fatal only where there is no UI to fix it:
@@ -196,7 +196,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// (a stale binary gets no security fixes). The one result feeds
 	// every surface — the startup note, the footer's update badge,
 	// and the exit line — so they cannot disagree. Opt out with
-	// config.json "update_checks": false or TILDE_NO_UPDATE_CHECK=1.
+	// config.json "update_checks": false or OPCODE_NO_UPDATE_CHECK=1.
 	// Dev builds and platforms without prebuilt releases never
 	// check — "newer" has no meaning when nothing could install.
 	var updateStatus update.Status
@@ -229,7 +229,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	if err != nil {
 		return err
 	}
-	if *preTrust || os.Getenv("TILDE_TRUST") != "" {
+	if *preTrust || os.Getenv("OPCODE_TRUST") != "" {
 		if err := trustStore.Trust(cwd); err != nil {
 			return err
 		}
@@ -243,7 +243,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	skillSources := func(trusted bool) []skills.Source {
 		return []skills.Source{
 			{Dir: filepath.Join(userDir, "skills"), Scope: skills.ScopeUser},
-			{Dir: filepath.Join(cwd, ".tilde", "skills"), Scope: skills.ScopeProject, Trusted: trusted},
+			{Dir: filepath.Join(cwd, ".opcode", "skills"), Scope: skills.ScopeProject, Trusted: trusted},
 		}
 	}
 	var skillManager skills.Manager
@@ -273,7 +273,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	if err != nil {
 		return err
 	}
-	projectMcp, err := mcp.LoadConfig(filepath.Join(cwd, ".tilde", "mcp.json"))
+	projectMcp, err := mcp.LoadConfig(filepath.Join(cwd, ".opcode", "mcp.json"))
 	if err != nil {
 		return err
 	}
@@ -334,7 +334,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// One version everywhere: the banner, --version, and the fetch
 	// UA agree — the TUI renders the injected buildVersion, not its
 	// own const.
-	tools.WebFetchUA = "tilde/" + strings.TrimPrefix(buildVersion(), "tilde ") + " (+https://github.com/Chmgx81/tilde)"
+	tools.WebFetchUA = "opcode/" + strings.TrimPrefix(buildVersion(), "opcode ") + " (+https://github.com/Chmgx81/opcode)"
 	orch.SetMode(cfg.PermissionMode)
 	orch.SetSkillsIndex(skillManager.Index())
 	orch.ContextWindow = cfg.ContextWindow
@@ -358,14 +358,14 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			}
 		}
 		if err != nil {
-			// A raw parse error reads like a bug in tilde; say what
+			// A raw parse error reads like a bug in opcode; say what
 			// it almost always is and where the alternatives are
 			// (audit U6).
 			what := *resume
 			if what == "" {
 				what = path
 			}
-			return fmt.Errorf("could not resume %s: %w — the file may be damaged or written by a newer tilde; pick another with /sessions",
+			return fmt.Errorf("could not resume %s: %w — the file may be damaged or written by a newer opcode; pick another with /sessions",
 				filepath.Base(what), err)
 		}
 		orch.Seed(s.History())
@@ -373,13 +373,13 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	}
 
 	// Screen-reader posture (Codex borrow): a detected reader — or
-	// --plain, or TILDE_PLAIN — reduces motion for the session when
+	// --plain, or OPCODE_PLAIN — reduces motion for the session when
 	// the user has not chosen explicitly; the config key always
 	// wins, and nothing is persisted silently.
 	// A screen reader implies the plain posture; the note says so
 	// instead of a separate branch that could never run (plainMode
 	// already includes the detection).
-	plainMode := *plain || os.Getenv("TILDE_PLAIN") != "" || config.ScreenReaderActive()
+	plainMode := *plain || os.Getenv("OPCODE_PLAIN") != "" || config.ScreenReaderActive()
 	if plainMode {
 		adapted := "--plain posture: ASCII glyphs"
 		if cfg.Animations == nil {
@@ -387,7 +387,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 			cfg.Animations = &off
 			adapted += ", animations off"
 		}
-		if !*plain && os.Getenv("TILDE_PLAIN") == "" {
+		if !*plain && os.Getenv("OPCODE_PLAIN") == "" {
 			adapted += " (screen reader detected; set \"animations\": true to override)"
 		}
 		startupNotes = append(startupNotes, adapted)
@@ -438,7 +438,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	saveSession := func() {
 		s := session.FromHistory(cfg.Model, cfg.PermissionMode, orch.History())
 		if err := s.Save(session.NewFile(userDir), redactor.Secrets()); err != nil {
-			fmt.Fprintf(os.Stderr, "tilde: could not save session: %v\n", err)
+			fmt.Fprintf(os.Stderr, "opcode: could not save session: %v\n", err)
 		}
 	}
 
@@ -533,7 +533,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 		Version:      buildVersion(),
 		UpdateTag:    updateStatus.Tag,
 		Cwd:          cwd,
-		TildeHome:    userDir,
+		OpcodeHome:   userDir,
 		ProviderName: providerName,
 		BaseURL:      providerCfg.BaseURL,
 		API:          providerCfg.API,
@@ -589,7 +589,7 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 	// The graceful exit: one line that says what happened (the
 	// session was saved), the way back in, and — when one is known —
 	// the pending update. Codex names itself in everything it shows;
-	// so does tilde. The update rides the last line of the session so
+	// so does opcode. The update rides the last line of the session so
 	// it is the thing a user reads after a long one.
 	if runErr == nil {
 		fmt.Println(goodbyeLine(updateStatus.Tag))
@@ -601,28 +601,28 @@ directory — see https://github.com/Chmgx81/tilde#quick-start
 // the pending update when there is one. Same tag the footer badge
 // showed, so nothing changes between the session and the shell.
 func goodbyeLine(updateTag string) string {
-	line := "~ tilde — session saved · resume it with /sessions"
+	line := "◈ opcode — session saved · resume it with /sessions"
 	if updateTag != "" {
-		line += " · update available: " + updateTag + " — run `tilde update`"
+		line += " · update available: " + updateTag + " — run `opcode update`"
 	}
 	return line
 }
 
-// versionLine is `tilde --version`: the version, plus the newer
-// release tilde has already seen. The phrasing matches the startup
+// versionLine is `opcode --version`: the version, plus the newer
+// release opcode has already seen. The phrasing matches the startup
 // note's, because a user comparing the two must not have to.
 func versionLine(current, updateTag string) string {
-	line := "tilde " + current
+	line := "opcode " + current
 	if updateTag != "" {
-		line += " (update available: " + updateTag + " — run `tilde update`)"
+		line += " (update available: " + updateTag + " — run `opcode update`)"
 	}
 	return line
 }
 
 // cachedUpdateTag is --version's update suffix, read from the
 // update-check cache only: --version must not block on a network
-// call, and `tilde update --check` is the explicit check. Every
-// failure — no tilde home, a malformed config, checks turned off, no
+// call, and `opcode update --check` is the explicit check. Every
+// failure — no opcode home, a malformed config, checks turned off, no
 // cache — reads as "nothing to say", so --version never fails over a
 // hint. A tag learned by a check that later failed is still real, so
 // it is shown; /doctor is where the freshness of the check is
@@ -643,7 +643,7 @@ func cachedUpdateTag() string {
 	return update.Pending(buildVersion(), c.Tag)
 }
 
-// runUpdate is the `tilde update` subcommand: check GitHub for a newer
+// runUpdate is the `opcode update` subcommand: check GitHub for a newer
 // release and, unless --check, replace this binary with it. It makes
 // network calls only because the user typed it.
 func runUpdate(args []string) error {
@@ -653,7 +653,7 @@ func runUpdate(args []string) error {
 	fs.SetOutput(io.Discard)
 	check := fs.Bool("check", false, "report whether a newer release exists; install nothing")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: tilde update [--check]
+		fmt.Fprint(os.Stderr, `Usage: opcode update [--check]
 
 Downloads the latest release from GitHub, verifies its sha256 against
 the release's checksums.txt, and replaces this binary.
@@ -726,7 +726,7 @@ const untrustedPreamble = "The text between the markers below was read from outs
 const untrustedSuffix = "\n----- end untrusted content -----"
 
 func systemPrompt(userDir, cwd string) string {
-	p := "You are tilde, a terminal-based coding agent. You are working in: " + cwd + "\n" +
+	p := "You are opcode, a terminal-based coding agent. You are working in: " + cwd + "\n" +
 		"Use the available tools to accomplish the user's request. Prefer the smallest set of\n" +
 		"actions that completes the task, and describe what you did when you finish.\n" +
 		"\n" +
@@ -737,7 +737,7 @@ func systemPrompt(userDir, cwd string) string {
 	// outside the conversation — `git clone` brings an AGENTS.md along
 	// with the code — so they arrive inside the fence rather than as
 	// bare system text. A user who wants their own file treated as
-	// first-class instructions can keep it in ~/.tilde/AGENTS.override.md.
+	// first-class instructions can keep it in ~/.opcode/AGENTS.override.md.
 	if ctx := config.AgentsContext(userDir, cwd); ctx != "" {
 		p += "\n\n" + untrustedPreamble + ctx + untrustedSuffix
 	}
@@ -751,10 +751,10 @@ func systemPrompt(userDir, cwd string) string {
 // paint escape codes into a pipe and die on /dev/tty).
 func checkLaunchMode(promptGiven bool, prompt string, stdinTTY, stdoutTTY bool) error {
 	if promptGiven && strings.TrimSpace(prompt) == "" {
-		return errors.New(`-p needs a prompt, e.g. tilde -p "explain this repo"`)
+		return errors.New(`-p needs a prompt, e.g. opcode -p "explain this repo"`)
 	}
 	if !promptGiven && !(stdinTTY && stdoutTTY) {
-		return errors.New(`the interactive UI needs a terminal; for scripts use tilde -p "prompt"`)
+		return errors.New(`the interactive UI needs a terminal; for scripts use opcode -p "prompt"`)
 	}
 	return nil
 }

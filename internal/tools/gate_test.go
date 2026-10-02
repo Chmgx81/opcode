@@ -123,7 +123,7 @@ func TestGateRedactsSecretsInAuditLog(t *testing.T) {
 // TestGateRedactsSecretInResult is the S1 boundary regression: the
 // orchestrator feeds Gate.Execute's return value to the model verbatim
 // (history and tool events), so a credential that reaches tool output —
-// the proven attack was `bash {"command":"cat ~/.tilde/auth.json"}` in
+// the proven attack was `bash {"command":"cat ~/.opcode/auth.json"}` in
 // build and full-auto, which the path-args deny cannot see — must come
 // back redacted from any tool in any mode. The audit log is redacted
 // as before.

@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // TestTypeAheadGuard: keys inside the guard window after a dialog
@@ -308,7 +308,7 @@ func TestAdaptGlyphs(t *testing.T) {
 // TestSanitizeTitle: control characters, bidi overrides, and
 // oversized titles never reach the terminal's OSC surface.
 func TestSanitizeTitle(t *testing.T) {
-	if got := sanitizeTitle("tilde — a\x07b\u202ec d\u009b"); got != "tilde — abc d" {
+	if got := sanitizeTitle("opcode — a\x07b\u202ec d\u009b"); got != "opcode — abc d" {
 		t.Errorf("sanitizeTitle = %q", got)
 	}
 	if got := sanitizeTitle(strings.Repeat("x", 300)); len([]rune(got)) != 240 {

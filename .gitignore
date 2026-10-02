@@ -1,7 +1,7 @@
 # built binary
-/tilde
+/opcode
 # the same binary from a windows build (`GOOS=windows go build`)
-/tilde.exe
+/opcode.exe
 
 # release artifacts (built by the release workflow, never committed)
 /dist/

@@ -1,5 +1,5 @@
 // Package headless drives the orchestrator without a TUI (Section 3.9):
-// `tilde -p "prompt"` runs one turn and prints the result. This is the
+// `opcode -p "prompt"` runs one turn and prints the result. This is the
 // same orchestrator the TUI drives — headless is a different consumer,
 // not a different agent.
 package headless
@@ -11,8 +11,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Chmgx81/tilde/internal/orchestrator"
-	"github.com/Chmgx81/tilde/internal/safe"
+	"github.com/Chmgx81/opcode/internal/orchestrator"
+	"github.com/Chmgx81/opcode/internal/safe"
 )
 
 // Options for a one-shot run.

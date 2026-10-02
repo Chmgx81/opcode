@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Chmgx81/tilde/internal/sandbox"
+	"github.com/Chmgx81/opcode/internal/sandbox"
 )
 
 // TestMain implements the re-exec child, the same pattern as the
@@ -50,7 +50,7 @@ func TestLooksLikeSandboxDenial(t *testing.T) {
 }
 
 // installSandbox wires the real Landlock runner for the package, the
-// same wiring cmd/tilde does, and un-wires it after the test.
+// same wiring cmd/opcode does, and un-wires it after the test.
 func installSandbox(t *testing.T) {
 	t.Helper()
 	if !sandbox.Supported() {
@@ -81,7 +81,7 @@ func TestSandboxDenialClassified(t *testing.T) {
 	if err != nil {
 		t.Skipf("no home directory: %v", err)
 	}
-	probeDir, err := os.MkdirTemp(home, ".tilde-test-probe-")
+	probeDir, err := os.MkdirTemp(home, ".opcode-test-probe-")
 	if err != nil {
 		t.Skipf("home directory %s is not writable, so there is no writable-but-outside-the-sandbox path to probe: %v", home, err)
 	}

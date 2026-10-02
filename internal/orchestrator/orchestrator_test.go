@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // fakeProvider replays scripted rounds of events and records every

@@ -1,8 +1,8 @@
-# Releasing tilde
+# Releasing opcode
 
 A release is a git tag. There is no version file to bump: the version is
 injected at build time (`-ldflags "-X main.version=<tag>"` in
-`.github/workflows/release.yml`; `var version` in `cmd/tilde/main.go`
+`.github/workflows/release.yml`; `var version` in `cmd/opcode/main.go`
 defaults to `(devel)` for source builds).
 
 ## Cut a release
@@ -26,7 +26,7 @@ defaults to `(devel)` for source builds).
 
 A tag with a hyphen (`v1.3.0-rc.1`) is published as a **prerelease**.
 GitHub never treats a prerelease as "latest", so `install.sh` and
-`tilde update` ignore it. Use one to rehearse the pipeline (then delete
+`opcode update` ignore it. Use one to rehearse the pipeline (then delete
 it, see below).
 
 The workflow does not check that the tag points at a commit on `main`.
@@ -39,10 +39,10 @@ Tag from an up-to-date `main`.
 | Job | Permissions | Does |
 |---|---|---|
 | `verify` | read | checks the tag is semver; `go vet`; `go test -race -count=1 ./...` |
-| `build` | read | needs `verify`; builds linux/darwin (amd64, arm64) and windows/amd64 with `CGO_ENABLED=0 -trimpath`, version = tag; packs `tilde-<os>-<arch>.tar.gz` (`.zip` on windows); writes `checksums.txt` for all five and re-checks it; extracts the linux-amd64 archive and asserts `--version` contains the tag; uploads the files as a workflow artifact |
+| `build` | read | needs `verify`; builds linux/darwin (amd64, arm64) and windows/amd64 with `CGO_ENABLED=0 -trimpath`, version = tag; packs `opcode-<os>-<arch>.tar.gz` (`.zip` on windows); writes `checksums.txt` for all five and re-checks it; extracts the linux-amd64 archive and asserts `--version` contains the tag; uploads the files as a workflow artifact |
 | `publish` | `contents: write` | needs `build`; creates the GitHub release (or, if it already exists, replaces its assets), marking prereleases |
 
-Each archive contains one binary: `tilde-<os>-<arch>` (`.exe` on
+Each archive contains one binary: `opcode-<os>-<arch>` (`.exe` on
 windows). Publishing uses the `gh` CLI that ships on the runner, so the
 only actions used are first-party `actions/*`.
 
@@ -53,7 +53,7 @@ release and delete it before re-running.
 
 ## Roll back a bad release
 
-Installers and `tilde update` both follow GitHub's `latest` release
+Installers and `opcode update` both follow GitHub's `latest` release
 (newest non-prerelease, non-draft).
 
 - **Stop new installs of it quickly:** edit the release and tick "Set as
@@ -63,30 +63,30 @@ Installers and `tilde update` both follow GitHub's `latest` release
   (`gh release delete v1.2.3 --cleanup-tag`, or delete both in the UI).
 - **Fix forward:** publish `v1.2.4`. Do not reuse a version number: a
   machine that already installed `v1.2.3` is not touched by any of the
-  above, and `tilde update` only moves to a *higher* version, never
+  above, and `opcode update` only moves to a *higher* version, never
   down. A higher patch release is the only thing that reaches those
   users.
 
 Users who need the old version back can pin it:
-`curl -fsSL .../install.sh | TILDE_VERSION=v1.2.2 bash`.
+`curl -fsSL .../install.sh | OPCODE_VERSION=v1.2.2 bash`.
 
-## `tilde update` and patch releases
+## `opcode update` and patch releases
 
-`tilde update` asks the GitHub API for `releases/latest`, compares that
+`opcode update` asks the GitHub API for `releases/latest`, compares that
 tag with the running binary's version by semver, and only proceeds when
 the release is strictly newer. It then downloads the archive and
 `checksums.txt` for the running platform, verifies the sha256 **before**
 extracting, and atomically replaces the binary. It runs only when the
 user types it; there is no background download.
 
-How users learn an update exists: at startup tilde compares the running
+How users learn an update exists: at startup opcode compares the running
 version against a cached latest tag (one small HTTPS GET, at most once
 a day, capped at three seconds because it blocks the first frame;
 silent when offline, retried hourly after a failure) and every
 surface names the same release:
 
 - one startup note in the transcript, in full:
-  `Update available: v1.0.0 → v1.1.0. Run \`tilde update\` to install it.`
+  `Update available: v1.0.0 → v1.1.0. Run \`opcode update\` to install it.`
 - a dim `↑ v1.1.0` badge on the footer mode line, which stays on
   screen for the whole session and survives the narrow-terminal
   reflow, so the note scrolling away is not the end of the signal
@@ -95,21 +95,21 @@ surface names the same release:
   (and that the check is off, that the build is not a release, or
   that no prebuilt binary exists for the platform) — the only place
   that reports a failure
-- `tilde --version`, which reads the cache only and never phones
-  home: it appends `(update available: v1.1.0 — run tilde update)`
+- `opcode --version`, which reads the cache only and never phones
+  home: it appends `(update available: v1.1.0 — run opcode update)`
 - the exit line, which appends
-  `· update available: v1.1.0 — run tilde update` to
-  `~ tilde — session saved · resume it with /sessions`
+  `· update available: v1.1.0 — run opcode update` to
+  `~ opcode — session saved · resume it with /sessions`
 
-`tilde update` is a shell command, not a slash command: it replaces
+`opcode update` is a shell command, not a slash command: it replaces
 the binary the TUI is running from. Typing `/update` in a session says
-so. `tilde update --check` reports immediately and refreshes the
+so. `opcode update --check` reports immediately and refreshes the
 cache. Opt out with `"update_checks": false` in config.json or
-`TILDE_NO_UPDATE_CHECK=1`.
+`OPCODE_NO_UPDATE_CHECK=1`.
 
 - Source builds (`(devel)`) and untagged `go install` builds
   (pseudo-versions such as `v0.2.1-0.2025...-abc123def456`) are not
-  release builds: `tilde update` says so and does nothing.
+  release builds: `opcode update` says so and does nothing.
 - A user on `v1.3.0-rc.1` is offered `v1.3.0` once it is published, not
   before (prereleases are never `latest`).
 - The API is called unauthenticated: 60 requests/hour per IP. A rate
@@ -121,7 +121,7 @@ cache. Opt out with `"update_checks": false` in config.json or
 
 ```sh
 # in a directory with the archive and checksums.txt from the release page
-grep " tilde-linux-amd64.tar.gz\$" checksums.txt | sha256sum -c -
+grep " opcode-linux-amd64.tar.gz\$" checksums.txt | sha256sum -c -
 # macOS: shasum -a 256 -c -
 ```
 

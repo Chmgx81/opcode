@@ -63,11 +63,11 @@ jobs:
           mkdir -p dist
           for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             os="${platform%/*}"; arch="${platform#*/}"
-            name="tilde-${os}-${arch}"
+            name="opcode-${os}-${arch}"
             if [ "$os" = "windows" ]; then name="${name}.exe"; fi
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build \
               -trimpath -ldflags="-s -w -X main.version=${TAG}" \
-              -o "dist/${name}" ./cmd/tilde
+              -o "dist/${name}" ./cmd/opcode
             if [ "$os" = "windows" ]; then
               (cd dist && zip -q "${name%.exe}.zip" "${name}" && rm "${name}")
             else
@@ -80,7 +80,7 @@ jobs:
           set -eu
           cd dist
           # One file covering every archive: the installer and
-          # `tilde update` fetch it and refuse a binary that does not match.
+          # `opcode update` fetch it and refuse a binary that does not match.
           sha256sum -- *.tar.gz *.zip > checksums.txt
           cat checksums.txt
           test "$(wc -l < checksums.txt)" -eq 5
@@ -92,8 +92,8 @@ jobs:
         run: |
           set -eu
           tmp="$(mktemp -d)"
-          tar -xzf dist/tilde-linux-amd64.tar.gz -C "$tmp"
-          out="$("$tmp/tilde-linux-amd64" --version)"
+          tar -xzf dist/opcode-linux-amd64.tar.gz -C "$tmp"
+          out="$("$tmp/opcode-linux-amd64" --version)"
           echo "--version printed: $out"
           case "$out" in
             *"$TAG"*) ;;

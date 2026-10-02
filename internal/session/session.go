@@ -1,4 +1,4 @@
-// Package session implements tilde's tree-structured session storage
+// Package session implements opcode's tree-structured session storage
 // (architecture doc Section 3.7): every message is a node with a
 // parent, rewinding and continuing creates a branch, and all branches
 // live in one JSON file. Credentials are redacted before anything is
@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Chmgx81/tilde/internal/config"
-	"github.com/Chmgx81/tilde/internal/llm"
-	"github.com/Chmgx81/tilde/internal/tools"
+	"github.com/Chmgx81/opcode/internal/config"
+	"github.com/Chmgx81/opcode/internal/llm"
+	"github.com/Chmgx81/opcode/internal/tools"
 )
 
 // Node is one message in the conversation tree.

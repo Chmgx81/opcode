@@ -10,12 +10,12 @@ import (
 	"testing"
 )
 
-// credEnv builds a TILDE_HOME holding a real auth.json and returns
+// credEnv builds a OPCODE_HOME holding a real auth.json and returns
 // the directory and the file.
 func credEnv(t *testing.T) (home, cred string) {
 	t.Helper()
 	home = t.TempDir()
-	t.Setenv("TILDE_HOME", home)
+	t.Setenv("OPCODE_HOME", home)
 	cred = filepath.Join(home, "auth.json")
 	if err := os.WriteFile(cred, []byte(`{"anthropic":"sk-secret-value"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -123,18 +123,18 @@ func TestCredentialsDeniedThroughLinks(t *testing.T) {
 		denyAll(t, "hard link", map[Tool]string{ReadFile{}: `{"path": ` + jsonQuote(link) + `}`})
 	})
 
-	// Real systems: /home -> /var/home (Fedora Atomic), a ~/.tilde
+	// Real systems: /home -> /var/home (Fedora Atomic), a ~/.opcode
 	// that is a symlink into a dotfiles repo.
 	t.Run("symlinked credentials dir, real path used", func(t *testing.T) {
 		real := t.TempDir()
 		if err := os.WriteFile(filepath.Join(real, "auth.json"), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		linked := filepath.Join(t.TempDir(), "dotfiles-tilde")
+		linked := filepath.Join(t.TempDir(), "dotfiles-opcode")
 		if err := os.Symlink(real, linked); err != nil {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
-		t.Setenv("TILDE_HOME", linked)
+		t.Setenv("OPCODE_HOME", linked)
 		denyAll(t, "real path", map[Tool]string{
 			ReadFile{}: `{"path": ` + jsonQuote(filepath.Join(real, "auth.json")) + `}`,
 		})
@@ -145,7 +145,7 @@ func TestCredentialsDeniedThroughLinks(t *testing.T) {
 
 	t.Run("file does not exist yet", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("TILDE_HOME", home)
+		t.Setenv("OPCODE_HOME", home)
 		cred := filepath.Join(home, "auth.json")
 		// A model-created credentials file is tampering too.
 		denyAll(t, "create", map[Tool]string{
@@ -219,13 +219,13 @@ func TestReadToolsRefuseCredentialsThemselves(t *testing.T) {
 	}
 }
 
-// The credentials file (~/.tilde/auth.json) must be unreachable by
+// The credentials file (~/.opcode/auth.json) must be unreachable by
 // every tool in every mode (audit S1): read-tier calls run free, so
 // without the deny the keys would ride straight into the model's
 // context.
 func TestCredentialsFileDenied(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TILDE_HOME", home)
+	t.Setenv("OPCODE_HOME", home)
 	cred := filepath.Join(home, "auth.json")
 	if err := os.WriteFile(cred, []byte(`{"anthropic":"sk-secret"}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ func TestCredentialsFileDenied(t *testing.T) {
 // is a read of auth.json.
 func TestCredentialsSymlinkDenied(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TILDE_HOME", home)
+	t.Setenv("OPCODE_HOME", home)
 	cred := filepath.Join(home, "auth.json")
 	if err := os.WriteFile(cred, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestCredentialsSymlinkDenied(t *testing.T) {
 // not to the whole home directory or the working tree.
 func TestCredentialsDenyScoped(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("TILDE_HOME", home)
+	t.Setenv("OPCODE_HOME", home)
 	decide := PolicyDecide(ModePlan, nil)
 	other := filepath.Join(home, "config.json")
 	if !decide(ReadFile{}, `{"path": `+jsonQuote(other)+`}`) {
@@ -272,10 +272,10 @@ func TestCredentialsDenyScoped(t *testing.T) {
 	if !decide(ReadFile{}, `{"path": "README.md"}`) {
 		t.Error("working-tree reads should stay free")
 	}
-	// list_dir on ~/.tilde shows the file exists — existence is not
+	// list_dir on ~/.opcode shows the file exists — existence is not
 	// the secret, contents are.
 	if !decide(ListDir{}, `{"path": `+jsonQuote(home)+`}`) {
-		t.Error("listing ~/.tilde should stay allowed")
+		t.Error("listing ~/.opcode should stay allowed")
 	}
 }
 

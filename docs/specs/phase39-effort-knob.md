@@ -2,10 +2,10 @@
 
 ## Goal
 
-The adoption doc's #5. Reasoning is tilde's most expensive dial: the
+The adoption doc's #5. Reasoning is opcode's most expensive dial: the
 same model with a big thinking budget can spend many times more
 tokens on the same question. Codex exposes that dial per turn
-(`model_reasoning_effort`, cycled with Alt+,/Alt+.). tilde gains the
+(`model_reasoning_effort`, cycled with Alt+,/Alt+.). opcode gains the
 same: a three-step effort (low / medium / high, plus unset = the
 provider's default), a config key, and the footer segment showing
 what is active.
@@ -15,10 +15,10 @@ what is active.
 - No per-turn persistence beyond the session: the knob is live state
   (like the permission mode), not written back to config.
 - No effort presets per model in models.json (Codex catalogs them
-  per model); tilde's three budgets are one honest mapping until a
+  per model); opcode's three budgets are one honest mapping until a
   real need appears.
 - No UI for Anthropic's exact token budgets: the names cycle; the
-  budget mapping is tilde's choice.
+  budget mapping is opcode's choice.
 
 ## Approach
 

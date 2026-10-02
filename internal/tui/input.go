@@ -4,7 +4,7 @@ package tui
 // outcome per path, so "why didn't my message send" is a value a
 // caller can read instead of behavior to reverse-engineer (the
 // adoption doc's #2: Codex's turn_input with NotSubmittedReasons,
-// at tilde's scale).
+// at opcode's scale).
 type inputDecision int
 
 const (

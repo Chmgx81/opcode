@@ -3,7 +3,7 @@
 > Extracted by a subagent audit of the Codex source tree. Companion
 > reports: [codex-tui-audit.md](codex-tui-audit.md),
 > [codex-features-audit.md](codex-features-audit.md), and the
-> tilde-focused synthesis in [codex-adoption.md](codex-adoption.md).
+> opcode-focused synthesis in [codex-adoption.md](codex-adoption.md).
 
 **Scope:** `codex-rs/core/src` + `codex-rs/protocol/src` (~275k lines incl. tests). The TOML config schema (`ConfigToml`) physically lives in the adjacent `codex-rs/config` crate but is loaded and enforced by `core/src/config`, so it is included and marked as such. This is a static audit: source and doc comments were read; nothing was executed or tested. Test files were only skimmed, so behavior claims come from implementation code and in-code documentation only. Where a mechanism lives in another crate (e.g. `codex-rollout`, `codex-login`, `codex-sandboxing`), the core-side file that wires it is cited and noted.
 

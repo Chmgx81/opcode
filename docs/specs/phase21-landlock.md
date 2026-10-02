@@ -33,7 +33,7 @@ kernel-enforced, unprivileged, no dependencies.
 **The Go constraint:** Landlock applies to the calling *thread*, and
 Go's runtime has several threads before `main`. Applying in-process
 would leave the other threads unrestricted. So the sandbox runs the
-command through a self re-exec: `tilde __sandbox <writable…> -- cmd`
+command through a self re-exec: `opcode __sandbox <writable…> -- cmd`
 starts a fresh, single-threaded child that applies the ruleset and
 immediately `execve`s the command. The window between restrict and
 exec runs only our own code; the exec'd process inherits the ruleset
@@ -64,7 +64,7 @@ commands run as before with a startup note saying so.
   result so the model reports it; the user can add roots later or
   disable the sandbox per-project.
 - The child dies with the parent (`Pdeathsig: SIGKILL`) so a
-  sandboxed command can't outlive tilde.
+  sandboxed command can't outlive opcode.
 
 ## Test plan
 

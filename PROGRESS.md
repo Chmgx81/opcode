@@ -1,6 +1,6 @@
 # PROGRESS.md — current state
 
-The running log of what tilde is, what is in flight, and what is
+The running log of what opcode is, what is in flight, and what is
 deliberately not done. The full chronological build log — every
 phase, what was verified live, what was not — is
 **[docs/progress-log.md](docs/progress-log.md)**. Read that for
@@ -15,9 +15,9 @@ trust.
 
 | | |
 |---|---|
-| Latest release | **v0.3.0** (2026-09-29) |
+| Latest release | **v0.4.0** (2026-10-02; v0.5.0 renames the project to opcode) |
 | Head | 15 Go packages (~16.6k lines non-test, 552 tests) |
-| Go | the `go` line of `go.mod`; CI installs exactly that |
+| Go | the `go` line of `go.mod` (1.25.13); CI installs exactly that |
 | Release platforms | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 |
 | Sandbox | Linux only (Landlock 5.13+; seccomp network block on x86_64) |
 
@@ -45,7 +45,7 @@ three permission modes, the Landlock+seccomp sandbox, skills, MCP,
 subagents, sessions with compaction, the provider catalog with a
 native Anthropic client, live model browsing, the display-boundary
 sanitizer, `/doctor`, `/theme`, `/diff`, LaTeX-as-Unicode, precise
-approval grants, the reasoning-effort dial, `tilde update` with
+approval grants, the reasoning-effort dial, `opcode update` with
 checksum verification, and the CI/release pipeline.
 
 ## In progress
@@ -99,7 +99,7 @@ Still open:
 
 Closed since the audits — do not reopen:
 
-- Installer checksum verification (`install.sh`, `tilde update`).
+- Installer checksum verification (`install.sh`, `opcode update`).
 - Clipboard tools resolved from an allowlist of system bin dirs, not
   `PATH`.
 - Bash timeouts and interrupts kill the whole process group.
@@ -116,7 +116,7 @@ None.
 | Question | File |
 |---|---|
 | How do I use it? | [README.md](README.md) |
-| How is it built? | [docs/specs/tilde-architecture.md](docs/specs/tilde-architecture.md) |
+| How is it built? | [docs/specs/opcode-architecture.md](docs/specs/opcode-architecture.md) |
 | What does the UI do? | [docs/specs/tui-spec.md](docs/specs/tui-spec.md) |
 | Why does it work this way? | [docs/specs/README.md](docs/specs/README.md) |
 | What is the threat model? | [SECURITY.md](SECURITY.md) |

@@ -270,9 +270,9 @@ func TestGlobFiles(t *testing.T) {
 
 func TestWebFetch(t *testing.T) {
 	// The fixture serves on loopback; the local-fetch guard is the
-	// user's explicit opt-in (TILDE_ALLOW_LOCAL_FETCH), and this test
+	// user's explicit opt-in (OPCODE_ALLOW_LOCAL_FETCH), and this test
 	// is that user.
-	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	t.Setenv("OPCODE_ALLOW_LOCAL_FETCH", "1")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/page":
@@ -350,7 +350,7 @@ func TestWebFetchPromptsInBuild(t *testing.T) {
 
 // TestWebFetchRefusesLocalTargets: the SSRF guard (audit S3) — the
 // model may not fetch the machine's own interfaces, and an external
-// redirect may not pivot there either. TILDE_ALLOW_LOCAL_FETCH is the
+// redirect may not pivot there either. OPCODE_ALLOW_LOCAL_FETCH is the
 // user's explicit opt-out of the guard.
 func TestWebFetchRefusesLocalTargets(t *testing.T) {
 	for _, raw := range []string{
@@ -369,7 +369,7 @@ func TestWebFetchRefusesLocalTargets(t *testing.T) {
 		}
 	}
 	// The user's explicit opt-in lifts the guard.
-	t.Setenv("TILDE_ALLOW_LOCAL_FETCH", "1")
+	t.Setenv("OPCODE_ALLOW_LOCAL_FETCH", "1")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("local fine"))
 	}))

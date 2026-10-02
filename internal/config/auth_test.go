@@ -8,9 +8,9 @@ import (
 )
 
 func TestResolverPrefersAuthFileOverEnv(t *testing.T) {
-	t.Setenv("TILDE_TEST_KEY", "env-key")
+	t.Setenv("OPCODE_TEST_KEY", "env-key")
 	auth := AuthConfig{"openrouter": "file-key"}
-	r := NewResolver(auth, ProviderConfig{APIKeyEnv: "TILDE_TEST_KEY"})
+	r := NewResolver(auth, ProviderConfig{APIKeyEnv: "OPCODE_TEST_KEY"})
 
 	key, ok, err := r.APIKey("openrouter")
 	if err != nil || !ok {
@@ -25,8 +25,8 @@ func TestResolverPrefersAuthFileOverEnv(t *testing.T) {
 }
 
 func TestResolverFallsBackToEnv(t *testing.T) {
-	t.Setenv("TILDE_TEST_KEY", "env-key")
-	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "TILDE_TEST_KEY"})
+	t.Setenv("OPCODE_TEST_KEY", "env-key")
+	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "OPCODE_TEST_KEY"})
 
 	key, ok, err := r.APIKey("openrouter")
 	if err != nil || !ok {
@@ -38,7 +38,7 @@ func TestResolverFallsBackToEnv(t *testing.T) {
 }
 
 func TestResolverNoKeyAnywhere(t *testing.T) {
-	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "TILDE_UNSET_VAR"})
+	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "OPCODE_UNSET_VAR"})
 	_, ok, err := r.APIKey("openrouter")
 	if err != nil {
 		t.Fatalf("APIKey: %v", err)
@@ -85,11 +85,11 @@ func TestResolverCachesCommandResult(t *testing.T) {
 }
 
 func TestResolverFailedCommandIsErrorNotFallback(t *testing.T) {
-	t.Setenv("TILDE_TEST_KEY", "env-key")
+	t.Setenv("OPCODE_TEST_KEY", "env-key")
 	// A failing secret-manager command must not silently fall back to a
 	// less secure source (Section 3.10).
 	auth := AuthConfig{"openrouter": "!printf ''"}
-	r := NewResolver(auth, ProviderConfig{APIKeyEnv: "TILDE_TEST_KEY"})
+	r := NewResolver(auth, ProviderConfig{APIKeyEnv: "OPCODE_TEST_KEY"})
 
 	_, ok, err := r.APIKey("openrouter")
 	if err == nil {
@@ -101,11 +101,11 @@ func TestResolverFailedCommandIsErrorNotFallback(t *testing.T) {
 }
 
 func TestResolverRefusesProjectLevelKey(t *testing.T) {
-	// A project .tilde/auth.json exists with a key. Resolution must not
+	// A project .opcode/auth.json exists with a key. Resolution must not
 	// use it: no auth loaded from user level, no env var, so there is no
 	// key — even though one is sitting right there in the project.
 	project := t.TempDir()
-	writeFile(t, filepath.Join(project, ".tilde", "auth.json"),
+	writeFile(t, filepath.Join(project, ".opcode", "auth.json"),
 		`{"openrouter": "project-key"}`, 0o600)
 
 	path, found := RefusesToLoad(project)
@@ -116,7 +116,7 @@ func TestResolverRefusesProjectLevelKey(t *testing.T) {
 		t.Errorf("reported path = %q", path)
 	}
 
-	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "TILDE_UNSET_VAR"})
+	r := NewResolver(AuthConfig{}, ProviderConfig{APIKeyEnv: "OPCODE_UNSET_VAR"})
 	key, ok, err := r.APIKey("openrouter")
 	if err != nil {
 		t.Fatalf("APIKey: %v", err)
