@@ -162,7 +162,7 @@ to the archive.
   is not flagged. `actions/dependency-review-action` on `pull_request`
   would do it; it is a third-party action, so it lands with the
   full-SHA pinning above rather than before.
-- **No coverage gate.** The suite is large (552 test functions) and
+- **No coverage gate.** The suite is large (573 test functions) and
   `go test -race -count=1 ./...` must be green, but nothing stops
   coverage from falling. A threshold needs a measured baseline first —
   pick a number from real data, not from a guess.

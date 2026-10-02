@@ -3397,3 +3397,18 @@ expanded content, in the overlay instead of the frozen bytes. The
 theme-repaint half is physics and stays documented: printed bytes
 belong to the terminal, and the pager is where old turns wear a
 new palette. `TestCtrlRKeepsTheFrozenPromises` holds both paths.
+
+# v0.6.0 tagged (2026-10-02)
+
+Phases 45–49 and the five live-found fixes, released as one story:
+the composer joins the box language every dialog speaks; the violet
+identity (teal kept as a theme); one selection language across
+every list; `/mode` as a picker with per-mode color; `/model` as the
+hub and the first-run journey continuous — key → models → pick; the
+context readout on the working line; and scrollback that scrolls —
+a finished turn commits the moment it ends, the trim marker names
+the pager, and ctrl+r keeps the frozen hints' promise.
+
+Local pre-flight for the tag: `go mod tidy` clean, `gofmt` empty,
+`go vet` clean, the full `-race` suite (15 packages, 573 tests),
+`scripts/test-install.sh` (48 checks), and the doc link check.
