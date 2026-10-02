@@ -580,7 +580,7 @@ func New(opt Options) *Model {
 		// anything.
 		m.entries = append(m.entries,
 			entry{kind: entryDim, text: "welcome to opcode — setup is three steps, all in this window:"},
-			entry{kind: entryDim, text: "  1. pick a provider below — each row says whether it needs a key"},
+			entry{kind: entryDim, text: "  1. pick a provider below — each row says whether it needs a key (esc closes it, /models reopens it)"},
 			entry{kind: entryDim, text: "  2. paste its API key when asked — masked on screen, stored 0600 in auth.json"},
 			entry{kind: entryDim, text: "  3. pick a model from the live list — the choice is remembered; /login and /model work any time"},
 			entry{kind: entryDim, text: ""})
