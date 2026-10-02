@@ -3027,3 +3027,34 @@ This is a build-floor change with a real cost: anyone building tilde from
 source now needs Go 1.25.13 or newer. That is the intended trade — a
 vulnerable dependency floor is not a floor. CI reads the version from
 `go.mod`, so every job, including the cross-builds, moves with it.
+
+## The macOS installer job: seq, of all things (2026-10-02)
+
+The macOS job failed on "fake release server did not start" with no
+Python error at all. The server was fine; the wait around it was not.
+
+Line 139 was `for _ in $(seq 1 50)`. `seq` is GNU coreutils, and macOS
+ships the BSD userland, where the command does not exist. Under `set -e`
+a command substitution that fails inside a `for` list prints "command not
+found" and then runs the loop body zero times, so the script checked for
+the port file with no wait, found nothing, and reported the server as
+broken. The message pointed at the wrong thing entirely.
+
+Replaced with a POSIX `while` counter, so the script waits on every
+platform. The failure branch now also prints the port file's path and
+whatever the server wrote to stderr, because "did not start" is not an
+actionable message and that is what made this slow to find.
+
+Verified by reproducing the macOS condition on Linux: with a PATH that
+omits `seq`, the old script fails with exactly the message CI reported
+and the new one passes 48/48. `install.sh` itself was checked for the
+same class of bug and is clean. Both scripts pass shellcheck.
+
+Also in this pass: history cleanup. Seven `diag:` commits and a
+`scripts/diag-server.sh` had been pushed to main while chasing this
+(several of those diagnostic attempts were themselves broken — bad YAML
+quoting, and a `timeout` that does not exist on macOS). They were
+dropped from history and the temporary script and CI step deleted, so
+main carries only the three real fix commits. The code was re-verified
+after the rewrite: gofmt, vet, the full race suite, the installer test,
+and the doc-link check all pass.

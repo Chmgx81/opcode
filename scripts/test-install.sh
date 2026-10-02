@@ -136,8 +136,23 @@ PY
 
 python3 "$work/server.py" "$S" "$TAG" "$work/port" &
 server_pid=$!
-for _ in $(seq 1 50); do [ -s "$work/port" ] && break; sleep 0.1; done
-[ -s "$work/port" ] || { echo "test-install: fake release server did not start" >&2; exit 2; }
+# A POSIX counter, not `seq`: seq is GNU coreutils and macOS ships the BSD
+# userland, where the command does not exist. The shell prints "command not
+# found" into a loop that then runs zero times, so the wait passes instantly
+# and the check below reports "server did not start" with no hint at the real
+# cause — the failure this script's own macOS job hit.
+i=0
+while [ "$i" -lt 50 ]; do
+  [ -s "$work/port" ] && break
+  i=$((i + 1))
+  sleep 0.1
+done
+if [ ! -s "$work/port" ]; then
+  echo "test-install: fake release server did not start (port file $work/port)" >&2
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>&1 | sed 's/^/test-install: server said: /' >&2 || true
+  exit 2
+fi
 BASE="http://127.0.0.1:$(cat "$work/port")"
 
 # ---- harness -------------------------------------------------------------
