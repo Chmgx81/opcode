@@ -9,7 +9,7 @@
 
 **A terminal coding agent, in one Go binary.**
 Reads and writes files, runs commands, streams markdown — under your
-permission system, not around it. Docs: **https://chmgx81.github.io/opcode/**
+permission system, not around it.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash

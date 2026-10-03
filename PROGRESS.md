@@ -59,71 +59,21 @@ with the key pre-flight before the request
 
 ## In progress
 
-**Website and docs redesign** (`site/`, uncommitted).
-Spec: [docs/specs/site-redesign.md](docs/specs/site-redesign.md),
-which maps each of the 30 "vibe-coded" tells to its treatment.
+**Nothing.** The website was removed from this repository on request:
+`site/`, the Pages workflow (`.github/workflows/site.yml`), the
+figure-capture rig (`scripts/site-demo/`) and the site spec
+(`docs/specs/site-redesign.md`) are all deleted, along with the docs
+link in `README.md`. The terminal agent is unaffected — it never
+depended on any of it, and `ci.yml` never touched `site/`.
 
-- Done: the editorial-paper direction is built and `npm run build`
-  passes. Warm paper ground, Source Serif 4 + IBM Plex Mono, hairline
-  rules, numbered sections, one ink band. Radius forced to 0, no
-  shadows, blur or gradients anywhere. Lucide, motion,
-  react-wrap-balancer, radix-slot and cva removed from the
-  dependencies; Inter/Geist/Space Grotesk gone.
-- Done: five real captures recorded from a `v0.6.0` build through a
-  PTY against a scripted local provider, in `scripts/site-demo/`.
-  The files in `site/src/content/` are byte-identical to
-  `scripts/site-demo/out/` (md5-checked).
-- Done: `/privacy` and `/terms` exist and are linked from the footer.
-  The masthead release badge is a live GitHub fetch with a skeleton
-  loading state, an offline fallback and an accessible label.
-- Done: verified in headless Chromium across 10 routes x 4 viewports
-  (1440/1024/768/360): no horizontal overflow, no forbidden font in
-  any computed `font-family`, no non-zero `border-radius`, no
-  `box-shadow`/`text-shadow`/`backdrop-filter`, no console or page
-  errors. 40/40 clean. Two overflow bugs found and fixed this way
-  (grid children defaulting to `min-width: auto`, and the install row
-  refusing to shrink below the command's min-content).
-- Done: contrast computed for every token pair; all clear WCAG AA.
-  `ink-3` was darkened `#64696f` → `#5d6268` because it landed at
-  4.44 on `paper-2`. Copy button, mobile menu, FAQ rows and the
-  release badge's three states all exercised in the browser.
-- Done: **dark theme and the toggle.** Ground and every step re-picked
-  for charcoal (`#191b20`), accent lifted to `#e07a55`. The inverted
-  plate carries its own six `band-*` tokens in both themes: in light it
-  is the deep near-black, in dark it is *raised* above the ground, so
-  the edge stays legible instead of either glaring or vanishing. That
-  work also fixed a **pre-existing AA failure** — the footer and
-  section 04 used `text-paper/45`, which measures 4.08 against the
-  plate; now `text-band-dim` at 5.20. One bordered `menu`-style
-  control names the mode it switches to, records the choice in
-  `localStorage`, follows the system preference until told otherwise,
-  and a pre-paint inline script in `index.html` sets `data-theme`
-  before anything renders.
-- Done: re-audited in **both** themes — 9 routes x 4 viewports x 2
-  themes = 72 runs clean, with contrast now computed **per element**
-  against its own alpha-composited background rather than per token
-  pair. Fifteen interaction checks on the control pass, including
-  keyboard operation, choice persistence against the opposite OS
-  preference, blocked `localStorage`, and a no-flash check that blocks
-  the JS bundle entirely so only the HTML script is left to prove the
-  ground is painted right the first time.
-- Done: visual review. The reviewer tool returns stale or mismatched
-  files independent of path, so each capture carries a magenta banner
-  with its **measured** state burned in, and was trusted only when the
-  banner matched the request. Thirteen views confirmed by eye: `/` and
-  `/docs/` at 1440 in both themes, the section 04 plate and footer in
-  both themes, `/privacy` and `/terms` at 1440, and `/` at 768 and 360
-  light plus 360 dark.
-- Not covered: nobody has looked at these pages in a real browser on a
-  real display, and the keyboard path through the whole page (beyond
-  the theme control) has not been walked by hand. The automated checks
-  judge whether the design obeys its own rules, not whether it is good.
+The last deployed build of the site is still being served by GitHub
+Pages at the old URL. Deleting the source stops future deploys;
+unpublishing needs Pages disabled in the repository settings.
 
 ## Next
 
-- Commit the site redesign and push; the design work in the deferred
-  list follows, which is deliberately a queue of judgement calls rather
-  than a backlog.
+- The design judgement calls in the deferred list follow; that list is
+  deliberately a queue of judgement calls rather than a backlog.
 
 ## Deferred (re-checked against the code, not copied from an old log)
 
