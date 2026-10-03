@@ -1,0 +1,9 @@
+# Map the identity this repository was originally committed under onto the
+# account that owns it, so `git log` shows the same author as the GitHub
+# contributor list. The commits themselves were rewritten to carry the address
+# directly; this file exists for anyone still holding a clone from before that,
+# and for any commit that reappears from a backup or a rebase.
+#
+# The old value is not a real address, which is why GitHub credited nothing to
+# the account until the history was rewritten.
+chmgx81@localhost Chmgx81 <217344039+Chmgx81@users.noreply.github.com>
