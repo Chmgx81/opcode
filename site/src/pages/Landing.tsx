@@ -1,61 +1,110 @@
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
 
-import ModernLandingHero from "@/components/ui/modern-landing-hero";
-import { Reveal, SectionHeader, Chip, Terminal } from "@/components/ui/primitives";
+import { cn } from "@/lib/utils";
+import { Figure, Install, Ruled, Section } from "@/components/ui/primitives";
+import approval from "@/content/approval.txt?raw";
+import diff from "@/content/diff.txt?raw";
+import firstRun from "@/content/first-run.txt?raw";
+import headless from "@/content/headless.jsonl?raw";
 
-const metrics = [
-  { value: "15", label: "providers built in — switched live" },
+const INSTALL = "curl -fsSL https://raw.githubusercontent.com/Chmgx81/opcode/main/install.sh | bash";
+
+const facts = [
+  { value: "15", label: "providers built in, switched live" },
   { value: "579", label: "tests, green under -race" },
-  { value: "5", label: "platforms per release" },
+  { value: "5", label: "platforms in every release" },
   { value: "0", label: "telemetry, accounts, subscriptions" },
 ];
 
-const turn = [
-  { span: "read_file", file: "internal/tui/view.go", start: "0.0s", dur: "0.2s", left: 0, width: 2, active: false },
-  { span: "edit_file", file: "internal/tui/view.go", start: "0.3s", dur: "1.1s", left: 2, width: 8, active: false },
-  { span: "bash", file: "go test ./internal/tui/", start: "1.6s", dur: "4.2s", left: 11, width: 30, active: false },
-  { span: "model", file: "streaming the answer", start: "6.1s", dur: "8.0s", left: 43, width: 57, active: true },
+const capabilities: [string, string][] = [
+  [
+    "sandbox",
+    "Shell commands run under a Landlock ruleset on Linux: reads anywhere, writes confined to the project, /tmp and dev caches, network sockets blocked. The kernel enforces it, not opcode.",
+  ],
+  [
+    "providers",
+    "Fifteen built in, switched live with /model. Keys are held in auth.json at 0600 or read from the environment, and never loaded out of a project directory.",
+  ],
+  [
+    "modes",
+    "plan, build and full-auto, cycled with tab. Each is a different answer to one question: what is allowed to run without asking.",
+  ],
+  [
+    "sessions",
+    "The session file rewrites atomically at every turn boundary, so a crash costs you the turn in flight and nothing else. --continue picks up the newest.",
+  ],
+  [
+    "subagents",
+    "A second agent with a bounded scope, round caps and a watchdog, running under the same permission gate and unable to recurse.",
+  ],
+  [
+    "headless",
+    "-p runs a single turn with no UI. --json writes one event object per line. When there is nobody to answer a prompt, permissions fail closed.",
+  ],
 ];
 
-const modes = [
-  { chip: "plan", tone: "ok" as const, desc: "Read-only tools; every write, command, or fetch proposes a plan you approve." },
-  { chip: "build", tone: "blue" as const, desc: "Sandboxed commands and in-tree writes run free; anything else asks." },
-  { chip: "full-auto", tone: "lite" as const, desc: "Everything proceeds without asking — the sandbox still confines writes." },
+const safety: [string, string][] = [
+  [
+    "landlock",
+    "Every command runs under a hand-written ruleset. If any rule cannot be applied, the command does not run.",
+  ],
+  [
+    "seccomp",
+    "On x86_64 a filter blocks network sockets inside the sandbox, so a spawned process cannot phone home.",
+  ],
+  [
+    "gate",
+    "The approval dialog shows the literal command, preselects nothing, and canonicalises every always-allow so a grant can never grow wider than what you saw.",
+  ],
+  [
+    "secrets",
+    "Keys are registered with a redactor that scrubs them from tool output, errors, the audit log and saved sessions.",
+  ],
 ];
 
-const faqs = [
-  { q: "Do I need an account or a subscription?", a: "No. opcode talks to your provider with your key. There is nothing to sign up for and nothing to pay us — you pay your provider, as always." },
-  { q: "Does it phone home?", a: "One update check at startup (at most daily, three-second cap, silent when offline) compares the running version against the latest release tag. OPCODE_NO_UPDATE_CHECK=1 or \"update_checks\": false turns it off. That is the only request opcode makes on its own." },
-  { q: "What happens if the model tries to run something dangerous?", a: "In build mode (the default), sandboxed commands and in-tree writes run free; anything touching outside the project opens a permission dialog showing the literal command. Nothing is preselected, and grants are never wider than what the dialog showed." },
-  { q: "Which platforms?", a: "Linux, macOS, and Windows binaries for every release. The kernel sandbox is Linux-only (Landlock 5.13+); elsewhere the file confinement applies and commands are gated by prompts." },
-  { q: "Can I use it in CI or scripts?", a: "Yes — opcode -p \"prompt\" runs one headless turn; --json emits one JSON event per line. Use full-auto for unattended runs; permissions fail closed with nobody to ask." },
-  { q: "Where do my sessions and keys live?", a: "~/.opcode/ — sessions in sessions/, keys in auth.json (0600), config in config.json. Nothing is written to a project directory except the work you asked for." },
+const providers: [string, string, string][] = [
+  ["openrouter", "openrouter.ai/api/v1", "OPENROUTER_API_KEY"],
+  ["anthropic", "Messages API, native client", "ANTHROPIC_API_KEY"],
+  ["openai", "api.openai.com/v1", "OPENAI_API_KEY"],
+  ["mistral", "api.mistral.ai/v1", "MISTRAL_API_KEY"],
+  ["google", "Gemini, OpenAI-compatible", "GEMINI_API_KEY"],
+  ["nvidia", "integrate.api.nvidia.com/v1", "NVIDIA_API_KEY"],
+  ["groq, deepseek, together, cerebras, xai, moonshot, fireworks, qwen", "OpenAI-compatible", "<NAME>_API_KEY"],
+  ["ollama", "localhost:11434", "none"],
 ];
 
-const tiles = [
-  "Kernel sandbox",
-  "Live model lists",
-  "Syntax-highlighted diffs",
-  "Todo panel",
-  "@ file mentions",
-  "Clipboard images",
-  "Shell mode (!)",
-  "Markdown streaming",
-  "Transcript pager",
-  "Compaction",
-  "Prompt history",
-  "Four themes",
-  "Screen-reader posture",
-  "MCP servers",
-  "Skills system",
-  "/doctor",
+const faqs: [string, string][] = [
+  [
+    "Do I need an account or a subscription?",
+    "No. opcode talks to your provider with your key. There is nothing to sign up for and nothing to pay us: you pay your provider, as you always have.",
+  ],
+  [
+    "Does it phone home?",
+    "One update check at startup, at most daily, with a three-second cap and silent when offline, compares the running version against the latest release tag. OPCODE_NO_UPDATE_CHECK=1, or \"update_checks\": false, turns it off. That is the only request opcode makes on its own.",
+  ],
+  [
+    "What happens when the model tries to run something dangerous?",
+    "In build mode, the default, sandboxed commands and in-tree writes run freely. Anything touching outside the project opens a permission dialog showing the literal command, with nothing preselected. A grant is never wider than what the dialog showed.",
+  ],
+  [
+    "Which platforms?",
+    "Linux, macOS and Windows binaries for every release. The kernel sandbox is Linux-only, on Landlock 5.13 and newer. Elsewhere the file confinement still applies and commands are gated by prompts.",
+  ],
+  [
+    "Can I use it in CI or scripts?",
+    "Yes. opcode -p \"prompt\" runs one headless turn, and --json emits one JSON event per line. Use full-auto for unattended runs, because permissions fail closed when there is nobody to ask.",
+  ],
+  [
+    "Where do my sessions and keys live?",
+    "In ~/.opcode/: sessions in sessions/, keys in auth.json at 0600, configuration in config.json. Nothing is written into a project directory except the work you asked for.",
+  ],
 ];
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Spec({ term, children }: { term: string; children: React.ReactNode }) {
   return (
-    <div className={`rounded-xl border border-white/[0.08] bg-white/[0.02] p-6 transition-colors hover:border-white/[0.16] ${className}`}>
-      {children}
+    <div className="border-t border-rule pt-4">
+      <dt className="label text-accent">{term}</dt>
+      <dd className="mt-2 text-[0.9375rem] leading-relaxed text-ink-2">{children}</dd>
     </div>
   );
 }
@@ -63,287 +112,293 @@ function Card({ children, className = "" }: { children: React.ReactNode; classNa
 export default function Landing() {
   return (
     <>
-      <ModernLandingHero />
+      {/* LEAD */}
+      <section className="border-b border-rule">
+        <div className="mx-auto max-w-6xl px-6 pt-14 pb-16 md:pt-20 md:pb-20">
+          <p className="label text-accent">Terminal coding agent · one Go binary · MIT</p>
 
-      {/* METRICS */}
-      <section className="mx-auto max-w-6xl px-6 pt-24">
-        <Reveal className="grid grid-cols-2 divide-x divide-white/[0.08] border border-white/[0.08] text-center md:grid-cols-4">
-          {metrics.map((m, i) => (
-            <div key={m.label} className={`p-7 ${i > 1 ? "max-md:border-t max-md:border-white/[0.08]" : ""}`}>
-              <p className="font-mono text-5xl leading-none tracking-[-0.06em] text-white">{m.value}</p>
-              <p className="mt-4 font-mono text-[12px] leading-relaxed text-neutral-500">{m.label}</p>
+          <div className="mt-6 grid gap-x-12 gap-y-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+            <h1 className="text-[clamp(2.5rem,6.2vw,4.75rem)] font-semibold leading-[1.02] tracking-[-0.03em] text-balance">
+              Reads the repo.
+              <br />
+              Writes the code.
+              <br />
+              <span className="text-ink-3">Asks before it acts.</span>
+            </h1>
+            <div className="lg:pt-3">
+              <p className="max-w-[46ch] text-[1.125rem] leading-[1.65] text-ink-2">
+                opcode is a coding agent that lives in your terminal. Fifteen providers, a kernel
+                sandbox, three permission modes, subagents, and sessions that survive a crash.
+              </p>
+              <p className="mt-4 max-w-[46ch] text-[1.125rem] leading-[1.65] text-ink-2">
+                One binary, on your machine, with your key.
+              </p>
             </div>
-          ))}
-        </Reveal>
+          </div>
+
+          <div className="mt-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-8">
+            <Install cmd={INSTALL} />
+            <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3">
+              <Link
+                to="/docs"
+                className="label inline-flex items-center bg-ink px-5 py-3 text-paper hover:bg-accent"
+              >
+                Read the documentation
+              </Link>
+              <a
+                href="https://github.com/Chmgx81/opcode"
+                className="label text-ink-2 underline decoration-accent decoration-1 underline-offset-4 hover:text-accent"
+              >
+                Source on GitHub
+              </a>
+            </div>
+          </div>
+
+          <p className="mono mt-6 text-[0.8125rem] text-ink-3">
+            linux, macos, windows
+            <span className="mx-2 text-rule-2">/</span>
+            no account, no telemetry
+            <span className="mx-2 text-rule-2">/</span>
+            MIT licensed
+          </p>
+
+          <Figure
+            fig="Fig. 1"
+            title="A real session asking permission before a command leaves the project. Nothing is preselected, and the default answer is No."
+            source="the v0.6.0 release build"
+          >
+            {approval}
+          </Figure>
+        </div>
       </section>
 
-      {/* EVENT STREAM */}
-      <section id="turn" className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader
-          kicker="Event stream"
-          title="The anatomy of a turn."
-          lede="Every tool call is a span you can read — what ran, when it started, how long it took. Sandbox denials name themselves; interrupts keep the evidence."
+      {/* FACTS */}
+      <section className="border-b border-rule bg-paper-2">
+        <div className="mx-auto max-w-6xl px-6">
+          <dl className="grid grid-cols-2 md:grid-cols-4">
+            {facts.map((f, i) => (
+              <div
+                key={f.label}
+                className={cn(
+                  "py-7 md:py-8",
+                  i % 2 === 0 ? "pr-6" : "border-l border-rule pl-6",
+                  i >= 2 && "border-t border-rule md:border-t-0",
+                  i === 2 && "md:border-l md:border-rule md:pl-6",
+                )}
+              >
+                <dt className="mono text-[clamp(1.75rem,3.5vw,2.5rem)] leading-none tracking-[-0.04em] text-ink">
+                  {f.value}
+                </dt>
+                <dd className="mt-3 max-w-[22ch] text-[0.8125rem] leading-snug text-ink-3">{f.label}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      {/* 01 CAPABILITIES */}
+      <Section
+        id="capabilities"
+        n="01"
+        title="What is in the binary."
+        lede="Six things it does today. Each one is in the source, and each claim on this page is checked against it."
+      >
+        <dl className="grid gap-x-12 gap-y-7 sm:grid-cols-2">
+          {capabilities.map(([term, body]) => (
+            <Spec key={term} term={term}>
+              {body}
+            </Spec>
+          ))}
+        </dl>
+      </Section>
+
+      {/* 02 FIRST RUN */}
+      <Section
+        n="02"
+        title="No config file to write."
+        lede="Run opcode in a project directory. The interface is the setup: pick a provider, paste its key, pick a model from the list it fetches live."
+        tone="recessed"
+      >
+        <p className="max-w-[62ch] text-[1.0625rem] leading-relaxed text-ink-2">
+          The key is masked as you type, stored 0600 in auth.json, and the provider and model are
+          remembered for next launch. Sending with no key for the active provider is refused before
+          the request goes out, so a doomed round is never billed.
+        </p>
+        <Figure
+          fig="Fig. 2"
+          title="First run in an empty config directory. Three steps, all inside the window."
+          source="the v0.6.0 release build"
+        >
+          {firstRun}
+        </Figure>
+      </Section>
+
+      {/* 03 MODES */}
+      <Section
+        id="modes"
+        n="03"
+        title="Three modes, cycled with tab."
+        lede="The mode is the only thing that decides what may run without asking."
+      >
+        <Ruled
+          head={["Mode", "What runs without asking"]}
+          rows={[
+            ["plan", "Read-only tools. Every write, command or fetch becomes a plan you approve."],
+            ["build (default)", "Sandboxed commands and in-tree writes. Anything else asks."],
+            [
+              "full-auto",
+              "Everything, with the sandbox still confining writes to the project, /tmp and dev caches.",
+            ],
+          ]}
         />
-        <Reveal className="mt-10 overflow-hidden rounded-xl border border-white/[0.08]">
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-white/[0.08] bg-white/[0.02] px-5 py-4">
-            <span className="font-mono text-[13px] text-neutral-300">
-              trace <span className="text-neutral-500">turn-8f3a</span>
-            </span>
-            <Chip tone="ok">complete</Chip>
-            <Chip>14.2s</Chip>
-            <Chip tone="blue">sandbox on</Chip>
-          </div>
-          <div className="grid md:grid-cols-[240px_1fr]">
-            <div className="flex gap-5 overflow-x-auto border-b border-white/[0.08] p-4 font-mono text-[13px] md:flex-col md:gap-3 md:border-b-0 md:border-r">
-              {turn.map((t) => (
-                <span key={t.span} className="flex items-center gap-2 whitespace-nowrap">
-                  <span className={`h-1.5 w-1.5 rounded-full ${t.active ? "bg-[#52a8ff]" : "bg-[#62c073]"}`} />
-                  <span className="text-neutral-400">{t.span}</span>
-                </span>
-              ))}
+        <p className="mt-6 max-w-[62ch] text-[1.0625rem] leading-relaxed text-ink-2">
+          When something asks, the dialog shows the literal command and offers a scoped
+          always-allow. Prefix rules fail closed on shell metacharacters, and grants are
+          canonicalised so they can never be broader than the dialog you approved.
+        </p>
+      </Section>
+
+      {/* 04 SAFETY, on ink */}
+      <Section
+        id="safety"
+        n="04"
+        title="A sandbox you can read."
+        lede="Enforced below the process, by the kernel, and closed by default when something cannot be enforced."
+        tone="ink"
+      >
+        <dl className="grid gap-x-12 gap-y-7 sm:grid-cols-2">
+          {safety.map(([term, body]) => (
+            <div key={term} className="border-t border-band-rule pt-4">
+              <dt className="label text-band-dim">{term}</dt>
+              <dd className="mt-2 text-[0.9375rem] leading-relaxed text-band-mid">{body}</dd>
             </div>
-            <table className="w-full font-mono text-[13px]">
-              <thead>
-                <tr className="text-left">
-                  <th className="px-5 py-3 text-[11px] uppercase tracking-wider text-neutral-600">span</th>
-                  <th className="hidden px-5 py-3 text-[11px] uppercase tracking-wider text-neutral-600 sm:table-cell">start</th>
-                  <th className="px-5 py-3 text-[11px] uppercase tracking-wider text-neutral-600">duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {turn.map((t) => (
-                  <tr key={t.span} className="border-t border-white/[0.06] hover:bg-white/[0.02]">
-                    <td className="px-5 py-3.5">
-                      <span className="text-neutral-200">{t.span}</span>
-                      <span className="text-neutral-600"> {t.file}</span>
-                    </td>
-                    <td className="hidden px-5 py-3.5 text-neutral-500 sm:table-cell">{t.start}</td>
-                    <td className="w-[45%] px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="relative h-1.5 w-full">
-                          <div
-                            className={`absolute top-0 h-full rounded-sm ${t.active ? "bg-[#52a8ff]" : "bg-white/[0.18]"}`}
-                            style={{ left: `${t.left}%`, width: `${t.width}%` }}
-                          />
-                        </div>
-                        <span className="whitespace-nowrap text-neutral-500">{t.dur}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Reveal>
-      </section>
-
-      {/* BENTO */}
-      <section id="features" className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader kicker="Features" title="Plan the work. Delegate it. Watch it land." />
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          <Reveal>
-            <Card className="flex h-full flex-col">
-              <Chip tone="blue">plan mode</Chip>
-              <h3 className="mt-4 text-lg font-medium text-white">Research first, act on approval</h3>
-              <p className="mt-2 text-sm leading-relaxed text-neutral-400">
-                The agent works read-only until a change is warranted; then it presents a plan and waits.{" "}
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[12px] text-neutral-200">y</code> implements with every action still asking,{" "}
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[12px] text-neutral-200">a</code> with auto-accept.
-              </p>
-              <div className="mt-6 flex flex-col gap-2.5 border-t border-white/[0.08] pt-4 font-mono text-[12px]">
-                <div className="flex items-center justify-between gap-3"><span className="truncate text-neutral-400">explore internal/tui</span><Chip tone="ok">done</Chip></div>
-                <div className="flex items-center justify-between gap-3"><span className="truncate text-neutral-400">draft the picker extraction</span><Chip tone="blue">active</Chip></div>
-                <div className="flex items-center justify-between gap-3"><span className="truncate text-neutral-400">update the call sites</span><Chip>pending</Chip></div>
-              </div>
-            </Card>
-          </Reveal>
-          <Reveal delay={0.05}>
-            <Card className="flex h-full flex-col">
-              <Chip tone="ok">subagents</Chip>
-              <h3 className="mt-4 text-lg font-medium text-white">A second agent, a bounded scope</h3>
-              <p className="mt-2 text-sm leading-relaxed text-neutral-400">
-                A focused task runs in a second agent under the same permission gate — bounded by round caps and a watchdog, inheriting cancellation, unable to recurse.
-              </p>
-              <div className="mt-6 flex flex-col gap-3 border-t border-white/[0.08] pt-4 font-mono text-[12px]">
-                <div className="flex items-center gap-3"><span className="w-16 text-neutral-400">reviewer</span><div className="h-1.5 bg-[#52a8ff]" style={{ width: "72%" }} /><span className="ml-auto text-neutral-600">2m06s</span></div>
-                <div className="flex items-center gap-3"><span className="w-16 text-neutral-400">tests</span><div className="h-1.5 bg-[#62c073]" style={{ width: "38%" }} /><span className="ml-auto text-neutral-600">48s</span></div>
-                <div className="flex items-center gap-3"><span className="w-16 text-neutral-400">docs</span><div className="h-1.5 bg-white/40" style={{ width: "14%" }} /><span className="ml-auto text-neutral-600">12s</span></div>
-              </div>
-            </Card>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <Card className="flex h-full flex-col">
-              <Chip>the diff</Chip>
-              <h3 className="mt-4 text-lg font-medium text-white">See the change before it lands</h3>
-              <p className="mt-2 text-sm leading-relaxed text-neutral-400">
-                Writes render as syntax-highlighted diffs before they are part of the tree. Expand any result with{" "}
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[12px] text-neutral-200">ctrl+r</code>.
-              </p>
-              <div className="mt-6 border-t border-white/[0.08] pt-4 font-mono text-[12px] leading-[2]">
-                <div className="border-l-2 border-[#62c073] bg-[#62c073]/[0.06] pl-3 text-[#62c073]">+ func menuRow(selected bool, label, detail string, w int)</div>
-                <div className="pl-3 text-neutral-600">  const gutter = 14</div>
-                <div className="border-l-2 border-[#52a8ff] bg-[#52a8ff]/[0.06] pl-3 text-[#52a8ff]">~ return selectedStyle.Width(inner).Render(row)</div>
-              </div>
-            </Card>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ZIGZAG */}
-      <section className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader kicker="In practice" title="Nothing runs on faith." />
-        <div className="mt-14 flex flex-col gap-16 md:gap-20">
-          <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
-            <Reveal>
-              <Chip tone="blue">permission gate</Chip>
-              <h3 className="mt-4 text-[26px] font-medium tracking-tight text-white">The literal command, and No preselected.</h3>
-              <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-400">
-                An action outside the mode's bounds opens a dialog that shows exactly what will run. The dangerous answer is never the default, and grants are canonicalized — never wider than what the dialog showed.
-              </p>
-            </Reveal>
-            <Reveal>
-              <Terminal title="opcode — approval">
-                <div><span className="t-bold">Bash command</span> <span className="t-sub">· Runs a command</span></div>
-                <div className="t-body mt-2">npm init -y</div>
-                <div className="t-sub">opcode needs your approval to run this.</div>
-                <div className="mt-2">  1. Yes</div>
-                <div><span className="t-sub">  2. Yes, and don't ask again for: </span><span className="t-body">npm init:*</span></div>
-                <div><span className="t-acc">❯ 3. No</span></div>
-                <div className="t-dim mt-2">1-3 or arrows to choose · enter selects · esc</div>
-              </Terminal>
-            </Reveal>
-          </div>
-
-          <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
-            <Reveal className="lg:order-2">
-              <Chip tone="ok">sessions</Chip>
-              <h3 className="mt-4 text-[26px] font-medium tracking-tight text-white">A crash loses one turn, not the conversation.</h3>
-              <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-400">
-                The session file rewrites atomically at every turn boundary. Resume the newest with{" "}
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[13px] text-neutral-200">--continue</code>{" "}
-                — a damaged newest file is skipped and named — or browse with{" "}
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[13px] text-neutral-200">/sessions</code>.
-              </p>
-            </Reveal>
-            <Reveal className="lg:order-1">
-              <Terminal title="opcode — sessions">
-                <div><span className="t-acc">◈</span> <span className="t-body">opcode — session saved · resume it with /sessions</span></div>
-                <div className="mt-2"><span className="t-dim">$</span> <span className="t-body">opcode --continue</span></div>
-                <div><span className="t-ok">✓</span> <span className="t-sub">resumed session 20260102-150405 (42 messages)</span></div>
-                <div className="mt-2 t-sub">20260101-182211  add rate limiting to the login route</div>
-                <div className="t-sub">20260101-111040  the picker extraction, phase 46</div>
-              </Terminal>
-            </Reveal>
-          </div>
-
-          <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
-            <Reveal>
-              <Chip>headless</Chip>
-              <h3 className="mt-4 text-[26px] font-medium tracking-tight text-white">One flag for CI and scripts.</h3>
-              <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-400">
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[13px] text-neutral-200">-p</code> runs one turn with no UI;{" "}
-                <code className="rounded bg-white/[0.06] px-1 font-mono text-[13px] text-neutral-200">--json</code>{" "}
-                emits one event per line for jq. Permissions fail closed with nobody to ask.
-              </p>
-            </Reveal>
-            <Reveal>
-              <Terminal title="opcode — headless">
-                <div><span className="t-dim">$</span> <span className="t-body">opcode -p --json "list the failing packages" | jq -r '.kind'</span></div>
-                <div className="mt-2 t-sub">tool_result</div>
-                <div className="t-sub">usage</div>
-                <div className="t-ok">turn_complete</div>
-              </Terminal>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
-      {/* TILES */}
-      <section className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader kicker="And the rest" title="Small things, deliberately built." />
-        <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {tiles.map((t, i) => (
-            <Reveal key={t} delay={(i % 4) * 0.04}>
-              <Card className="flex items-center gap-3 !p-4">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M5 12h14M12 5v14" stroke={i % 4 === 0 ? "#52a8ff" : "#ededed"} strokeWidth="1.5" strokeLinecap="square" />
-                </svg>
-                <span className="text-[13px] leading-tight text-neutral-300">{t}</span>
-              </Card>
-            </Reveal>
           ))}
-        </div>
-      </section>
+        </dl>
+        <p className="mt-8 max-w-[62ch] text-[1.0625rem] leading-relaxed text-band-mid">
+          Where the kernel cannot confine, opcode asks instead of pretending. The threat model, and
+          the limits of it, are written down in{" "}
+          <a
+            href="https://github.com/Chmgx81/opcode/blob/main/SECURITY.md"
+            className="text-band-fg underline decoration-band-accent decoration-1 underline-offset-4 hover:text-band-accent"
+          >
+            SECURITY.md
+          </a>
+          .
+        </p>
+      </Section>
 
-      {/* MODES */}
-      <section className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader kicker="Three modes" title="Cycle it with Tab, or pick it." />
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {modes.map((m, i) => (
-            <Reveal key={m.chip} delay={i * 0.05}>
-              <Card>
-                <Chip tone={m.tone}>{m.chip}</Chip>
-                <p className="mt-4 text-sm leading-relaxed text-neutral-400">{m.desc}</p>
-              </Card>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+      {/* 05 DIFF */}
+      <Section
+        id="diff"
+        n="05"
+        title="The change, before it lands."
+        lede="Writes render as a diff before they are part of the tree. Nothing arrives as a surprise."
+      >
+        <p className="max-w-[62ch] text-[1.0625rem] leading-relaxed text-ink-2">
+          Expand any result with <kbd>ctrl</kbd>+<kbd>r</kbd>. <kbd>ctrl</kbd>+<kbd>o</kbd> opens
+          the transcript, the whole conversation scrollable, which is where the frame below was
+          taken from.
+        </p>
+        <Figure
+          fig="Fig. 3"
+          title="An edit applied in build mode, opened in the transcript pager. The diff is the record."
+          source="the v0.6.0 release build"
+        >
+          {diff}
+        </Figure>
+      </Section>
 
-      {/* PROVIDERS */}
-      <section className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader kicker="Providers" title="Fifteen built in, custom endpoints welcome." />
-        <Reveal className="mt-10 overflow-hidden rounded-xl border border-white/[0.08]">
-          <table className="w-full font-mono text-[13px]">
-            <tbody>
-              {[
-                ["openrouter (default)", "openrouter.ai/api/v1", "OPENROUTER_API_KEY"],
-                ["anthropic", "Messages API, native client", "ANTHROPIC_API_KEY"],
-                ["mistral · google · groq · …", "OpenAI-compatible", "<NAME>_API_KEY"],
-                ["ollama", "localhost:11434", "none"],
-              ].map(([p, e, k]) => (
-                <tr key={p} className="border-t border-white/[0.06] first:border-t-0 hover:bg-white/[0.02]">
-                  <td className="px-5 py-3.5 text-[#52a8ff]">{p}</td>
-                  <td className="px-5 py-3.5 text-neutral-400">{e}</td>
-                  <td className="hidden px-5 py-3.5 text-neutral-500 sm:table-cell">{k}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Reveal>
-        <Reveal className="mt-5 text-sm font-mono text-neutral-500">
-          keys resolve from auth.json (with !command for secret managers), then the environment — never from a project directory.{" "}
-          <Link className="text-[#52a8ff] hover:underline" to="/docs/providers">full table →</Link>
-        </Reveal>
-      </section>
+      {/* 06 PROVIDERS */}
+      <Section
+        id="providers"
+        n="06"
+        title="Fifteen providers, and any endpoint you point at."
+        lede="Switch live at runtime with /model. The built-in catalog is only a default: an explicit entry in models.json always wins."
+        tone="recessed"
+      >
+        <Ruled
+          head={["Provider", "Endpoint", "Key"]}
+          rows={providers.map(([p, e, k]) => [
+            p,
+            e,
+            <span className="text-ink-3">{k}</span>,
+          ])}
+        />
+        <p className="mt-6 max-w-[64ch] text-[1.0625rem] leading-relaxed text-ink-2">
+          Keys resolve from auth.json, which supports <code>!command</code> for a secret manager,
+          then the environment.{" "}
+          <Link to="/docs/providers" className="link">
+            The full table is in the documentation
+          </Link>
+          .
+        </p>
+      </Section>
+
+      {/* 07 HEADLESS */}
+      <Section
+        id="headless"
+        n="07"
+        title="One flag for CI."
+        lede="opcode -p runs a single turn with no interface. --json writes one event object per line, ready for jq."
+      >
+        <p className="max-w-[62ch] text-[1.0625rem] leading-relaxed text-ink-2">
+          With nobody present to answer a prompt, permissions fail closed. In the run below the
+          model asked for an unsandboxed command and was refused before anything executed, which is
+          the behaviour you want in a pipeline.
+        </p>
+        <Figure fig="Fig. 4" title="The event stream of one headless turn, printed by opcode." source="the v0.6.0 release build">
+          {headless}
+        </Figure>
+        <p className="mt-6 text-[1.0625rem] leading-relaxed text-ink-2">
+          <Link to="/docs/headless" className="link">
+            Headless and CI reference
+          </Link>
+          .
+        </p>
+      </Section>
 
       {/* FAQ */}
-      <section className="mx-auto max-w-6xl px-6 pt-24">
-        <SectionHeader kicker="FAQ" title="Questions people actually ask." />
-        <div className="mt-8 grid max-w-3xl gap-3">
-          {faqs.map((f, i) => (
-            <Reveal key={f.q} delay={i * 0.03}>
-              <details className="rounded-xl border border-white/[0.08] bg-white/[0.02]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 font-medium text-white">
-                  {f.q}
-                  <span className="text-[#52a8ff]">+</span>
-                </summary>
-                <p className="max-w-[62ch] px-5 pb-5 text-sm leading-relaxed text-neutral-400">{f.a}</p>
-              </details>
-            </Reveal>
+      <Section n="08" title="Questions people ask." lede="Answered from the code, not from a pitch.">
+        <div className="max-w-[70ch] border-t border-rule">
+          {faqs.map(([q, a]) => (
+            <details key={q} className="group border-b border-rule">
+              <summary className="flex cursor-pointer list-none items-baseline justify-between gap-6 py-4 text-[1.0625rem] font-semibold text-ink hover:text-accent">
+                <span>{q}</span>
+                <span className="mono shrink-0 text-[1.1rem] leading-none text-accent" aria-hidden="true">
+                  <span className="group-open:hidden">+</span>
+                  <span className="hidden group-open:inline">−</span>
+                </span>
+              </summary>
+              <p className="max-w-[64ch] pb-5 text-[1rem] leading-relaxed text-ink-2">{a}</p>
+            </details>
           ))}
         </div>
-      </section>
+      </Section>
 
-      <section className="mx-auto max-w-6xl px-6 pb-8 pt-24">
-        <Reveal>
-          <Link
-            to="/docs"
-            className="inline-flex h-11 items-center gap-2 rounded-md bg-white px-6 text-sm font-medium text-black transition-all hover:bg-neutral-200 active:scale-[0.98]"
-          >
-            Read the docs <ArrowRight className="h-4 w-4" />
-          </Link>
-        </Reveal>
+      {/* CLOSE */}
+      <section className="border-t border-ink">
+        <div className="mx-auto max-w-6xl px-6 py-16 md:py-24">
+          <div className="grid gap-x-12 gap-y-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div>
+              <p className="label text-accent">Install</p>
+              <h2 className="mt-4 max-w-[16ch] text-[clamp(1.75rem,3.2vw,2.6rem)] font-semibold leading-[1.08] tracking-[-0.02em]">
+                Try it in a real repository.
+              </h2>
+            </div>
+            <div>
+              <Install cmd={INSTALL} />
+              <p className="mt-5 max-w-[52ch] text-[1rem] leading-relaxed text-ink-2">
+                The installer verifies a sha256 checksum before it installs anything. Prefer to read
+                it first? Pipe it into <code>less</code>. Or build from source with Go 1.25 or newer.
+              </p>
+              <p className="mt-5">
+                <Link to="/docs" className="link">
+                  Read the documentation
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
       </section>
     </>
   );

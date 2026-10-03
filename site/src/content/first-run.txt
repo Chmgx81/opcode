@@ -1,0 +1,36 @@
+ ▄▄▄▄    ▄▄▄▄▄   ◈ opcode v0.6.0
+█▀  ▀█  █▀  ▀█   no model yet · /tmp/opcode-demo-work/project
+█▄  ▄█  █▄▄▄▀
+ ▀▄▄▀   █
+
+no API key for provider "openrouter" — set OPENROUTER_API_KEY, use /login openrouter, or add it to
+/tmp/opcode-demo-work/fresh/auth.json
+sandbox: landlock v10 — reads anywhere, writes confined to this directory, /tmp, and dev caches,
+network sockets blocked
+
+welcome to opcode — setup is three steps, all in this window:
+1. pick a provider below — each row says whether it needs a key (esc closes it, /models reopens it)
+  2. paste its API key when asked — masked on screen, stored 0600 in auth.json
+  3. pick a model from the live list — the choice is remembered; /login and /model work any time
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ browse models — pick a provider  type to filter · arrows to move · enter to select · esc to clos │
+│ ❯ anthropic     no key — /login anthropic                                                        │
+│   cerebras      no key — /login cerebras                                                         │
+│   deepseek      no key — /login deepseek                                                         │
+│   fireworks     no key — /login fireworks                                                        │
+│   google        no key — /login google                                                           │
+│   groq          no key — /login groq                                                             │
+│   mistral       no key — /login mistral                                                          │
+│   moonshot      no key — /login moonshot                                                         │
+│   nvidia        no key — /login nvidia                                                           │
+│   ollama        enter to browse models                                                           │
+│   openai        no key — /login openai                                                           │
+│   openrouter    no key — /login openrouter                                                       │
+│   … 3 more — keep typing to narrow                                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ ask opcode anything…                                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+› build (tab to cycle)   ? for shortcuts · / commands

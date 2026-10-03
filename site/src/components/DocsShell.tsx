@@ -6,7 +6,7 @@ const nav = [
   { to: "/docs/configuration", label: "Configuration", end: false },
   { to: "/docs/providers", label: "Providers", end: false },
   { to: "/docs/security", label: "Security", end: false },
-  { to: "/docs/headless", label: "Headless & CI", end: false },
+  { to: "/docs/headless", label: "Headless and CI", end: false },
 ];
 
 export default function DocsShell({
@@ -17,29 +17,42 @@ export default function DocsShell({
   source: string;
 }) {
   return (
-    <div className="mx-auto grid max-w-6xl gap-10 px-6 pb-16 pt-12 lg:grid-cols-[13rem_1fr]">
-      <aside>
-        <nav className="flex flex-wrap gap-x-5 gap-y-1 text-sm lg:sticky lg:top-24 lg:flex-col" aria-label="Docs">
-          {nav.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              className={({ isActive }) =>
-                `py-1 transition-colors ${isActive ? "font-semibold text-[#52a8ff]" : "text-neutral-400 hover:text-white"}`
-              }
+    <div className="mx-auto max-w-6xl px-6">
+      <div className="grid gap-x-10 gap-y-8 py-10 lg:grid-cols-[13rem_minmax(0,1fr)] lg:py-14">
+        <aside className="lg:border-r lg:border-rule lg:pr-8">
+          <p className="label border-b border-rule pb-3 text-ink-3">Documentation</p>
+          <nav className="mt-3 flex flex-wrap gap-x-5 gap-y-1 lg:flex-col" aria-label="Docs">
+            {nav.map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.end}
+                className={({ isActive }) =>
+                  `mono py-1.5 text-[0.8125rem] ${
+                    isActive ? "font-medium text-accent" : "text-ink-2 hover:text-accent"
+                  }`
+                }
+              >
+                {n.label}
+              </NavLink>
+            ))}
+          </nav>
+        </aside>
+
+        <article className="prose-doc min-w-0 max-w-3xl">
+          {children}
+          <p className="mt-12 border-t border-rule pt-4 text-[0.8125rem] text-ink-3">
+            Source:{" "}
+            <a
+              className="text-ink underline decoration-accent decoration-1 underline-offset-4 hover:text-accent"
+              href={source}
             >
-              {n.label}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
-      <article className="prose-doc max-w-3xl">
-        {children}
-        <p className="mt-10 border-t border-white/[0.08] pt-4 text-[13px] text-neutral-600">
-          Source: <a className="text-[#52a8ff] hover:underline" href={source}>{source.replace("https://github.com/Chmgx81/opcode/blob/main/", "")}</a> — every claim on this page is checked against the code.
-        </p>
-      </article>
+              {source.replace("https://github.com/Chmgx81/opcode/blob/main/", "")}
+            </a>
+            . Every claim on this page is checked against the code.
+          </p>
+        </article>
+      </div>
     </div>
   );
 }

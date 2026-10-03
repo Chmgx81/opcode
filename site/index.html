@@ -3,9 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f3f0e8" />
+    <script>
+      /* Choose the ground before first paint, so the page never flashes the
+         wrong one. Mirrors src/lib/theme.ts: a recorded choice wins, otherwise
+         the system preference. */
+      (function () {
+        var theme = null;
+        try {
+          theme = localStorage.getItem("opcode-theme");
+        } catch (e) {
+          /* storage blocked: fall back to the system preference */
+        }
+        if (theme !== "light" && theme !== "dark") {
+          theme =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        }
+        document.documentElement.dataset.theme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = theme === "dark" ? "#191b20" : "#f3f0e8";
+      })();
+    </script>
     <link rel="icon" href="/opcode/favicon.svg" type="image/svg+xml" />
-    <title>opcode — a terminal coding agent, in one Go binary</title>
-    <meta name="description" content="opcode is a terminal coding agent: 15 providers, a kernel sandbox, plan mode, subagents, per-turn session autosave — in one Go binary, under your permission system." />
+    <title>opcode, a terminal coding agent in one Go binary</title>
+    <meta
+      name="description"
+      content="opcode is a terminal coding agent: fifteen providers, a kernel sandbox, three permission modes, subagents, and sessions that survive a crash. One binary, on your machine, with your key."
+    />
+    <meta property="og:title" content="opcode, a terminal coding agent in one Go binary" />
+    <meta
+      property="og:description"
+      content="Fifteen providers, a kernel sandbox, three permission modes, subagents, and sessions that survive a crash. One binary, on your machine, with your key."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://chmgx81.github.io/opcode/" />
   </head>
   <body>
     <div id="root"></div>
