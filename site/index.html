@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f3f0e8" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#080d17" />
     <script>
       /* Choose the ground before first paint, so the page never flashes the
          wrong one. Mirrors src/lib/theme.ts: a recorded choice wins, otherwise
@@ -25,10 +25,13 @@
         }
         document.documentElement.dataset.theme = theme;
         var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = theme === "dark" ? "#191b20" : "#f3f0e8";
+        if (meta) meta.content = theme === "dark" ? "#080d17" : "#f7f5f1";
       })();
     </script>
     <link rel="icon" href="/opcode/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/opcode/icon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/opcode/apple-touch-icon.png" />
+    <link rel="manifest" href="/opcode/manifest.webmanifest" />
     <title>opcode, a terminal coding agent in one Go binary</title>
     <meta
       name="description"

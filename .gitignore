@@ -13,6 +13,7 @@
 
 # local-only design references (third-party screenshots)
 /references/
+/landingpage/
 
 # local agent notes (never a project artifact)
 /.commandcode/

@@ -42,7 +42,7 @@ export function useTheme() {
     document.documentElement.dataset.theme = theme;
     document
       .querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", theme === "dark" ? "#191b20" : "#f3f0e8");
+      ?.setAttribute("content", theme === "dark" ? "#080d17" : "#f7f5f1");
   }, [theme]);
 
   const toggle = useCallback(() => {

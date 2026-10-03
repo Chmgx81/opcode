@@ -1,130 +1,260 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Copy } from "react-feather";
 
 import { cn } from "@/lib/utils";
 
 /**
- * A numbered section. The number lives in the margin, not in a badge,
- * so the page reads as a document with a table of contents rather than
- * a stack of cards.
+ * Scroll-triggered entrance for everything below the fold. One observer per
+ * element is fine at this page size and keeps the primitive dependency-free.
+ *
+ * `data-shown` is set on first intersection, and the stylesheet pins `.reveal`
+ * visible under `prefers-reduced-motion`, so content can never be stranded
+ * invisible by a missing observer or a reader who asked for stillness.
+ */
+export function Reveal({
+  children,
+  className,
+  delay = 0,
+  as: Tag = "div",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+  as?: "div" | "section" | "li" | "article" | "header";
+}) {
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      el.dataset.shown = "true";
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            el.dataset.shown = "true";
+            io.disconnect();
+          }
+        }
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.04 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <Tag ref={ref as never} className={cn("reveal", className)} style={{ "--d": delay } as never}>
+      {children}
+    </Tag>
+  );
+}
+
+/**
+ * A page band. `title` and `lede` form the standard heading block; `aside`
+ * sets them side by side, which is the pattern Grok Build and Neo use for
+ * their longer sections and which keeps the measure readable.
  */
 export function Section({
   id,
-  n,
+  eyebrow,
   title,
   lede,
+  aside,
   children,
   tone = "paper",
   className,
 }: {
   id?: string;
-  n: string;
-  title: string;
+  eyebrow?: string;
+  title?: string;
   lede?: string;
-  children: React.ReactNode;
-  tone?: "paper" | "recessed" | "ink";
+  aside?: React.ReactNode;
+  children?: React.ReactNode;
+  tone?: "paper" | "raised" | "band";
   className?: string;
 }) {
-  const onInk = tone === "ink";
+  const onBand = tone === "band";
   return (
     <section
       id={id}
       className={cn(
-        "border-t",
-        onInk ? "border-band bg-band text-band-fg" : tone === "recessed" ? "border-rule bg-paper-2" : "border-rule",
+        onBand
+          ? "border-t border-band-rule bg-band text-band-fg"
+          : tone === "raised"
+            ? "border-t border-rule bg-paper-2"
+            : "border-t border-rule",
         className,
       )}
     >
-      <div className="mx-auto grid max-w-6xl gap-x-8 gap-y-6 px-6 py-16 md:grid-cols-[5.5rem_minmax(0,1fr)] md:py-24">
-        <div className="md:pt-2">
-          <span className={cn("label", onInk ? "text-band-dim" : "text-accent")}>{n}</span>
-        </div>
-        <div>
-          <h2 className="max-w-[20ch] text-[clamp(1.75rem,3.2vw,2.6rem)] font-semibold leading-[1.08] tracking-[-0.02em]">
-            {title}
-          </h2>
-          {lede && (
-            <p className={cn("mt-4 max-w-[58ch] text-[1.0625rem] leading-relaxed", onInk ? "text-band-mid" : "text-ink-2")}>
-              {lede}
-            </p>
-          )}
-          <div className="mt-9">{children}</div>
-        </div>
+      <div className="shell py-20 md:py-28">
+        {(title || lede) && (
+          <Reveal
+            className={cn(
+              "flex flex-col gap-6 md:flex-row md:items-end md:justify-between md:gap-16",
+              aside ? "" : "max-w-3xl",
+            )}
+          >
+            <div className={cn("min-w-0", aside ? "md:max-w-[20ch] lg:max-w-[24ch]" : "flex-1")}>
+              {eyebrow && (
+                <p className={cn("label mb-4", onBand ? "text-accent" : "text-accent")}>{eyebrow}</p>
+              )}
+              {title && (
+                <h2
+                  className={cn(
+                    "h-section text-[clamp(1.875rem,4vw,3rem)]",
+                    onBand ? "text-band-fg" : "text-ink",
+                  )}
+                >
+                  {title}
+                </h2>
+              )}
+            </div>
+            {(lede || aside) && (
+              <div className={cn("min-w-0", aside ? "md:flex-1" : "flex-1")}>
+                {lede && (
+                  <p className={cn("lede max-w-[52ch]", onBand ? "text-band-mid" : "text-ink-2")}>
+                    {lede}
+                  </p>
+                )}
+                {aside}
+              </div>
+            )}
+          </Reveal>
+        )}
+        {children && <div className={cn(title || lede ? "mt-14 md:mt-16" : undefined)}>{children}</div>}
       </div>
     </section>
   );
 }
 
 /**
- * A figure is real output from the binary, in a hairline box, with a
- * caption. It is never dressed as a window: no title bar, no dots, no
- * radius, no shadow.
+ * A framed terminal. The window chrome is a device convention that every
+ * reference uses to present product output; the bytes inside are verbatim
+ * release-build output, and the binary's own ASCII banner sits directly under
+ * the bar so nothing is cropped or restyled into meaning it did not have.
+ *
+ * `live` adds a blinking caret on the hero frame only.
  */
+export function Terminal({
+  title,
+  children,
+  live = false,
+  hero = false,
+  className,
+}: {
+  title?: string;
+  children: string;
+  live?: boolean;
+  hero?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("term", hero && "term--hero", live && "term--live", className)}>
+      <div className="term__bar">
+        <span className="term__dot" />
+        <span className="term__dot" />
+        <span className="term__dot" />
+        {title && <span className="term__title">{title}</span>}
+      </div>
+      <pre className="term__body" tabIndex={0}>
+        {children}
+      </pre>
+    </div>
+  );
+}
+
+/** A terminal plus its caption. The pair is always used together. */
 export function Figure({
   fig,
   title,
   source,
   children,
+  hero = false,
+  live = false,
 }: {
   fig: string;
   title: string;
   source?: string;
   children: string;
+  hero?: boolean;
+  live?: boolean;
 }) {
   return (
-    <figure className="mt-8">
-      <pre className="capture" tabIndex={0} aria-label={`${fig} ${title}`}>
+    <figure className="m-0 min-w-0">
+      <Terminal title={fig} hero={hero} live={live}>
         {children}
-      </pre>
+      </Terminal>
       <figcaption className="caption">
         <b>{fig}.</b> {title}
-        {source && (
-          <>
-            {" "}
-            <span>Recorded from {source}.</span>
-          </>
-        )}
+        {source && <> Recorded from {source}.</>}
       </figcaption>
     </figure>
   );
 }
 
-/** The install line, with a copy control that reports all three states. */
+/**
+ * The install command, with a copy control that reports all three states. A
+ * clipboard rejection is a real outcome on a locked-down browser, and it has to
+ * say so rather than silently pretending it worked.
+ */
 export function Install({ cmd }: { cmd: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
 
   async function copy() {
+    window.clearTimeout(timer.current);
     try {
       await navigator.clipboard.writeText(cmd);
       setState("copied");
     } catch {
       setState("failed");
     }
-    window.setTimeout(() => setState("idle"), 2400);
+    timer.current = window.setTimeout(() => setState("idle"), 2400);
   }
 
   return (
-    <div className="flex w-full min-w-0 items-stretch border border-ink bg-paper sm:flex-1">
-      <code className="flex-1 overflow-x-auto border-0 bg-transparent px-4 py-3 text-[0.8125rem] whitespace-pre">
-        {cmd}
-      </code>
+    <div className="cmd">
+      <pre className="cmd__text">{cmd}</pre>
       <button
         type="button"
         onClick={copy}
-        className="label shrink-0 border-l border-ink bg-ink px-4 text-paper hover:bg-accent"
+        data-state={state}
+        className="cmd__btn"
+        aria-label={state === "failed" ? "Copy blocked, select the command instead" : "Copy install command"}
       >
-        {state === "copied" ? "copied" : state === "failed" ? "select it" : "copy"}
+        {state === "copied" ? (
+          <>
+            <Check size={13} aria-hidden="true" /> Copied
+          </>
+        ) : state === "failed" ? (
+          "Select it"
+        ) : (
+          <>
+            <Copy size={13} aria-hidden="true" /> Copy
+          </>
+        )}
       </button>
       <span role="status" aria-live="polite" className="sr-only">
-        {state === "copied" ? "Command copied to the clipboard" : state === "failed" ? "Copy failed" : ""}
+        {state === "copied"
+          ? "Install command copied to the clipboard"
+          : state === "failed"
+            ? "The browser blocked clipboard access. Select the command and copy it manually."
+            : ""}
       </span>
     </div>
   );
 }
 
 /**
- * The latest release, read live. This is the only request the page
- * makes, and it has a designed loading state, a designed value, and a
- * designed failure: a rate-limited API must not leave a broken badge.
+ * The latest release, read live. This is the only request the page makes, and
+ * it has a designed loading state, a designed value and a designed failure: a
+ * rate-limited API must not leave a broken badge.
  */
 export function Release({ fallback = "v0.6.0" }: { fallback?: string }) {
   const [state, setState] = useState<"loading" | "live" | "offline">("loading");
@@ -159,13 +289,50 @@ export function Release({ fallback = "v0.6.0" }: { fallback?: string }) {
 
   if (state === "loading") return <span className="skeleton" aria-label="reading the latest release" />;
   return (
-    <span title={state === "offline" ? "GitHub could not be reached; showing the last known release" : undefined}>
+    <span
+      title={
+        state === "offline" ? "GitHub could not be reached; showing the last known release" : undefined
+      }
+    >
       {version}
     </span>
   );
 }
 
-/** A ruled data row. Used for facts, modes, providers, shortcuts. */
+/**
+ * The icon, title and body triple used across every feature card and row, with
+ * the internal name last as a mono footer. The order is Cline's: marker,
+ * claim, explanation, then the precise term. Putting the term between the title
+ * and the body reads as a stray label; putting it last reads as a caption.
+ */
+export function Feature({
+  icon,
+  title,
+  term,
+  children,
+  className,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  term?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex h-full flex-col", className)}>
+      {/* The icon repeats the title, so it is decoration: the title is what a
+          screen reader should announce, not an unlabelled graphic before it. */}
+      <span className="icon-well" aria-hidden="true">
+        {icon}
+      </span>
+      <h3 className="h-card mt-5 text-[1.0625rem] text-ink">{title}</h3>
+      <div className="mt-2.5 text-[0.9375rem] leading-relaxed text-ink-2">{children}</div>
+      {term && <p className="label mt-5 text-ink-3">{term}</p>}
+    </div>
+  );
+}
+
+/** A ruled data row. Used for modes, providers and shortcuts. */
 export function Ruled({
   head,
   rows,
@@ -182,7 +349,7 @@ export function Ruled({
           <thead>
             <tr>
               {head.map((h) => (
-                <th key={h} className="label border-b border-rule-2 pb-2 pr-6 text-ink-3">
+                <th key={h} className="label border-b border-rule-2 pb-3 pr-8 text-ink-3">
                   {h}
                 </th>
               ))}
@@ -196,7 +363,7 @@ export function Ruled({
                 <td
                   key={j}
                   className={cn(
-                    "py-3 pr-6 align-top text-[0.9375rem] leading-relaxed",
+                    "py-4 pr-8 align-top text-[0.9375rem] leading-relaxed",
                     j === 0 ? "mono text-[0.8125rem] text-ink" : "text-ink-2",
                   )}
                 >
@@ -208,5 +375,22 @@ export function Ruled({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** A question and its answer. Height animates from 0fr to 1fr in CSS. */
+export function QA({ q, a }: { q: string; a: string }) {
+  return (
+    <details className="qa group">
+      <summary>
+        <span>{q}</span>
+        <ChevronDown size={18} className="qa__chev" aria-hidden="true" />
+      </summary>
+      <div className="qa__wrap">
+        <div className="qa__inner">
+          <p className="body-copy">{a}</p>
+        </div>
+      </div>
+    </details>
   );
 }
