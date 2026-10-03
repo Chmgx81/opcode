@@ -20,3 +20,5 @@
 # the site's build (Astro) — sources in site/src, output in site/dist
 /site/node_modules/
 /site/dist/
+
+scripts/site-demo/.venv/
